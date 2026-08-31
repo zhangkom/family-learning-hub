@@ -23,7 +23,11 @@ export type WrongQuestion = Omit<WrongQuestionInput, 'now'> & {
 const sentencePunctuation = /[.!?。！？]+$/u;
 
 export function normalizeEnglishAnswer(value: string) {
-  return value.trim().toLocaleLowerCase('en-US').replace(/\s+/g, ' ').replace(sentencePunctuation, '');
+  return value
+    .trim()
+    .toLocaleLowerCase('en-US')
+    .replace(/\s+/g, ' ')
+    .replace(sentencePunctuation, '');
 }
 
 export function normalizeMathAnswer(value: string) {
@@ -34,8 +38,13 @@ export function normalizeMathAnswer(value: string) {
     .replace(/[－−]/g, '-');
 }
 
-export function evaluateAnswer(value: string, acceptedAnswers: string[], kind: AnswerKind) {
-  const normalize = kind === 'english' ? normalizeEnglishAnswer : normalizeMathAnswer;
+export function evaluateAnswer(
+  value: string,
+  acceptedAnswers: string[],
+  kind: AnswerKind,
+) {
+  const normalize =
+    kind === 'english' ? normalizeEnglishAnswer : normalizeMathAnswer;
   const candidate = normalize(value);
   return acceptedAnswers.some((answer) => normalize(answer) === candidate);
 }
