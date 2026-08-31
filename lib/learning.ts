@@ -1,8 +1,10 @@
 export type AnswerKind = 'math' | 'english';
 
+export type LearningSubject = '数学' | '英语' | '物理' | '化学' | '生物';
+
 export type WrongQuestionInput = {
   questionId: string;
-  subject: '数学' | '英语';
+  subject: LearningSubject;
   knowledgePoint: string;
   prompt: string;
   answer: string;
