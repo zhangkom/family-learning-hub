@@ -58,10 +58,10 @@ export default function Home() {
               <Target className="size-4" /> 家庭总目标
             </p>
             <h1 className="max-w-3xl font-heading text-3xl font-bold leading-tight tracking-[-0.035em] sm:text-4xl">
-              大宝逐梦中山大学，小宝冲刺深圳四大——双宝并肩，未来一路向上。
+              大宝逐梦名校，小宝冲刺深圳四大——双宝并肩，未来一路向上。
             </h1>
             <p className="mt-4 max-w-2xl text-[15px] leading-7 text-muted-foreground">
-              这里记录两个孩子各自的成长路线：大宝聚焦高二物化生，向中山大学稳步迈进；小宝夯实初中基础，向深圳四大高中发起冲刺。
+              这里记录两个孩子各自的成长路线：大宝聚焦高二物化生，向理想名校稳步迈进；小宝夯实初中基础，向深圳四大高中发起冲刺。
               目标不同，节奏不同，但每一次认真学习都在为更辽阔的未来积蓄力量。
             </p>
           </div>
