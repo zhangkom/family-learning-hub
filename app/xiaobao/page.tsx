@@ -10,6 +10,11 @@ const plan: ChildPlan = {
   graduation: '当前按 2029 中考建模',
   target: '优质高中 · 为中大打基础',
   targetNote: '初一最值钱的是习惯和基本能力：听课有产出、作业能订正、错题会回炉、运动能坚持。深圳现行新中考方案把实验、体育过程与英语听说都纳入了长期准备。',
+  workbench: {
+    label: '开始今天的难点',
+    href: '/xiaobao/study',
+    description: '每天 20 分钟：学一个难点、做针对题、错题再练。',
+  },
   accent: 'teal',
   tasks: [
     { id: 'daily-clear', title: '清空本周课堂遗留问题', detail: '语数英各挑一个真正没弄懂的问题，完成“问清—重做—讲给家人听”。', minutes: 40 },

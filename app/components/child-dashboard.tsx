@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import {
   ArrowLeft,
+  ArrowRight,
   BookOpen,
   CalendarCheck2,
   Check,
@@ -28,6 +29,7 @@ export type ChildPlan = {
   graduation: string;
   target: string;
   targetNote: string;
+  workbench: { label: string; href: string; description: string };
   accent: 'coral' | 'teal';
   tasks: { id: string; title: string; detail: string; minutes: number }[];
   subjects: { name: string; role: string; focus: string; routine: string; status: '主攻' | '稳住' | '习惯' | '专项' }[];
@@ -82,7 +84,7 @@ export function ChildDashboard({ plan }: { plan: ChildPlan }) {
             <ArrowLeft className="size-4" /> 家庭总览
           </Link>
           <p className="font-heading text-base font-bold">双宝名校计划</p>
-          <span className="hidden text-xs text-muted-foreground sm:block">数据仅保存在当前浏览器</span>
+          <span className="hidden text-xs text-muted-foreground sm:block">私人家庭学习空间</span>
         </div>
       </header>
 
@@ -100,6 +102,13 @@ export function ChildDashboard({ plan }: { plan: ChildPlan }) {
               <Target className="size-4" /> 当前目标坐标
             </p>
             <p className="mt-2 font-heading text-xl font-bold">{plan.target}</p>
+            <p className="mt-2 text-xs leading-5 text-muted-foreground">{plan.workbench.description}</p>
+            <Link
+              href={plan.workbench.href}
+              className="mt-4 inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-xl bg-ink px-4 text-sm font-bold text-white transition hover:-translate-y-0.5"
+            >
+              {plan.workbench.label} <ArrowRight className="size-4" />
+            </Link>
           </div>
         </section>
 

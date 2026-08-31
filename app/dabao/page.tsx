@@ -10,6 +10,11 @@ const plan: ChildPlan = {
   graduation: '当前按 2028 届建模',
   target: '中山大学 · 专业待探索',
   targetNote: '高二的核心不是提前进入高三题海，而是确定选科与专业方向、补齐核心知识网络，并让错题能够真正回炉。毕业年份请按学校实际学籍确认。',
+  workbench: {
+    label: '进入本周错题复盘',
+    href: '/dabao/review',
+    description: '周末集中扫描、讲解、重做，并保留题目出处。',
+  },
   accent: 'coral',
   tasks: [
     { id: 'score-audit', title: '做一次全科成绩盘点', detail: '录入最近三次大考：分数、校排名/年级排名、失分题型和考试状态。', minutes: 35 },

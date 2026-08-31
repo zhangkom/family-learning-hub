@@ -36,3 +36,8 @@ next-env.d.ts
 /.wrangler/
 /outputs/
 /work/
+
+# private learner data must never enter Git history
+/uploads/
+/private-learning-data/
+*.student-scan.*

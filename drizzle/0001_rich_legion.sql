@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX `wrong_owner_child_question_idx` ON `wrong_questions` (`owner_id`,`child`,`question_id`);
