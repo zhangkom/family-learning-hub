@@ -21,6 +21,7 @@ import {
 import { Checkbox } from '@/components/ui/checkbox';
 import { Progress, ProgressLabel } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { parseStoredStringList } from '@/lib/learning';
 
 export type ChildPlan = {
   id: 'dabao' | 'xiaobao';
@@ -61,21 +62,18 @@ export function ChildDashboard({ plan }: { plan: ChildPlan }) {
   const [checked, setChecked] = useState<string[]>([]);
   const [ready, setReady] = useState(false);
   const storageKey = `twin-stars:${plan.id}:weekly-tasks`;
+  const taskCount = plan.tasks.length;
 
   useEffect(() => {
     const saved = window.localStorage.getItem(storageKey);
     const timer = window.setTimeout(() => {
       if (saved) {
-        try {
-          setChecked(JSON.parse(saved));
-        } catch {
-          setChecked([]);
-        }
+        setChecked(parseStoredStringList(saved, taskCount));
       }
       setReady(true);
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [storageKey]);
+  }, [storageKey, taskCount]);
 
   const toggleTask = (taskId: string) => {
     setChecked((current) => {

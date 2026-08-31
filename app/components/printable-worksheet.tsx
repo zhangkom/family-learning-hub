@@ -17,7 +17,10 @@ import {
   mergePracticeWrongQuestions,
   type PracticeSheet,
 } from '@/lib/practice';
-import type { WrongQuestion } from '@/lib/learning';
+import {
+  parseStoredStringList,
+  parseStoredWrongQuestions,
+} from '@/lib/learning';
 
 export function PrintableWorksheet({
   sheet,
@@ -46,27 +49,17 @@ export function PrintableWorksheet({
   };
 
   const saveReview = () => {
-    let current: WrongQuestion[] = [];
-    try {
-      current = JSON.parse(
-        window.localStorage.getItem(storageKey) ?? '[]',
-      ) as WrongQuestion[];
-    } catch {
-      current = [];
-    }
+    const current = parseStoredWrongQuestions(
+      window.localStorage.getItem(storageKey),
+    );
     window.localStorage.setItem(
       storageKey,
       JSON.stringify(mergePracticeWrongQuestions(current, sheet, wrongIds)),
     );
 
-    let completed: string[] = [];
-    try {
-      completed = JSON.parse(
-        window.localStorage.getItem(completionKey) ?? '[]',
-      ) as string[];
-    } catch {
-      completed = [];
-    }
+    const completed = parseStoredStringList(
+      window.localStorage.getItem(completionKey),
+    );
     window.localStorage.setItem(
       completionKey,
       JSON.stringify(markPracticeComplete(completed, sheet.id)),

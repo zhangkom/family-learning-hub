@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import { WorkbenchHeader } from '@/app/components/workbench-header';
 import { PracticeSheetCard } from '@/app/components/practice-sheet-card';
-import type { LearningSubject } from '@/lib/learning';
+import { parseStoredStringList, type LearningSubject } from '@/lib/learning';
 import type { PracticeSheet } from '@/lib/practice';
 
 type SubjectStatus = { name: LearningSubject; note: string; active: boolean };
@@ -49,11 +49,7 @@ export function PracticeHub({
     const saved = window.localStorage.getItem(storageKey);
     const timer = window.setTimeout(() => {
       if (saved) {
-        try {
-          setCompleted(JSON.parse(saved) as string[]);
-        } catch {
-          setCompleted([]);
-        }
+        setCompleted(parseStoredStringList(saved));
       }
     }, 0);
     return () => window.clearTimeout(timer);

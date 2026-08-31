@@ -10,7 +10,11 @@ import {
   RotateCcw,
 } from 'lucide-react';
 import { WorkbenchHeader } from '@/app/components/workbench-header';
-import type { LearningSubject, WrongQuestion } from '@/lib/learning';
+import {
+  parseStoredWrongQuestions,
+  type LearningSubject,
+  type WrongQuestion,
+} from '@/lib/learning';
 
 export function WrongQuestionBook({
   child,
@@ -31,11 +35,7 @@ export function WrongQuestionBook({
     const saved = window.localStorage.getItem(storageKey);
     const timer = window.setTimeout(() => {
       if (!saved) return;
-      try {
-        setItems(JSON.parse(saved) as WrongQuestion[]);
-      } catch {
-        setItems([]);
-      }
+      setItems(parseStoredWrongQuestions(saved));
     }, 0);
     return () => window.clearTimeout(timer);
   }, [storageKey]);

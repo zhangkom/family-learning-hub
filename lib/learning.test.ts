@@ -4,6 +4,8 @@ import {
   createWrongQuestion,
   evaluateAnswer,
   normalizeEnglishAnswer,
+  parseStoredStringList,
+  parseStoredWrongQuestions,
 } from './learning';
 
 describe('answer evaluation', () => {
@@ -12,12 +14,18 @@ describe('answer evaluation', () => {
   });
 
   it('normalizes English case, spacing and sentence punctuation', () => {
-    expect(normalizeEnglishAnswer('  She   goes to school。 ')).toBe('she goes to school');
-    expect(evaluateAnswer('She goes to school.', ['she goes to school'], 'english')).toBe(true);
+    expect(normalizeEnglishAnswer('  She   goes to school。 ')).toBe(
+      'she goes to school',
+    );
+    expect(
+      evaluateAnswer('She goes to school.', ['she goes to school'], 'english'),
+    ).toBe(true);
   });
 
   it('rejects a genuinely different answer', () => {
-    expect(evaluateAnswer('she go to school', ['she goes to school'], 'english')).toBe(false);
+    expect(
+      evaluateAnswer('she go to school', ['she goes to school'], 'english'),
+    ).toBe(false);
   });
 });
 
@@ -45,5 +53,29 @@ describe('wrong-question loop', () => {
       '2026-09-07',
       '2026-09-30',
     ]);
+  });
+
+  it('rejects malformed local wrong-question data instead of crashing the page', () => {
+    expect(parseStoredWrongQuestions('{"not":"an array"}')).toEqual([]);
+    expect(parseStoredWrongQuestions('[{"id":"incomplete"}]')).toEqual([]);
+    expect(parseStoredWrongQuestions('broken json')).toEqual([]);
+  });
+
+  it('accepts a valid stored wrong question and limits stored string lists', () => {
+    const entry = createWrongQuestion({
+      questionId: 'safe-1',
+      subject: '物理',
+      knowledgePoint: '电场强度',
+      prompt: '求场强',
+      answer: '2 N/C',
+      learnerAnswer: '1 N/C',
+      source: '双宝原创',
+      now: new Date('2026-08-31T08:00:00.000Z'),
+    });
+
+    expect(parseStoredWrongQuestions(JSON.stringify([entry]))).toEqual([entry]);
+    expect(
+      parseStoredStringList(JSON.stringify(['a', 'a', 2, 'b']), 2),
+    ).toEqual(['a', 'b']);
   });
 });
