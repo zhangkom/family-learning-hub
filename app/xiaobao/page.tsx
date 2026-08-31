@@ -11,7 +11,7 @@ const plan: ChildPlan = {
   name: '小宝',
   stage: '初中一年级',
   graduation: '当前按 2029 中考建模',
-  target: '优质高中 · 为中大打基础',
+  target: '冲刺深圳四大高中',
   targetNote:
     '初一最值钱的是习惯和基本能力：听课有产出、作业能订正、错题会回炉、运动能坚持。深圳现行新中考方案把实验、体育过程与英语听说都纳入了长期准备。',
   workbench: {
