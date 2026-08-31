@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import {
   BookOpenCheck,
@@ -27,6 +28,7 @@ export function PracticeHub({
   sheets,
   subjects,
   sourceLinks,
+  wrongBookHref,
 }: {
   child: 'xiaobao' | 'dabao';
   backHref: string;
@@ -38,6 +40,7 @@ export function PracticeHub({
   sheets: PracticeSheet[];
   subjects: SubjectStatus[];
   sourceLinks: { label: string; href: string }[];
+  wrongBookHref: string;
 }) {
   const [completed, setCompleted] = useState<string[]>([]);
   const storageKey = `twin-stars:${child}:practice-complete`;
@@ -112,6 +115,12 @@ export function PracticeHub({
                 />
               </div>
             </div>
+            <Link
+              href={wrongBookHref}
+              className="mt-5 inline-flex items-center gap-2 text-sm font-bold text-white underline decoration-white/30 underline-offset-4"
+            >
+              查看历史错题 <BookOpenCheck className="size-4" />
+            </Link>
           </aside>
         </section>
 

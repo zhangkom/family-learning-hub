@@ -31,6 +31,7 @@ export default function DabaoPracticePage() {
           href: 'https://szeb.sz.gov.cn/szzkw/zkgg/gkxx/content/post_11665099.html',
         },
       ]}
+      wrongBookHref="/dabao/wrong-book"
     />
   );
 }

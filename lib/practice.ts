@@ -859,7 +859,7 @@ export const seniorGradeTwoStarters: PracticeSheet[] = [
     sequence: 1,
     title: '遗传规律：写清假设再计算',
     subtitle: '高二周练样板｜基因型、概率与实验验证',
-    chapter: '选择性必修衔接 · 遗传与进化',
+    chapter: '必修二衔接 · 遗传与进化',
     focus: ['分离定律', '自由组合', '伴性遗传', '实验设计'],
     duration: 40,
     edition: '按普通高中课程标准建模 · 教材版本可配置',

@@ -31,6 +31,7 @@ export default function XiaobaoPracticePage() {
           href: 'https://www.moe.gov.cn/srcsite/A26/s8001/202204/W020220420582346895190.pdf',
         },
       ]}
+      wrongBookHref="/xiaobao/wrong-book"
     />
   );
 }
