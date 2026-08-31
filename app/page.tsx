@@ -58,11 +58,11 @@ export default function Home() {
               <Target className="size-4" /> 家庭总目标
             </p>
             <h1 className="max-w-3xl font-heading text-3xl font-bold leading-tight tracking-[-0.035em] sm:text-4xl">
-              把“考上中山大学”，拆成今天能完成的一件小事。
+              大宝逐梦中山大学，小宝冲刺深圳四大——双宝并肩，未来一路向上。
             </h1>
             <p className="mt-4 max-w-2xl text-[15px] leading-7 text-muted-foreground">
-              这个网页不追求题目越多越好，而是把目标、学科诊断、错题回炉、每周计划和家庭复盘连成一个闭环。
-              中大是当前坐标，孩子的兴趣、选科与阶段成长是路线本身。
+              这里记录两个孩子各自的成长路线：大宝聚焦高二物化生，向中山大学稳步迈进；小宝夯实初中基础，向深圳四大高中发起冲刺。
+              目标不同，节奏不同，但每一次认真学习都在为更辽阔的未来积蓄力量。
             </p>
           </div>
 
