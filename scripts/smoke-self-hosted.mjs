@@ -26,6 +26,7 @@ for (const path of paths) {
     const result = await fetch(`${origin}${asset}`);
     assert.equal(result.status, 200, asset);
     assert.ok(!result.headers.get('content-type')?.includes('text/html'), asset);
+    assert.ok((await result.arrayBuffer()).byteLength > 0, `Complete asset body: ${asset}`);
   }
   console.log(`OK ${path}`);
 }
@@ -36,6 +37,7 @@ for (const path of ['/api/scans', '/api/wrong-questions?child=xiaobao', '/api/sc
       headers: {'oai-authenticated-user-id':'spoofed', 'oai-authenticated-user-email':'spoofed@example.invalid'},
     });
     assert.equal(response.status, 401, `Unauthenticated ${method} ${path}`);
+    await response.text();
   }
 }
 console.log(`Verified ${paths.length} pages, ${exerciseCount} worksheets, assets and API identity rejection.`);
