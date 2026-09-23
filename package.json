@@ -8,6 +8,8 @@
   "scripts": {
     "dev": "vinext dev",
     "build": "vinext build",
+    "build:self-hosted": "node scripts/build-self-hosted.mjs",
+    "start:self-hosted": "node dist/standalone/server.js",
     "db:generate": "drizzle-kit generate",
     "test": "vitest run --config vitest.config.ts",
     "start": "wrangler dev --config dist/server/wrangler.json",

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { BookOpen, CalendarDays, Camera, Check, ChevronRight, FileSearch, ImagePlus, LoaderCircle, MessageCircleQuestion, Network, ScanLine } from 'lucide-react';
 import { WorkbenchHeader } from '@/app/components/workbench-header';
+import { appPath, cloudSyncEnabled } from '@/lib/deployment';
 
 const subjects = ['数学', '物理', '化学', '生物'] as const;
 type Subject = (typeof subjects)[number];
@@ -27,8 +28,9 @@ export function WeeklyReview() {
   const points = useMemo(() => difficultyMap[subject], [subject]);
 
   useEffect(() => {
+    if (!cloudSyncEnabled) return;
     const timer = window.setTimeout(() => {
-      void fetch('/api/scans').then(async (response) => {
+      void fetch(appPath('/api/scans')).then(async (response) => {
         if (!response.ok) throw new Error('history unavailable');
         const data = await response.json() as { items?: ScanItem[] };
         setScans(data.items ?? []);
@@ -38,11 +40,11 @@ export function WeeklyReview() {
   }, []);
 
   const uploadScan = async () => {
-    if (!file || !source.trim()) return;
+    if (!cloudSyncEnabled || !file || !source.trim()) return;
     setUploadState('uploading'); setUploadMessage('');
     const form = new FormData(); form.set('file', file); form.set('subject', subject); form.set('source', source.trim());
     try {
-      const response = await fetch('/api/scans', { method: 'POST', body: form });
+      const response = await fetch(appPath('/api/scans'), { method: 'POST', body: form });
       const data = await response.json() as { item?: ScanItem; error?: string };
       if (!response.ok || !data.item) throw new Error(data.error || '上传失败，请稍后再试');
       setScans((current) => [data.item!, ...current]);
@@ -69,11 +71,12 @@ export function WeeklyReview() {
             <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-[.13em] text-muted-foreground">新建复盘</p><h2 className="mt-1 font-heading text-2xl font-bold">上传一道错题</h2></div><span className="rounded-full bg-[#fff0e9] px-3 py-1.5 text-xs font-bold text-[#a64224]">扫描件不进入 Git</span></div>
             <div className="mt-5 flex gap-2 overflow-x-auto pb-1">{subjects.map((item) => <button key={item} onClick={() => setSubject(item)} className={`min-h-10 shrink-0 rounded-xl px-4 text-sm font-bold ${subject === item ? 'bg-ink text-white' : 'bg-muted text-muted-foreground'}`}>{item}</button>)}</div>
             <label aria-label="上传错题扫描件" className="mt-5 grid min-h-44 cursor-pointer place-items-center rounded-2xl border-2 border-dashed border-border bg-muted/35 p-5 text-center transition hover:border-primary/40 hover:bg-muted/60">
-              <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" className="sr-only" onChange={(event) => { const selected = event.target.files?.[0] ?? null; setFile(selected); setFileName(selected?.name ?? ''); setUploadState('idle'); }} />
+              <input type="file" disabled={!cloudSyncEnabled} accept="image/jpeg,image/png,image/webp,application/pdf" className="sr-only" onChange={(event) => { const selected = event.target.files?.[0] ?? null; setFile(selected); setFileName(selected?.name ?? ''); setUploadState('idle'); }} />
               <span><span className="mx-auto grid size-12 place-items-center rounded-2xl bg-card shadow-sm"><ImagePlus className="size-6 text-primary" /></span><span className="mt-3 block font-bold">{fileName || '拍照、扫描或选择 PDF'}</span><span className="mt-1 block text-xs leading-5 text-muted-foreground">支持 JPG、PNG、WebP、PDF；单个文件最多 8 MB</span></span>
             </label>
             <label className="mt-4 block text-sm font-bold">题目出处 <span className="text-destructive">*</span><input value={source} onChange={(event) => { setSource(event.target.value); setUploadState('idle'); }} placeholder="例如：学校周测 · 数学卷第 18 题" className="mt-2 min-h-12 w-full rounded-xl border border-input bg-background px-4 font-normal outline-none focus:border-primary focus:ring-2 focus:ring-primary/15" /></label>
-            <button disabled={!file || !source.trim() || uploadState === 'uploading'} onClick={() => void uploadScan()} className="mt-4 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-primary px-5 font-bold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-40">{uploadState === 'uploading' && <LoaderCircle className="size-4 animate-spin" />} {uploadState === 'uploading' ? '正在安全上传…' : '加入本周复盘'}</button>
+            {!cloudSyncEnabled && <p className="mt-4 rounded-xl bg-muted p-4 text-sm leading-6 text-muted-foreground">当前公开版支持学习和打印，私人扫描上传尚未开放。请先保留原题与出处，后续接入家庭账号后可上传复盘。</p>}
+            <button disabled={!cloudSyncEnabled || !file || !source.trim() || uploadState === 'uploading'} onClick={() => void uploadScan()} className="mt-4 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-primary px-5 font-bold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-40">{uploadState === 'uploading' && <LoaderCircle className="size-4 animate-spin" />} {uploadState === 'uploading' ? '正在安全上传…' : '加入本周复盘'}</button>
             {uploadState === 'done' && <div className="mt-4 rounded-2xl bg-[#e7f5f2] p-4 text-sm text-[#176a62]"><p className="flex items-center gap-2 font-bold"><Check className="size-4" /> 已同步到私人学习空间</p><p className="mt-1 leading-6">换一台电脑登录同一账号，也能在历史错题中打开。</p></div>}
             {uploadState === 'error' && <div className="mt-4 rounded-2xl bg-[#fff0e9] p-4 text-sm text-[#8e3a22]"><p className="font-bold">暂时没有上传成功</p><p className="mt-1 leading-6">{uploadMessage}</p></div>}
           </section>

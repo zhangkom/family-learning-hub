@@ -1,0 +1,29 @@
+[Unit]
+Description=Family Learning Hub
+After=network.target
+
+[Service]
+Type=simple
+DynamicUser=yes
+WorkingDirectory=/opt/family-learning-hub/current
+ExecStart=/usr/local/bin/node server.js
+Environment=NODE_ENV=production
+Environment=HOST=127.0.0.1
+Environment=PORT=3190
+Environment=NEXT_PUBLIC_SELF_HOSTED=true
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=20
+MemoryMax=384M
+CPUQuota=100%
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

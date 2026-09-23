@@ -2,6 +2,7 @@ import { sites } from '@openai/sites-vite-plugin';
 import tailwindcss from '@tailwindcss/postcss';
 import vinext from 'vinext';
 import { defineConfig } from 'vite';
+import { fileURLToPath } from 'node:url';
 import hostingConfig from './.openai/hosting.json' with { type: 'json' };
 
 const SITE_CREATOR_PLACEHOLDER_DATABASE_ID =
@@ -35,6 +36,18 @@ const localBindingConfig = {
 };
 
 export default defineConfig(async () => {
+  if (process.env.FAMILY_SELF_HOSTED === 'true') {
+    return {
+      css: { postcss: { plugins: [tailwindcss()] } },
+      resolve: {
+        alias: {
+          'cloudflare:workers': fileURLToPath(new URL('./server/unavailable-cloud-bindings.ts', import.meta.url)),
+        },
+      },
+      plugins: [vinext()],
+    };
+  }
+
   // Keep Wrangler and Miniflare state project-local. These are non-secret tool
   // settings; application environment belongs in ignored `.env*` files.
   process.env.WRANGLER_WRITE_LOGS ??= 'false';

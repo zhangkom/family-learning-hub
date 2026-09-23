@@ -12,6 +12,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { WorkbenchHeader } from '@/app/components/workbench-header';
+import { appPath, cloudSyncEnabled } from '@/lib/deployment';
 import {
   createWrongQuestion,
   evaluateAnswer,
@@ -106,7 +107,8 @@ export function DailyStudy() {
     const localItems = parseStoredWrongQuestions(saved);
     const load = async () => {
       try {
-        const response = await fetch('/api/wrong-questions?child=xiaobao');
+        if (!cloudSyncEnabled) throw new Error('Device-local deployment');
+        const response = await fetch(appPath('/api/wrong-questions?child=xiaobao'));
         if (!response.ok) throw new Error('cloud sync unavailable');
         const data = (await response.json()) as { items?: WrongQuestion[] };
         const cloudItems = data.items ?? [];
@@ -123,7 +125,7 @@ export function DailyStudy() {
         }
         const uploaded = await Promise.all(
           pendingItems.map(async (item) => {
-            const upload = await fetch('/api/wrong-questions', {
+            const upload = await fetch(appPath('/api/wrong-questions'), {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ ...item, child: 'xiaobao' }),
@@ -174,7 +176,8 @@ export function DailyStudy() {
       ];
       setWrongQuestions(next);
       window.localStorage.setItem(storageKey, JSON.stringify(next));
-      void fetch('/api/wrong-questions', {
+      if (!cloudSyncEnabled) return;
+      void fetch(appPath('/api/wrong-questions'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...entry, child: 'xiaobao' }),
@@ -339,7 +342,7 @@ export function DailyStudy() {
                   ? '正在读取…'
                   : syncState === 'synced'
                     ? '已同步到私人学习空间'
-                    : '云端暂不可用，已保存在当前设备'}
+                    : cloudSyncEnabled ? '云端暂不可用，已保存在当前设备' : '已保存在当前浏览器，换设备不会自动同步'}
               </p>
               {wrongQuestions.length === 0 ? (
                 <p className="mt-4 text-sm leading-6 text-muted-foreground">

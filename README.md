@@ -31,6 +31,8 @@ npm run build
 
 ## 两台电脑协作
 
+腾讯云访问地址： https://123.207.232.151/family-learning/ 。部署、更新与回退见 [腾讯云部署](docs/腾讯云部署.md)。
+
 源码仓库为 `https://github.com/zhangkom/family-learning-hub`。新电脑首次执行：
 
 ```powershell
@@ -39,7 +41,7 @@ cd family-learning-hub
 npm install
 ```
 
-之后开始工作前执行 `git pull --ff-only`，结束工作后提交并 `git push`。孩子的扫描件、答案和成绩不进入 Git；它们通过网站私人账号、数据库和文件存储同步。仓库当前在 GitHub 上是 Public，建议在开始录入真实家庭配置前改为 Private。
+之后开始工作前执行 `git pull --ff-only`，结束工作后提交并 `git push`。孩子的扫描件、答案和成绩不进入 Git。目前公开版的错题和进度仅保存在当前浏览器，扫描上传与跨设备同步尚未开放。仓库当前在 GitHub 上是 Public，建议在开始录入真实家庭配置前改为 Private。
 
 ## 重要说明
 
