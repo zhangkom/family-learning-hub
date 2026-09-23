@@ -1,6 +1,6 @@
 export type AnswerKind = 'math' | 'english';
 
-export type LearningSubject = '数学' | '英语' | '物理' | '化学' | '生物';
+export type LearningSubject = '数学' | '英语' | '地理' | '物理' | '化学' | '生物';
 
 export type WrongQuestionInput = {
   questionId: string;
@@ -23,6 +23,7 @@ export type WrongQuestion = Omit<WrongQuestionInput, 'now'> & {
 const learningSubjects = new Set<LearningSubject>([
   '数学',
   '英语',
+  '地理',
   '物理',
   '化学',
   '生物',

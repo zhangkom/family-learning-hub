@@ -4,7 +4,7 @@ import { getDb } from '@/db';
 import { wrongQuestions } from '@/db/schema';
 import { buildReviewDates } from '@/lib/learning';
 
-const juniorSubjects = new Set(['数学', '英语']);
+const juniorSubjects = new Set(['数学', '英语', '地理']);
 const requiredFields = ['questionId', 'knowledgePoint', 'prompt', 'answer', 'learnerAnswer', 'source'] as const;
 
 export async function GET(request: Request) {
