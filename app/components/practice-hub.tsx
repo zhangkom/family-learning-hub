@@ -43,6 +43,16 @@ export function PracticeHub({
   wrongBookHref: string;
 }) {
   const [completed, setCompleted] = useState<string[]>([]);
+  const [collection, setCollection] = useState<'methods' | 'topics'>('methods');
+  const [filterSubject, setFilterSubject] = useState('全部');
+  const [week, setWeek] = useState(1);
+  const visibleSheets = sheets.filter(
+    (sheet) =>
+      (collection === 'methods'
+        ? Boolean(sheet.methodLessonId) && sheet.week === week
+        : !sheet.methodLessonId) &&
+      (filterSubject === '全部' || sheet.subject === filterSubject),
+  );
   const storageKey = `twin-stars:${child}:practice-complete`;
 
   useEffect(() => {
@@ -101,7 +111,7 @@ export function PracticeHub({
             <p className="mt-3 text-lg font-bold leading-7">{cadence}</p>
             <div className="mt-6">
               <div className="flex items-center justify-between text-xs text-white/65">
-                <span>当前完成</span>
+                <span>纸笔批改进度（不等同掌握）</span>
                 <span>{progress}%</span>
               </div>
               <div className="mt-2 h-2 overflow-hidden rounded-full bg-white/10">
@@ -111,6 +121,12 @@ export function PracticeHub({
                 />
               </div>
             </div>
+            <Link
+              href={`/${child}/study`}
+              className="mt-5 flex min-h-11 items-center text-sm font-bold underline underline-offset-4"
+            >
+              先学方法与配图
+            </Link>
             <Link
               href={wrongBookHref}
               className="mt-5 inline-flex items-center gap-2 text-sm font-bold text-white underline decoration-white/30 underline-offset-4"
@@ -127,16 +143,68 @@ export function PracticeHub({
                 训练路径
               </p>
               <h2 className="mt-1 font-heading text-2xl font-bold">
-                按顺序完成，不跳着刷
+                选一个薄弱点，练一页就好
               </h2>
             </div>
             <p className="max-w-xl text-sm leading-6 text-muted-foreground">
-              先独立限时完成，再由家长对照讲解批改；不会的题只勾入错题本，不在原卷抄答案。
+              已经会的可以跳过。先独立写依据，再由家长批改；只有做错的题进入错题本。
             </p>
           </div>
 
+          <div className="mt-5 flex flex-wrap gap-2">
+            {(['methods', 'topics'] as const).map((group) => (
+              <button
+                key={group}
+                aria-pressed={collection === group}
+                onClick={() => setCollection(group)}
+                className={`min-h-11 rounded-lg px-4 text-sm font-bold ${collection === group ? 'bg-ink text-white' : 'bg-card border'}`}
+              >
+                {group === 'methods' ? '四周方法配套' : '原有专题练习'}
+              </button>
+            ))}
+          </div>
+          <div className="mt-3 flex flex-wrap gap-3">
+            <label className="text-sm">
+              科目{' '}
+              <select
+                aria-label="筛选科目"
+                value={filterSubject}
+                onChange={(e) => setFilterSubject(e.target.value)}
+                className="min-h-11 rounded-lg border bg-card px-3"
+              >
+                {[
+                  '全部',
+                  ...subjects.filter((s) => s.active).map((s) => s.name),
+                ].map((s) => (
+                  <option key={s}>{s}</option>
+                ))}
+              </select>
+            </label>
+            {collection === 'methods' && (
+              <label className="text-sm">
+                周次{' '}
+                <select
+                  aria-label="筛选周次"
+                  value={week}
+                  onChange={(e) => setWeek(Number(e.target.value))}
+                  className="min-h-11 rounded-lg border bg-card px-3"
+                >
+                  {[1, 2, 3, 4].map((n) => (
+                    <option key={n} value={n}>
+                      第{n}周
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+          </div>
+          {visibleSheets.length === 0 && (
+            <p className="mt-5 rounded-xl border border-dashed p-5 text-sm text-muted-foreground">
+              这个筛选下暂无练习，可以切换其他科目、周次或原有专题练习。
+            </p>
+          )}
           <div className="mt-5 grid gap-4 md:grid-cols-2">
-            {sheets.map((sheet) => (
+            {visibleSheets.map((sheet) => (
               <PracticeSheetCard
                 key={sheet.id}
                 child={child}

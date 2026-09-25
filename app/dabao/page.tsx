@@ -15,9 +15,10 @@ const plan: ChildPlan = {
   targetNote:
     '高二的核心不是提前进入高三题海，而是确定选科与专业方向、补齐核心知识网络，并让错题能够真正回炉。毕业年份请按学校实际学籍确认。',
   workbench: {
-    label: '进入高二四科周练',
-    href: '/dabao/practice',
-    description: '数学、物理、化学、生物典型母题与原创变式，一周选科完成。',
+    label: '进入四科方法小课',
+    href: '/dabao/study',
+    description:
+      '四科8张方法卡与配套打印页；每周选两个真实卡点，练条件、方法与迁移。',
     secondary: { label: '进入本周错题复盘', href: '/dabao/review' },
   },
   accent: 'coral',

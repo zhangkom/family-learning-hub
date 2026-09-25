@@ -15,6 +15,12 @@ import {
   type LearningSubject,
   type WrongQuestion,
 } from '@/lib/learning';
+import { lessonForQuestion } from '@/lib/study-catalog';
+import {
+  getStudyStatus,
+  parseStudyAttempts,
+  type StudyAttempt,
+} from '@/lib/study';
 
 export function WrongQuestionBook({
   child,
@@ -28,17 +34,28 @@ export function WrongQuestionBook({
   practiceHref: string;
 }) {
   const [items, setItems] = useState<WrongQuestion[]>([]);
+  const [attempts, setAttempts] = useState<StudyAttempt[]>([]);
+  const [loadError, setLoadError] = useState('');
   const [subject, setSubject] = useState<LearningSubject | '全部'>('全部');
   const storageKey = `twin-stars:${child}:wrong-questions`;
 
   useEffect(() => {
-    const saved = window.localStorage.getItem(storageKey);
     const timer = window.setTimeout(() => {
-      if (!saved) return;
-      setItems(parseStoredWrongQuestions(saved));
+      try {
+        const saved = window.localStorage.getItem(storageKey);
+        setAttempts(
+          parseStudyAttempts(
+            window.localStorage.getItem(`twin-stars:${child}:study-attempts`),
+          ),
+        );
+        if (!saved) return;
+        setItems(parseStoredWrongQuestions(saved));
+      } catch {
+        setLoadError('无法读取浏览器记录，请检查存储权限。记录未被删除。');
+      }
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [storageKey]);
+  }, [storageKey, child]);
 
   const subjects = useMemo(
     () => Array.from(new Set(items.map((item) => item.subject))),
@@ -57,7 +74,7 @@ export function WrongQuestionBook({
       <div className="mx-auto max-w-5xl px-5 py-8 lg:px-8 lg:py-10">
         <section className="practice-intro rounded-[1.75rem] border border-border p-6 sm:p-8">
           <p className="text-sm font-bold text-primary">
-            错题档案 · 第 2 / 7 / 30 天回炉
+            错题档案 · 保留原题与后续作答
           </p>
           <div className="mt-2 flex flex-wrap items-end justify-between gap-5">
             <div>
@@ -95,6 +112,11 @@ export function WrongQuestionBook({
           </p>
         </section>
 
+        {loadError && (
+          <p role="alert" className="mt-4 text-sm text-destructive">
+            {loadError}
+          </p>
+        )}
         {visibleItems.length === 0 ? (
           <section className="mt-5 grid min-h-64 place-items-center rounded-3xl border border-dashed border-border bg-card p-8 text-center">
             <div>
@@ -103,66 +125,111 @@ export function WrongQuestionBook({
                 这里还没有错题
               </h2>
               <p className="mt-2 text-sm text-muted-foreground">
-                完成练习并在家长批改台勾选错题后，会自动出现在这里。
+                在线练习答错，或在家长批改台勾选错题并保存后，会出现在这里。记录仅保存在当前浏览器。
               </p>
             </div>
           </section>
         ) : (
           <div className="mt-5 space-y-4">
-            {visibleItems.map((item, index) => (
-              <article
-                key={item.id}
-                className="rounded-3xl border border-border bg-card p-5 sm:p-6"
-              >
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <p className="text-xs font-bold text-primary">
-                      {item.subject} · {item.knowledgePoint}
-                    </p>
-                    <h2 className="mt-2 font-heading text-lg font-bold">
-                      错题 {String(index + 1).padStart(2, '0')}
-                    </h2>
+            {visibleItems.map((item, index) => {
+              const lesson = lessonForQuestion(item.questionId);
+              const progress = lesson
+                ? getStudyStatus(attempts, lesson.id)
+                : undefined;
+              const history = attempts.filter(
+                (a) => a.questionId === item.questionId,
+              );
+              return (
+                <article
+                  key={item.id}
+                  className="rounded-3xl border border-border bg-card p-5 sm:p-6"
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-bold text-primary">
+                        {item.subject} · {item.knowledgePoint}
+                      </p>
+                      <h2 className="mt-2 font-heading text-lg font-bold">
+                        错题 {String(index + 1).padStart(2, '0')}
+                      </h2>
+                    </div>
+                    <span className="rounded-lg bg-[#fff0e9] px-3 py-1.5 text-xs font-bold text-[#8e3a22]">
+                      {progress?.attempts ? progress.label : item.status}
+                    </span>
                   </div>
-                  <span className="rounded-lg bg-[#fff0e9] px-3 py-1.5 text-xs font-bold text-[#8e3a22]">
-                    {item.status}
-                  </span>
-                </div>
-                <p className="mt-4 rounded-2xl bg-muted/55 p-4 text-sm font-semibold leading-7">
-                  {item.prompt}
-                </p>
-                <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                  <div className="rounded-2xl border border-border p-4">
-                    <p className="text-xs font-bold text-muted-foreground">
-                      当时作答
-                    </p>
-                    <p className="mt-2 text-sm leading-6">
-                      {item.learnerAnswer}
-                    </p>
+                  <p className="mt-4 rounded-2xl bg-muted/55 p-4 text-sm font-semibold leading-7">
+                    {item.prompt}
+                  </p>
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                    <div className="rounded-2xl border border-border p-4">
+                      <p className="text-xs font-bold text-muted-foreground">
+                        当时作答
+                      </p>
+                      <p className="mt-2 text-sm leading-6">
+                        {item.learnerAnswer}
+                      </p>
+                    </div>
+                    <details className="rounded-2xl border border-primary/20 bg-secondary/25 p-4">
+                      <summary className="cursor-pointer text-xs font-bold text-primary">
+                        展开正确答案
+                      </summary>
+                      <p className="mt-2 text-sm font-semibold leading-6">
+                        {item.answer}
+                      </p>
+                    </details>
                   </div>
-                  <details className="rounded-2xl border border-primary/20 bg-secondary/25 p-4">
-                    <summary className="cursor-pointer text-xs font-bold text-primary">
-                      展开正确答案
-                    </summary>
-                    <p className="mt-2 text-sm font-semibold leading-6">
-                      {item.answer}
-                    </p>
-                  </details>
-                </div>
-                <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 border-t border-border pt-4 text-xs text-muted-foreground">
-                  <span className="inline-flex items-center gap-1.5">
-                    <BookOpenCheck className="size-3.5" /> 出处：{item.source}
-                  </span>
-                  <span className="inline-flex items-center gap-1.5">
-                    <CalendarClock className="size-3.5" /> 复习：
-                    {item.reviewDates.join(' / ')}
-                  </span>
-                  <span className="inline-flex items-center gap-1.5">
-                    <RotateCcw className="size-3.5" /> 收录：
-                    {item.createdOn.slice(0, 10)}
-                  </span>
-                </div>
-              </article>
-            ))}
+                  <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 border-t border-border pt-4 text-xs text-muted-foreground">
+                    <span className="inline-flex items-center gap-1.5">
+                      <BookOpenCheck className="size-3.5" /> 出处：{item.source}
+                    </span>
+                    <span className="inline-flex items-center gap-1.5">
+                      <CalendarClock className="size-3.5" />{' '}
+                      {progress?.dueOn ? '下次建议：' : '初始复习建议：'}
+                      {progress?.dueOn ?? item.reviewDates.join(' / ')}
+                    </span>
+                    <span className="inline-flex items-center gap-1.5">
+                      <RotateCcw className="size-3.5" /> 收录：
+                      {item.createdOn.slice(0, 10)}
+                    </span>
+                  </div>
+                  {lesson && (
+                    <div className="mt-4 border-t pt-4">
+                      <Link
+                        className="study-link"
+                        href={`/${child}/study?lesson=${lesson.id}&review=1`}
+                      >
+                        回到方法课与复习题
+                      </Link>
+                      <details className="mt-3 text-sm">
+                        <summary className="cursor-pointer font-bold">
+                          查看本题作答历史（{history.length}次）
+                        </summary>
+                        <ol className="mt-3 space-y-2">
+                          {history.map((a, i) => (
+                            <li
+                              key={`${a.at}-${i}`}
+                              className="rounded-lg bg-muted p-3 text-xs leading-6"
+                            >
+                              {new Date(a.at).toLocaleString('zh-CN', {
+                                timeZone: 'Asia/Shanghai',
+                              })}{' '}
+                              · {a.correct ? '答对' : '答错'} ·{' '}
+                              {a.origin === 'paper'
+                                ? '纸笔复盘（提示情况未核实）'
+                                : a.assisted
+                                  ? '使用过提示/解析'
+                                  : '未使用提示'}
+                              <br />
+                              当时作答：{a.answer}
+                            </li>
+                          ))}
+                        </ol>
+                      </details>
+                    </div>
+                  )}
+                </article>
+              );
+            })}
           </div>
         )}
       </div>

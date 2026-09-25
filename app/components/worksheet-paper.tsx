@@ -1,12 +1,21 @@
 import type { PracticeSheet } from '@/lib/practice';
 
-export function WorksheetPaper({ sheet }: { sheet: PracticeSheet }) {
+export function WorksheetPaper({
+  sheet,
+  answers = false,
+}: {
+  sheet: PracticeSheet;
+  answers?: boolean;
+}) {
   return (
     <article className="worksheet-paper mx-auto bg-white">
       <header className="worksheet-heading">
         <div className="flex items-start justify-between gap-6">
           <div>
-            <p className="worksheet-brand">双宝名校计划 · 原创强化训练</p>
+            <p className="worksheet-brand">
+              双宝名校计划 · 原创强化训练 ·{' '}
+              {answers ? '家长解析版' : '学生作答版'}
+            </p>
             <h1>{sheet.title}</h1>
             <p>{sheet.subtitle}</p>
           </div>
@@ -51,14 +60,22 @@ export function WorksheetPaper({ sheet }: { sheet: PracticeSheet }) {
               </div>
               <span className="worksheet-mark">批改　□ 对　□ 错</span>
             </div>
-            <div
-              className="worksheet-answer-space"
-              aria-label={`第${index + 1}题答题区`}
-            >
-              {Array.from({ length: question.answerLines }, (_, line) => (
-                <span key={line} />
-              ))}
-            </div>
+            {answers ? (
+              <div className="worksheet-solution">
+                <strong>答案：{question.answer}</strong>
+                <p>{question.explanation}</p>
+                <small>出处：{question.source}</small>
+              </div>
+            ) : (
+              <div
+                className="worksheet-answer-space"
+                aria-label={`第${index + 1}题答题区`}
+              >
+                {Array.from({ length: question.answerLines }, (_, line) => (
+                  <span key={line} />
+                ))}
+              </div>
+            )}
           </li>
         ))}
       </ol>

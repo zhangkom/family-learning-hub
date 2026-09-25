@@ -15,10 +15,11 @@ const plan: ChildPlan = {
   targetNote:
     '初一最值钱的是习惯和基本能力：听课有产出、作业能订正、错题会回炉、运动能坚持。深圳现行新中考方案把实验、体育过程与英语听说都纳入了长期准备。',
   workbench: {
-    label: '进入系统强化训练',
-    href: '/xiaobao/practice',
-    description: '一页一练、打印作答、家长批改，再把不会的题送入错题复习。',
-    secondary: { label: '开始今天的难点', href: '/xiaobao/study' },
+    label: '开始四周方法小课',
+    href: '/xiaobao/study',
+    description:
+      '先补绝对值和经纬度：简单比喻、动手配图、原创变式，练习与错题连在一起。',
+    secondary: { label: '打印一页强化训练', href: '/xiaobao/practice' },
   },
   accent: 'teal',
   tasks: [
@@ -63,13 +64,16 @@ const plan: ChildPlan = {
     },
     {
       name: '数学',
+      href: '/xiaobao/study?lesson=xb-abs-box',
       role: '中考 100 分',
-      focus: '训练计算准确、概念辨析和步骤表达；错题按知识、方法、习惯分类。',
-      routine: '每日 15 分钟计算/小题 + 周复测',
+      focus:
+        '当前重点：把绝对值当相同整体合并；去绝对值先判断里面整个式子的正负。',
+      routine: '四周12节方法课，先练4节绝对值专项',
       status: '主攻',
     },
     {
       name: '英语',
+      href: '/xiaobao/study?lesson=xb-english-be',
       role: '中考 100 分（听说 25）',
       focus: '词汇放在句子中学习，阅读与人机听说同步积累，避免初三突击口语。',
       routine: '每日 15 分钟听读 + 每周 2 次复述',
@@ -97,11 +101,13 @@ const plan: ChildPlan = {
       status: '主攻',
     },
     {
-      name: '地理与生物',
-      role: '八下考试，录取参考',
-      focus: '合卷 100 分，成绩不计总分但用于同分比较；生物含实验操作。',
-      routine: '每周各一次图表/概念复习',
-      status: '习惯',
+      name: '地理',
+      href: '/xiaobao/study?lesson=xb-geo-lines',
+      role: '当前专题 · 经纬度',
+      focus:
+        '用橘子瓣和腰带认经纬线，用给地球寄快递读坐标，再用经纬网定位。生物后续按校内进度补充。',
+      routine: '4节经纬度小课，配图、变式与打印页',
+      status: '主攻',
     },
     {
       name: '信息科技等',

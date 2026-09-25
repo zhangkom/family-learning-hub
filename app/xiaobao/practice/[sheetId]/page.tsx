@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation';
 import { PrintableWorksheet } from '@/app/components/printable-worksheet';
-import { juniorMathChapterOne } from '@/lib/practice';
+import { juniorPracticeSheets } from '@/lib/practice';
 
 export default async function XiaobaoWorksheetPage({
   params,
@@ -8,21 +8,21 @@ export default async function XiaobaoWorksheetPage({
   params: Promise<{ sheetId: string }>;
 }) {
   const { sheetId } = await params;
-  const index = juniorMathChapterOne.findIndex((sheet) => sheet.id === sheetId);
+  const index = juniorPracticeSheets.findIndex((sheet) => sheet.id === sheetId);
   if (index < 0) notFound();
-  const sheet = juniorMathChapterOne[index];
+  const sheet = juniorPracticeSheets[index];
   return (
     <PrintableWorksheet
       sheet={sheet}
       hubHref="/xiaobao/practice"
       previousHref={
         index > 0
-          ? `/xiaobao/practice/${juniorMathChapterOne[index - 1].id}`
+          ? `/xiaobao/practice/${juniorPracticeSheets[index - 1].id}`
           : undefined
       }
       nextHref={
-        index < juniorMathChapterOne.length - 1
-          ? `/xiaobao/practice/${juniorMathChapterOne[index + 1].id}`
+        index < juniorPracticeSheets.length - 1
+          ? `/xiaobao/practice/${juniorPracticeSheets[index + 1].id}`
           : undefined
       }
     />

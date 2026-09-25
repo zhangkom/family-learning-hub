@@ -39,6 +39,7 @@ export type ChildPlan = {
   accent: 'coral' | 'teal';
   tasks: { id: string; title: string; detail: string; minutes: number }[];
   subjects: {
+    href?: string;
     name: string;
     role: string;
     focus: string;
@@ -286,6 +287,11 @@ export function ChildDashboard({ plan }: { plan: ChildPlan }) {
                     <span className="font-semibold">固定动作：</span>
                     {subject.routine}
                   </div>
+                  {subject.href && (
+                    <Link className="study-link mt-4" href={subject.href}>
+                      进入这科的小课
+                    </Link>
+                  )}
                 </article>
               ))}
             </div>
