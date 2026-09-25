@@ -5,6 +5,7 @@ import {
   juniorMathChapterOne,
   markPracticeComplete,
   mergePracticeWrongQuestions,
+  recordWorksheetMistakes,
   seniorGradeTwoStarters,
   validatePracticeCatalog,
 } from './practice';
@@ -51,6 +52,54 @@ describe('printable practice catalog', () => {
 });
 
 describe('practice to wrong-question loop', () => {
+  it('records only actual paper mistakes as conservative learning evidence', () => {
+    const sheet = findPracticeSheet('method-xb-abs-box')!;
+    const now = new Date('2026-09-25T08:00:00Z');
+    const attempts = recordWorksheetMistakes(
+      [],
+      sheet,
+      [sheet.questions[0].id],
+      now,
+    );
+    expect(attempts).toHaveLength(1);
+    expect(attempts[0]).toMatchObject({
+      lessonId: 'xb-abs-box',
+      questionId: sheet.questions[0].id,
+      correct: false,
+      assisted: true,
+      origin: 'paper',
+      at: now.toISOString(),
+    });
+    expect(recordWorksheetMistakes(attempts, sheet, [], now)).toEqual(attempts);
+    expect(
+      recordWorksheetMistakes(
+        [],
+        juniorMathChapterOne[0],
+        [juniorMathChapterOne[0].questions[0].id],
+        now,
+      ),
+    ).toEqual([]);
+  });
+  it('preserves the original failure when grading a linked method worksheet', () => {
+    const sheet = findPracticeSheet('method-xb-abs-box')!;
+    const first = buildWrongQuestionFromPractice(
+      sheet,
+      sheet.questions[0],
+      '第一次选了5a',
+      new Date('2026-09-20T08:00:00Z'),
+    );
+    const merged = mergePracticeWrongQuestions(
+      [first],
+      sheet,
+      [sheet.questions[0].id, sheet.questions[1].id],
+      new Date('2026-09-25T08:00:00Z'),
+    );
+    expect(merged).toHaveLength(2);
+    expect(merged.find((item) => item.questionId === first.questionId)).toEqual(
+      first,
+    );
+  });
+
   it('keeps the worksheet source and schedules spaced reviews', () => {
     const sheet = juniorMathChapterOne[0];
     const question = sheet.questions[0];

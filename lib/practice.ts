@@ -3,6 +3,8 @@ import {
   type LearningSubject,
   type WrongQuestion,
 } from './learning';
+import { studyLessons } from './study-catalog';
+import { studySource, type StudyAttempt } from './study';
 
 export type PracticeDifficulty = '基础' | '进阶' | '挑战';
 export type PracticeQuestionKind = '填空' | '选择' | '解答' | '作图';
@@ -21,6 +23,8 @@ export type PracticeQuestion = {
 };
 
 export type PracticeSheet = {
+  methodLessonId?: string;
+  week?: number;
   id: string;
   child: 'xiaobao' | 'dabao';
   stage: '初一' | '高二';
@@ -708,7 +712,7 @@ export const seniorGradeTwoStarters: PracticeSheet[] = [
     sequence: 1,
     title: '电场：方向、功与能',
     subtitle: '高二周练样板｜先画受力与路径，再列关系',
-    chapter: '选择性必修 · 静电场',
+    chapter: '必修第三册 · 静电场（人教版）',
     focus: ['电场强度', '电势差', '电场力做功', '带电粒子'],
     duration: 40,
     edition: '按普通高中课程标准建模 · 教材版本可配置',
@@ -925,7 +929,51 @@ export const seniorGradeTwoStarters: PracticeSheet[] = [
   }),
 ];
 
+export const methodPracticeSheets: PracticeSheet[] = studyLessons.map(
+  (lesson, index) => ({
+    id: `method-${lesson.id}`,
+    methodLessonId: lesson.id,
+    week: lesson.week,
+    child: lesson.child,
+    stage: lesson.child === 'xiaobao' ? '初一' : '高二',
+    subject: lesson.subject,
+    sequence: index + 1,
+    title: lesson.title,
+    subtitle: `第${lesson.week}周 · 方法配套练习 · 先写依据再选答案`,
+    chapter: lesson.chapter,
+    focus: [lesson.objective],
+    duration: lesson.minutes,
+    edition: '按知识点编排；出版社、教材版次与章节顺序以孩子学校课本为准',
+    curriculumBasis: `${lesson.subject}基础方法与变式练习`,
+    curriculumUrl: lesson.reference.url,
+    questions: lesson.questions.map((question, i) => ({
+      id: question.id,
+      kind: '选择',
+      difficulty: i < 2 ? '基础' : '进阶',
+      knowledgePoint: lesson.title,
+      prompt: question.prompt,
+      options: question.options.map(
+        (option, n) => `${String.fromCharCode(65 + n)}. ${option}`,
+      ),
+      answer: `${String.fromCharCode(65 + question.correct)}. ${question.options[question.correct]}`,
+      explanation: question.explanation,
+      source: studySource(lesson, question),
+      answerLines: 4,
+    })),
+  }),
+);
+
+export const juniorPracticeSheets = [
+  ...methodPracticeSheets.filter((s) => s.child === 'xiaobao'),
+  ...juniorMathChapterOne,
+];
+export const seniorPracticeSheets = [
+  ...methodPracticeSheets.filter((s) => s.child === 'dabao'),
+  ...seniorGradeTwoStarters,
+];
+
 export const allPracticeSheets = [
+  ...methodPracticeSheets,
   ...juniorMathChapterOne,
   ...seniorGradeTwoStarters,
 ];
@@ -959,8 +1007,10 @@ export function mergePracticeWrongQuestions(
   now = new Date(),
 ) {
   const selected = new Set(selectedQuestionIds);
+  const existing = new Set(current.map((entry) => entry.questionId));
   const entries = sheet.questions
     .filter((question) => selected.has(question.id))
+    .filter((question) => !sheet.methodLessonId || !existing.has(question.id))
     .map((question) =>
       buildWrongQuestionFromPractice(
         sheet,
@@ -976,6 +1026,29 @@ export function mergePracticeWrongQuestions(
   ];
 }
 
+export function recordWorksheetMistakes(
+  attempts: StudyAttempt[],
+  sheet: PracticeSheet,
+  selectedQuestionIds: string[],
+  now = new Date(),
+): StudyAttempt[] {
+  const lessonId = sheet.methodLessonId;
+  if (!lessonId) return attempts;
+  const entries: StudyAttempt[] = sheet.questions
+    .filter((q) => selectedQuestionIds.includes(q.id))
+    .map((q) => ({
+      lessonId,
+      questionId: q.id,
+      answer: '纸笔批改标记为错题；原作答见纸张',
+      correct: false,
+      assisted: true,
+      origin: 'paper',
+      mode: 'practice',
+      at: now.toISOString(),
+    }));
+  return [...attempts, ...entries].slice(-5000);
+}
+
 export function markPracticeComplete(completed: string[], sheetId: string) {
   return completed.includes(sheetId) ? completed : [...completed, sheetId];
 }
@@ -988,7 +1061,8 @@ export function validatePracticeCatalog(sheets: PracticeSheet[]) {
   for (const sheet of sheets) {
     if (sheetIds.has(sheet.id)) issues.push(`练习页ID重复：${sheet.id}`);
     sheetIds.add(sheet.id);
-    if (sheet.questions.length < 5) issues.push(`练习页题量不足：${sheet.id}`);
+    if (sheet.questions.length < (sheet.methodLessonId ? 4 : 5))
+      issues.push(`练习页题量不足：${sheet.id}`);
     if (!sheet.curriculumBasis || !sheet.curriculumUrl)
       issues.push(`课程依据缺失：${sheet.id}`);
 
