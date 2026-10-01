@@ -59,7 +59,7 @@ export function listCameraResults(owner: string, studentId: string, storage: Sto
     catch { issues.push('有一份相机记录无法确认归属，未导入；请重新拍照或选择原照片。'); continue; }
     if (result?.owner && result.owner !== owner) continue;
     if (result?.studentId && result.studentId !== studentId) continue;
-    try { valid(result); if (!result.uri && !result.webPath) throw new Error('missing photo'); results.push(result); }
+    try { valid(result); if ((!result.uri && !result.webPath) || key !== resultPrefix + result.id) throw new Error('invalid photo reference'); results.push(result); }
     catch { issues.push('有一份相机记录无法确认归属或照片地址，未导入；请重新拍照或选择原照片。'); }
   }
   return { results, issues };
@@ -67,7 +67,7 @@ export function listCameraResults(owner: string, studentId: string, storage: Sto
 export function removeCameraResult(result: CameraResult, storage: Storage = localStorage) {
   const key = resultPrefix + result.id, saved = storage.getItem(key);
   if (saved) { const current = JSON.parse(saved) as CameraResult;
-    if (current.owner !== result.owner || current.studentId !== result.studentId) throw new Error('相机结果归属不匹配');
+    if (current.id !== result.id || current.owner !== result.owner || current.studentId !== result.studentId) throw new Error('相机结果归属不匹配');
     storage.removeItem(key);
   }
 }

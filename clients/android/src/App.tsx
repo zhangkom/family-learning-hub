@@ -184,6 +184,7 @@ function Home({
   const [preparing, setPreparing] = useState<OriginalPhoto | null>(null), [originalsOpen, setOriginalsOpen] = useState(false);
   const [photoQueue, setPhotoQueue] = useState<PhotoDeliveryRecord[]>([]), [cameraWaiting, setCameraWaiting] = useState(false);
   const [photoQueueIssues, setPhotoQueueIssues] = useState<PhotoDeliveryIssue[]>([]);
+  const [cameraFailures, setCameraFailures] = useState<{ result: CameraResult; message: string }[]>([]);
   const importing = useRef(new Set<string>());
   const closeLocalPhotos = useCallback(() => {
     if (!live.current) return;
@@ -227,7 +228,7 @@ function Home({
   function selectStudent(id: string) {
     if (id === activeStudent.current) return;
     scopeGeneration.current++; activeStudent.current = id; uploadAbort.current?.abort();
-    setPreparing(null); setOriginalsOpen(false); setPhotoQueue([]); setPhotoQueueIssues([]); setBusy(false); setSelected(id);
+    setPreparing(null); setOriginalsOpen(false); setPhotoQueue([]); setPhotoQueueIssues([]); setCameraFailures([]); setBusy(false); setSelected(id);
   }
   useEffect(() => { if (cameraRestoreError) setError(cameraRestoreError); }, [cameraRestoreError]);
   const refreshDrafts = useCallback(async () => {
@@ -352,10 +353,13 @@ function Home({
       const { results, issues } = listCameraResults(owner, id);
       if (issues.length) setError(issues.join(' '));
       if (results.length) setBusy(true);
+      const failures: { result: CameraResult; message: string }[] = [];
       for (const result of results) {
         if (!live.current || generation !== scopeGeneration.current) break;
-        await importCameraResult(result);
+        try { await importCameraResult(result); }
+        catch(e) { failures.push({ result, message: message(e) }); }
       }
+      if (live.current && generation === scopeGeneration.current) setCameraFailures(failures);
     } catch(e) { if (live.current && generation === scopeGeneration.current) setError(`上次照片尚未读取：${message(e)}`); }
     finally { if (live.current && generation === scopeGeneration.current) { setBusy(false); try { setCameraWaiting(activeCamera()?.owner === owner); } catch { setCameraWaiting(true); } } }
   }, [owner, students, importCameraResult]);
@@ -493,8 +497,16 @@ function Home({
         {photoQueueIssues.map(issue => <article key={issue.key} className="draft-card"><div><strong>待提交记录 {issue.id.slice(0, 8)}</strong><p role="alert">{issue.message}</p>
           <div className="button-row"><button onClick={() => setOriginalsOpen(true)}>从本机原片重新处理</button>
             <button disabled={!!uploading} onClick={() => { try { removeDamagedPhotoDelivery(owner, selected, issue.key); refreshPhotoQueue(); } catch(e) { setError(message(e)); } }}>移除这条损坏记录，保留原片</button></div></div></article>)}</>}
-      cameraRecovery={Capacitor.isNativePlatform() ? <div className="button-row"><button disabled={busy} onClick={() => void recoverCamera()}>读取上次相机照片</button>
-        {cameraWaiting && <button disabled={busy} onClick={() => { try { clearUnfinishedCamera(owner); setCameraWaiting(false); } catch(e) { setError(message(e)); } }}>取消未完成的相机操作</button>}</div> : null}
+      cameraRecovery={Capacitor.isNativePlatform() ? <><div className="button-row"><button disabled={busy} onClick={() => void recoverCamera()}>读取上次相机照片</button>
+        {cameraWaiting && <button disabled={busy} onClick={() => { try { clearUnfinishedCamera(owner); setCameraWaiting(false); } catch(e) { setError(message(e)); } }}>取消未完成的相机操作</button>}</div>
+        {cameraFailures.map(({ result, message: reason }) => <article className="draft-card" key={result.id}><div><strong>上次照片暂时无法读取</strong>
+          <p role="alert">{reason}。其他可读取的照片已继续恢复；这条引用仍保留。</p><div className="button-row">
+            <button disabled={busy} onClick={() => void recoverCamera()}>重试读取</button>
+            <button disabled={busy} onClick={() => { try {
+              if (result.owner !== owner || result.studentId !== activeStudent.current) throw new Error('相机结果归属已变化');
+              removeCameraResult(result); setCameraFailures(list => list.filter(item => item.result.id !== result.id));
+            } catch(e) { setError(message(e)); } }}>移除这条相机引用，保留原片</button>
+          </div></div></article>)}</> : null}
       recognition={recognition} error={error || cameraRestoreError} notice={notice}
       onSelect={selectStudent} onCapture={(source) => void capture(source)} onRefresh={() => { void refresh(); try { refreshPhotoQueue(); } catch(e) { setError(message(e)); } }}
       onOpenScan={(scan, questionId) => { setOpenQuestion(questionId || ''); setOpenScan(scan); }}

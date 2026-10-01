@@ -1,5 +1,5 @@
 // Browser-only synthetic native bridge. No device or image-quality claim; no external requests.
-export function installSyntheticPhotoBridge({ api, initialToken = 'test-A', initialUserId = 'A' }) {
+export function installSyntheticPhotoBridge({ api, initialToken = 'test-A', initialUserId = 'A', missingSourceUris = [] }) {
   localStorage.setItem('family-learning:server', api);
   const store = (key, value) => localStorage.setItem('host-test:' + key, JSON.stringify(value));
   const read = (key, fallback) => JSON.parse(localStorage.getItem('host-test:' + key) || JSON.stringify(fallback));
@@ -56,6 +56,7 @@ export function installSyntheticPhotoBridge({ api, initialToken = 'test-A', init
       }
       if (plugin !== 'PhotoProcessing') return {};
       if (method === 'importPhoto') {
+        if (missingSourceUris.includes(args.uri)) throw new Error('合成测试：相机缓存文件已丢失');
         const data = image(), id = crypto.randomUUID(), originalUri = uriFor(args.owner, id, 'original'), previewUri = uriFor(args.owner, id, 'preview.jpg');
         const original = { schemaVersion: 1, originalId: id, studentId: args.studentId, ...(await info(data)), mime: 'image/png', width: 900, height: 1200,
           uprightWidth: 900, uprightHeight: 1200, orientation: 1, originalUri, previewUri, createdAt: Date.now() };
