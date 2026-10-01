@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { App as NativeApp } from '@capacitor/app';
-import { appVersionCode } from './release';
+import { appName, appVersionCode } from './release';
 import { AppUpdater, checkRelease, type Release } from './updates';
 
 function useUpdates() {
@@ -76,7 +76,7 @@ function useUpdates() {
       const result = await AppUpdater.install();
       setPermission(result.permissionRequired);
       setNotice(result.permissionRequired
-        ? '请允许“一起学”安装更新，返回后点击“继续安装”。'
+        ? `请允许“${appName}”安装更新，返回后点击“继续安装”。`
         : '已打开系统安装页面。如果取消了安装，可以再次点击“继续安装”。');
     } catch (e) {
       setError(e instanceof Error ? e.message : '更新未完成，请重试');
@@ -85,7 +85,7 @@ function useUpdates() {
   }
   async function settings() {
     try { await AppUpdater.openInstallSettings(); }
-    catch { setError('无法打开安装设置，请在系统设置中允许“一起学”安装未知应用。'); }
+    catch { setError(`无法打开安装设置，请在系统设置中允许“${appName}”安装未知应用。`); }
   }
   return { release, available, expanded, setExpanded, checking, notice, error, progress, ready,
     permission, check, install, settings };
@@ -94,6 +94,10 @@ const Updates = createContext<ReturnType<typeof useUpdates> | null>(null);
 export function UpdateProvider({ children }: { children: ReactNode }) {
   const value = useUpdates();
   return <Updates.Provider value={value}>{children}</Updates.Provider>;
+}
+export function UpdateDot() {
+  const update = useContext(Updates);
+  return update?.available ? <span className="update-dot" aria-label="有新版本">●</span> : null;
 }
 export function UpdateControl() {
   const update = useContext(Updates)!;
@@ -108,7 +112,7 @@ export function UpdateControl() {
     </div>
     {expanded && <div className="update-details">
       {available && <>
-        <strong>一起学 {release!.version} · {(release!.bytes / 1_000_000).toFixed(2)} MB</strong>
+        <strong>{appName} {release!.version} · {(release!.bytes / 1_000_000).toFixed(2)} MB</strong>
         <p>{release!.notes}</p>
         <p className="hint">覆盖升级会保留登录和学习资料。请先保存正在编辑的内容。</p>
         {downloading ? <output><progress value={progress} max="100" /><span>下载并校验中 {progress}%</span></output>

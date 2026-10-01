@@ -43,15 +43,16 @@ try {
   await page.getByLabel('家庭账号', { exact: true }).fill(config.username);
   await page.getByLabel('密码', { exact: true }).fill(config.password);
   await page.getByRole('button', { name: '进入家庭学习' }).click();
-  await page.getByRole('button', { name: '添加学生' }).waitFor();
+  await page.getByRole('navigation', { name: '主要页面' }).getByRole('button', { name: '我的', exact: true }).click();
   const testName = `联调学生-${Date.now().toString().slice(-6)}`;
   await page.getByRole('button', { name: '添加学生' }).click();
   await page.getByLabel('学生昵称').fill(testName);
   await page.getByLabel('年级（选填）').fill('初一');
   await page.getByRole('button', { name: '添加', exact: true }).click();
-  await page.getByText(`${testName} 的学习资料`).waitFor();
+  await page.getByLabel('当前学生').waitFor();
+  assert.ok((await page.getByLabel('当前学生').locator('option:checked').textContent()).includes(testName));
   const chooser = page.waitForEvent('filechooser');
-  await page.getByRole('button', { name: '从相册选择' }).click();
+  await page.getByRole('button', { name: /相册选图/ }).click();
   await (
     await chooser
   ).setFiles({
@@ -103,12 +104,24 @@ try {
     fullPage: true,
   });
   await page.getByRole('button', { name: '返回资料列表' }).click();
-  await page.getByRole('button', { name: /小宝/ }).click();
-  await page.getByText('小宝 的学习资料').waitFor();
+  const uploadedStudentId = await page.getByLabel('当前学生').inputValue();
+  await page.getByRole('navigation', { name: '主要页面' }).getByRole('button', { name: '我的', exact: true }).click();
+  await page.getByRole('button', { name: '添加学生' }).click();
+  await page.getByLabel('学生昵称').fill(`隔离学生-${Date.now().toString().slice(-6)}`);
+  await page.getByRole('button', { name: '添加', exact: true }).click();
+  await page.getByLabel('当前学生').waitFor();
+  const isolatedStudentId = await page.getByLabel('当前学生').inputValue();
+  assert.notEqual(isolatedStudentId, uploadedStudentId);
+  await page.locator('.home-empty-records').waitFor();
   assert.equal(
     await page.getByRole('button', { name: /真实接口合成作业/ }).count(),
     0,
   );
+  await page.getByLabel('当前学生').selectOption(uploadedStudentId);
+  await page.getByRole('button', { name: /真实接口合成作业/ }).waitFor();
+  await page.getByLabel('当前学生').selectOption(isolatedStudentId);
+  await page.locator('.home-empty-records').waitFor();
+  await page.getByRole('navigation', { name: '主要页面' }).getByRole('button', { name: '我的', exact: true }).click();
   await page.getByRole('button', { name: '退出登录' }).click();
   await page.getByRole('button', { name: '进入家庭学习' }).waitFor();
   assert.deepEqual(errors, []);

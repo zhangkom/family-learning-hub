@@ -40,6 +40,11 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'APK signature verification failed' }
     $fingerprint = (Get-Content -Raw -LiteralPath (Join-Path $signingRoot 'signer-public.json') | ConvertFrom-Json).certificateSha256.ToLowerInvariant()
     if (!(($signature -join "`n").Contains($fingerprint))) { throw 'APK is signed with an unexpected certificate' }
+    $aapt = Join-Path $AndroidSdk 'build-tools/36.0.0/aapt.exe'
+    if (!(Test-Path -LiteralPath $aapt)) { $aapt = Join-Path $AndroidSdk 'build-tools/36.0.0/aapt' }
+    $permissionAudit = & node (Join-Path $PSScriptRoot 'audit-apk-permissions.mjs') $aapt $apk
+    if ($LASTEXITCODE -ne 0) { throw 'APK permission audit failed; do not publish' }
+    $permissionAudit = $permissionAudit | ConvertFrom-Json
     $output = Join-Path $projectRoot 'outputs/android'
     New-Item -ItemType Directory -Force -Path $output | Out-Null
     $destination = Join-Path $output ('family-learning-' + $metadata.version + '-release.apk')
@@ -47,6 +52,8 @@ try {
         if ((Get-FileHash -LiteralPath $destination).Hash -ne (Get-FileHash -LiteralPath $apk).Hash) { throw 'An APK already exists for this version; increment the version before replacing it' }
     } else { Copy-Item -LiteralPath $apk -Destination $destination }
     $verification = @{ file=$destination; version=$metadata.version; versionCode=$metadata.androidVersionCode; commit=$commit; kind='family-pilot-release'; bytes=(Get-Item -LiteralPath $destination).Length; sha256=(Get-FileHash -Algorithm SHA256 -LiteralPath $destination).Hash; certificateSha256=$fingerprint; signatureVerified=$true; nativeDeviceTested=$false; apiBase=$env:VITE_API_URL }
+    $verification.permissions = $permissionAudit.permissions
+    $verification.permissionsVerified = $permissionAudit.permissionsVerified
     $verification | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $output ('apk-verification-' + $metadata.version + '.json')) -Encoding utf8NoBOM
     $verification | Select-Object version,versionCode,commit,bytes,sha256,certificateSha256,signatureVerified,nativeDeviceTested | ConvertTo-Json
 } finally {

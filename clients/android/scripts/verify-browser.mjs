@@ -188,7 +188,7 @@ try {
     .getByLabel('密码', { exact: true })
     .fill('synthetic-only-password');
   await page.getByRole('button', { name: '进入家庭学习' }).click();
-  await page.getByText('大宝（测试） 的学习资料').waitFor();
+  assert.equal(await page.getByLabel('当前学生').inputValue(), 'dabao');
   await page.screenshot({ path: `${output}/desktop-home.png`, fullPage: true });
   await page.getByRole('button', { name: /分配律练习/ }).click();
   await page.getByLabel('步骤1转写').waitFor();
@@ -248,19 +248,21 @@ try {
     .getByRole('button', { name: '加载服务器版本' })
     .waitFor({ state: 'hidden' });
   await page.getByRole('button', { name: '返回资料列表' }).click();
-  await page.getByRole('button', { name: /小宝（测试）/ }).click();
-  await page.getByText('小宝（测试） 的学习资料').waitFor();
+  await page.getByLabel('当前学生').selectOption('xiaobao');
+  assert.equal(await page.getByLabel('当前学生').inputValue(), 'xiaobao');
   assert.equal(
     await page.getByRole('button', { name: /分配律练习/ }).count(),
     0,
   );
+  await page.getByRole('navigation', { name: '主要页面' }).getByRole('button', { name: '我的', exact: true }).click();
   await page.getByRole('button', { name: '添加学生' }).click();
   await page.getByLabel('学生昵称').fill('第三位（测试）');
   await page.getByRole('button', { name: '添加', exact: true }).click();
-  await page.getByText('第三位（测试） 的学习资料').waitFor();
-  await page.getByRole('button', { name: /大宝（测试）/ }).click();
+  await page.getByLabel('当前学生').waitFor();
+  assert.equal(await page.getByLabel('当前学生').inputValue(), 'student-3');
+  await page.getByLabel('当前学生').selectOption('dabao');
   const chooserPromise = page.waitForEvent('filechooser');
-  await page.getByRole('button', { name: '从相册选择' }).click();
+  await page.getByRole('button', { name: /相册选图/ }).click();
   await (
     await chooserPromise
   ).setFiles({
@@ -272,13 +274,13 @@ try {
     ),
   });
   await page.getByRole('button', { name: '确认并上传' }).waitFor();
-  await page.getByRole('button', { name: /小宝（测试）/ }).click();
-  await page.getByText('小宝（测试） 的学习资料').waitFor();
+  await page.getByLabel('当前学生').selectOption('xiaobao');
+  assert.equal(await page.getByLabel('当前学生').inputValue(), 'xiaobao');
   assert.equal(
     await page.getByRole('button', { name: '确认并上传' }).count(),
     0,
   );
-  await page.getByRole('button', { name: /大宝（测试）/ }).click();
+  await page.getByLabel('当前学生').selectOption('dabao');
   await page.getByRole('button', { name: '确认并上传' }).click();
   await page
     .getByRole('button', { name: '确认并上传' })

@@ -72,7 +72,7 @@ try {
   await normal.page.getByText('家庭启用码不正确', { exact: true }).waitFor();
   await normal.page.getByLabel('家庭启用码', { exact: true }).fill(code);
   await normal.page.getByRole('button', { name: '注册并进入家庭学习', exact: true }).click();
-  await normal.page.getByText('测试孩子 的学习资料', { exact: true }).waitFor();
+  await normal.page.getByLabel('当前学生').waitFor();
   assert.equal(normal.counts().setupCalls, 2);
   assert.equal(normal.counts().loginCalls, 0, 'Registration should sign in without an extra login request');
   const savedSettings = await normal.page.evaluate(() => JSON.stringify(localStorage));
@@ -101,7 +101,7 @@ try {
   await offline.page.getByLabel('家庭账号', { exact: true }).fill('family2026');
   await offline.page.getByLabel('密码', { exact: true }).fill(password);
   await offline.page.getByRole('button', { name: '进入家庭学习', exact: true }).click();
-  await offline.page.getByText('测试孩子 的学习资料', { exact: true }).waitFor();
+  await offline.page.getByLabel('当前学生').waitFor();
   assert.equal(offline.counts().setupCalls, 0);
   await offline.page.close();
   assert.deepEqual(errors, []);

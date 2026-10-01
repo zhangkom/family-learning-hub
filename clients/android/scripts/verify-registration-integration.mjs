@@ -36,7 +36,7 @@ try {
   const registered = await setupResponse;
   assert.equal(registered.status(), 200);
   assert.equal((await registered.allHeaders())['set-cookie'], undefined);
-  await page.getByRole('button', { name: '添加学生', exact: true }).waitFor();
+  await page.getByRole('navigation', { name: '主要页面' }).waitFor();
   assert.equal(extraLoginRequests, 0);
   const settings = await page.evaluate(() => JSON.stringify(localStorage));
   assert.equal(settings.includes(config.setupToken), false);
@@ -56,7 +56,7 @@ try {
   await returning.getByLabel('家庭账号', { exact: true }).fill(config.username);
   await returning.getByLabel('密码', { exact: true }).fill(config.password);
   await returning.getByRole('button', { name: '进入家庭学习', exact: true }).click();
-  await returning.getByRole('button', { name: '添加学生', exact: true }).waitFor();
+  await returning.getByRole('navigation', { name: '主要页面' }).waitFor();
   mkdirSync('test-results', { recursive: true });
   const report = { passed: true, syntheticOnly: true, aiEnabled: false, productionWrites: 0, checkedAt: new Date().toISOString(), checks: ['empty-family status', 'registration from client', 'direct Bearer login without cookie or second login', 'setup code and password absent from local settings', 'registration closes after first family', 'new ordinary login succeeds', 'mobile layout'] };
   writeFileSync('test-results/registration-integration-result.json', JSON.stringify(report, null, 2));

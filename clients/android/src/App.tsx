@@ -1,28 +1,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { App as NativeApp } from '@capacitor/app';
-import { Camera } from '@capacitor/camera';
-import {
-  ArrowRight,
-  BookOpen,
-  Camera as CameraIcon,
-  Check,
-  ChevronRight,
-  FileImage,
-  ImagePlus,
-  LogOut,
-  Plus,
-  RefreshCw,
-  Users,
-} from 'lucide-react';
+import { Camera, MediaTypeSelection } from '@capacitor/camera';
+import { ArrowRight, BookOpen, Camera as CameraIcon, FileImage } from 'lucide-react';
 import { ApiError, FamilyApi, validateServer, sessionExpiredEvent } from './api';
 import { session } from './session';
 import { drafts, type Draft } from './drafts';
 import { Review } from './Review';
-import { statusNames, type Scan, type Student } from './types';
-import { appVersion, configuredServer, familyWebsite } from './release';
+import { type Scan, type Student } from './types';
+import { appName, appVersion, configuredServer, familyWebsite } from './release';
 import { restoreSession, type Auth } from './restore-session';
 import { UpdateControl } from './UpdateControl';
+import { HomeView } from './HomeView';
+import { BrandMark } from './Brand';
+import { PermissionInfo } from './PermissionInfo';
+import { captureFailure } from './permissions';
 
 function message(error: unknown) {
   return error instanceof Error ? error.message : '操作未完成，请重试';
@@ -187,17 +179,15 @@ function LoginForm({
     <main className={`login-page ${mode === 'setup' ? 'setup-mode' : ''}`}>
       <div className="login-story">
         <div className="brand">
-          <span className="brand-icon">
-            <BookOpen size={23} />
-          </span>
-          一起学<span className="brand-note">家庭学习</span>
+          <BrandMark size={38} />
+          {appName}<span className="brand-note">家庭学习</span>
         </div>
         <div className="story-copy">
           <span className="eyebrow">从孩子写下的每一步开始</span>
           <h1>
-            看见思路，
+            点燃好奇，
             <br />
-            一起学会。
+            学会思考。
           </h1>
           <p>
             拍下题目和解题过程，
@@ -366,6 +356,7 @@ function LoginForm({
             一个家庭共用一个账号，孩子分别建立学习档案，不需要每个孩子单独注册。
           </p>
           <FamilyLinks />
+          <PermissionInfo />
         </form>
       </section>
     </main>
@@ -393,9 +384,7 @@ function Home({
     [uploading, setUploading] = useState(''),
     [error, setError] = useState(''),
     [notice, setNotice] = useState('');
-  const [add, setAdd] = useState(false),
-    [name, setName] = useState(''),
-    [grade, setGrade] = useState('');
+  const [photoSaved, setPhotoSaved] = useState(0);
   const [refreshing, setRefreshing] = useState(false),
     [recognition, setRecognition] = useState(false);
   const cameraInput = useRef<HTMLInputElement>(null),
@@ -489,6 +478,7 @@ function Home({
       await drafts.save(draft);
       await refreshDrafts();
       setNotice('照片已保存为本机草稿，确认清晰完整后上传');
+      setPhotoSaved((n) => n + 1);
     },
     [owner, refreshDrafts],
   );
@@ -534,13 +524,14 @@ function Home({
         source === 'camera'
           ? await Camera.takePhoto({
               quality: 95,
-              includeMetadata: true,
+              includeMetadata: false,
               saveToGallery: false,
             })
           : (
               await Camera.chooseFromGallery({
                 allowMultipleSelection: false,
-                includeMetadata: true,
+                mediaType: MediaTypeSelection.Photo,
+                includeMetadata: false,
               })
             ).results[0];
       if (!photo?.webPath) return;
@@ -551,7 +542,8 @@ function Home({
         `作业-${Date.now()}.${file.type.split('/')[1] || 'jpg'}`,
       );
     } catch (e) {
-      setError(`未取得照片，可以重试或从相册选择。${message(e)}`);
+      const failure = captureFailure(e, source);
+      if (failure) setError(failure);
     } finally {
       setBusy(false);
       localStorage.removeItem('family-learning:pending-camera');
@@ -598,306 +590,51 @@ function Home({
         onUpdate={updateScan}
       />
     );
-  return (
-    <div className="app-shell">
-      <header className="topbar">
-        <div className="brand">
-          <span className="brand-icon">
-            <BookOpen size={21} />
-          </span>
-          一起学<span className="brand-note">家庭学习</span>
-        </div>
-        <div className="account">
-          <span>{auth.user.username}</span>
-          <button
-            className="icon-button"
-            aria-label="退出登录"
-            disabled={busy || !!uploading}
-            onClick={async () => {
-              try {
-                setBusy(true);
-                await api.logout();
-                await onLogout();
-              } catch (e) {
-                setError(`退出未完成：${message(e)}`);
-              } finally {
-                setBusy(false);
-              }
-            }}
-          >
-            <LogOut size={18} />
-          </button>
-        </div>
-      </header>
-      <main className="dashboard">
-        <section className="student-section">
-          <div className="section-line">
-            <span className="eyebrow">今天和谁一起学？</span>
-            <button onClick={() => setAdd(!add)}>
-              <Plus size={16} /> 添加学生
-            </button>
-          </div>
-          <nav className="student-tabs" aria-label="选择学生">
-            {students.map((s, index) => (
-              <button
-                key={s.id}
-                className={`student-tab ${selected === s.id ? 'active' : ''}`}
-                onClick={() => setSelected(s.id)}
-              >
-                <span className={`avatar tone-${index % 3}`}>
-                  {s.name.slice(0, 1)}
-                </span>
-                <span>
-                  <strong>{s.name}</strong>
-                  <small>{s.grade || '学习档案'}</small>
-                </span>
-                {selected === s.id && <Check size={17} />}
-              </button>
-            ))}
-          </nav>
-          {add && (
-            <form
-              className="add-student"
-              onSubmit={async (e) => {
-                e.preventDefault();
-                setBusy(true);
-                setError('');
-                try {
-                  const { student: s } = await api.addStudent(
-                    name.trim(),
-                    grade.trim(),
-                  );
-                  setStudents((list) => [...list, s]);
-                  setSelected(s.id);
-                  setName('');
-                  setGrade('');
-                  setAdd(false);
-                } catch (err) {
-                  setError(message(err));
-                } finally {
-                  setBusy(false);
-                }
-              }}
-            >
-              <label>
-                学生昵称
-                <input
-                  value={name}
-                  maxLength={60}
-                  required
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="例如：小宝"
-                />
-              </label>
-              <label>
-                年级（选填）
-                <input
-                  value={grade}
-                  maxLength={80}
-                  onChange={(e) => setGrade(e.target.value)}
-                  placeholder="例如：初一"
-                />
-              </label>
-              <button className="primary" disabled={busy}>
-                添加
-              </button>
-            </form>
-          )}
-        </section>
-        {error && (
-          <p role="alert" className="error">
-            {error}
-          </p>
-        )}
-        {notice && <output className="notice">{notice}</output>}
-        {student ? (
-          <>
-            <section className="learning-intro">
-              <div>
-                <span className="subject-tag">数学 · {student.name}</span>
-                <h1>
-                  从一道题，
-                  <br className="mobile-break" />
-                  看清每一步。
-                </h1>
-                <p>
-                  题目和手写过程一起拍，
-                  <br className="mobile-break" />
-                  学习记录会保存在 {student.name} 的档案里。
-                </p>
-              </div>
-              <div className="intro-mark" aria-hidden="true">
-                <span>?</span>
-                <i>✦</i>
-              </div>
-            </section>
-            <section className="capture-card">
-              <div className="capture-copy">
-                <span className="camera-circle">
-                  <CameraIcon size={29} />
-                </span>
-                <div>
-                  <h2>拍下今天的题目</h2>
-                  <p>一张照片可以包含多道题，记得拍全条件和解题过程。</p>
-                </div>
-              </div>
-              <div className="capture-actions">
-                <button
-                  className="primary"
-                  disabled={busy}
-                  onClick={() => void capture('camera')}
-                >
-                  <CameraIcon size={18} /> 拍照上传
-                </button>
-                <button
-                  className="secondary"
-                  disabled={busy}
-                  onClick={() => void capture('gallery')}
-                >
-                  <ImagePlus size={18} /> 从相册选择
-                </button>
-              </div>
-              <input
-                className="visually-hidden"
-                ref={cameraInput}
-                type="file"
-                accept="image/jpeg,image/png,image/webp"
-                capture="environment"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file)
-                    void savePhoto(
-                      file,
-                      captureStudent.current,
-                      file.name,
-                    ).catch((err) => setError(message(err)));
-                  e.target.value = '';
-                }}
-              />
-              <input
-                className="visually-hidden"
-                ref={galleryInput}
-                type="file"
-                accept="image/jpeg,image/png,image/webp"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file)
-                    void savePhoto(
-                      file,
-                      captureStudent.current,
-                      file.name,
-                    ).catch((err) => setError(message(err)));
-                  e.target.value = '';
-                }}
-              />
-              <div className="capture-foot">
-                <span>01 拍完整</span>
-                <ChevronRight size={12} />
-                <span>02 核对分题</span>
-                <ChevronRight size={12} />
-                <span>03 看清步骤</span>
-              </div>
-            </section>
-            {localDrafts.filter((d) => d.studentId === selected).length > 0 && (
-              <section className="draft-section">
-                <div className="section-line">
-                  <h2>待上传照片</h2>
-                  <span className="hint">保存在当前设备</span>
-                </div>
-                <div className="draft-grid">
-                  {localDrafts
-                    .filter((d) => d.studentId === selected)
-                    .map((d) => (
-                      <DraftCard
-                        key={d.id}
-                        draft={d}
-                        uploading={uploading === d.id}
-                        disabled={!!uploading}
-                        onUpload={() => void upload(d)}
-                        onRemove={() =>
-                          void drafts
-                            .remove(d.id)
-                            .then(refreshDrafts)
-                            .catch((e) => setError(message(e)))
-                        }
-                      />
-                    ))}
-                </div>
-              </section>
-            )}
-            <section className="records-section">
-              <div className="section-line">
-                <div>
-                  <h2>{student.name} 的学习资料</h2>
-                  <p className="hint">原图、题目和手写步骤，都留在这里。</p>
-                </div>
-                <button disabled={refreshing} onClick={() => void refresh()}>
-                  <RefreshCw size={16} className={refreshing ? 'spin' : ''} />{' '}
-                  刷新
-                </button>
-              </div>
-              {records.length === 0 ? (
-                <div className="empty-records">
-                  <FileImage size={30} />
-                  <p>
-                    {refreshing
-                      ? '正在读取资料…'
-                      : '拍下第一张作业，开始积累学习记录。'}
-                  </p>
-                </div>
-              ) : (
-                <div className="record-grid">
-                  {records.map((scan) => (
-                    <button
-                      className="record-card"
-                      key={scan.id}
-                      onClick={() => setOpenScan(scan)}
-                    >
-                      <span className="record-icon">
-                        <FileImage size={23} />
-                      </span>
-                      <span className="record-content">
-                        <strong>{scan.originalName}</strong>
-                        <small>
-                          {new Date(scan.createdAt).toLocaleDateString('zh-CN')}{' '}
-                          · {scan.questions.length} 道题
-                        </small>
-                        <span className={`status ${scan.status}`}>
-                          {statusNames[scan.status] || scan.status}
-                        </span>
-                      </span>
-                      <ChevronRight size={18} />
-                    </button>
-                  ))}
-                </div>
-              )}
-              {!recognition && (
-                <p className="hint">
-                  识别服务未启用时，也可以保存原图、手动分题和校对。
-                </p>
-              )}
-            </section>
-          </>
-        ) : (
-          <div className="empty">
-            <Users size={34} />
-            <h2>先添加一个学生档案</h2>
-            <p>每个孩子都有自己的题目、作答和学习记录。</p>
-            <button className="primary" onClick={() => setAdd(true)}>
-              添加第一名学生
-            </button>
-          </div>
-        )}
-        <footer><FamilyLinks /></footer>
-      </main>
-    </div>
-  );
+  return <>
+    <HomeView username={auth.user.username} students={students} selected={selected} records={records}
+      localDrafts={localDrafts} busy={busy} uploading={uploading} refreshing={refreshing}
+      recognition={recognition} error={error} notice={notice} photoSaved={photoSaved}
+      onSelect={setSelected} onCapture={(source) => void capture(source)} onRefresh={() => void refresh()}
+      onOpenScan={setOpenScan}
+      onLogout={() => void (async () => {
+        try { setBusy(true); await api.logout(); await onLogout(); }
+        catch (e) { setError(`退出未完成：${message(e)}`); }
+        finally { setBusy(false); }
+      })()}
+      onAddStudent={async (name, grade) => {
+        if (busy) return false;
+        setBusy(true); setError('');
+        try {
+          const { student: added } = await api.addStudent(name, grade);
+          setStudents((list) => [...list, added]); setSelected(added.id);
+          return true;
+        } catch (e) { setError(message(e)); return false; }
+        finally { setBusy(false); }
+      }}
+      renderDraft={(draft) => <DraftCard key={draft.id} draft={draft} uploading={uploading === draft.id}
+        disabled={!!uploading} onUpload={() => void upload(draft)}
+        onRemove={() => void drafts.remove(draft.id).then(refreshDrafts).catch((e) => setError(message(e)))} />}
+    ><FamilyLinks /></HomeView>
+    <input className="visually-hidden" ref={cameraInput} type="file" accept="image/jpeg,image/png,image/webp" capture="environment"
+      onChange={(e) => {
+        const file = e.target.files?.[0];
+        if (file) void savePhoto(file, captureStudent.current, file.name).catch((err) => setError(message(err)));
+        e.target.value = '';
+      }} />
+    <input className="visually-hidden" ref={galleryInput} type="file" accept="image/jpeg,image/png,image/webp"
+      onChange={(e) => {
+        const file = e.target.files?.[0];
+        if (file) void savePhoto(file, captureStudent.current, file.name).catch((err) => setError(message(err)));
+        e.target.value = '';
+      }} />
+  </>;
 }
+
 function FamilyLinks() {
   const target = Capacitor.isNativePlatform() ? '_self' : '_blank';
   return (
     <div className="family-links">
-      <span>一起学 {appVersion} · 家庭试用版</span>
+      <span>{appName} {appVersion} · 家庭试用版</span>
       <UpdateControl />
       <nav aria-label="家长与版本入口">
         <a href={`${familyWebsite}account`} target={target} rel="noopener noreferrer">家长账号</a>

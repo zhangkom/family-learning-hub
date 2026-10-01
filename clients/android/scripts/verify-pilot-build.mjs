@@ -35,7 +35,7 @@ await page.route('**/*', async (route) => {
 try {
   await page.goto(client);
   assert.equal(await page.getByLabel('家庭服务地址').count(), 0);
-  await page.getByText(`一起学 ${version} · 家庭试用版`, { exact: true }).waitFor();
+  await page.getByText(`知燃 AI ${version} · 家庭试用版`, { exact: true }).waitFor();
   assert.equal(await page.getByRole('link', { name: '家长账号' }).getAttribute('href'), `${website}account`);
   assert.equal(await page.getByRole('link', { name: '家长查看' }).getAttribute('href'), `${website}students`);
   mkdirSync('test-results', { recursive: true });
