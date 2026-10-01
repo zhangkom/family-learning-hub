@@ -433,6 +433,7 @@ export function Review({
         </button>
       </div>
       <p className="hint">框住完整题干、配图和孩子的手写过程。同一张照片选一次科目，后续新题自动沿用，也可逐题修改。</p>
+      {scan.sourceKind === 'processed-photo' && <p className="hint">当前显示你确认上传的处理图。原片请在上传手机的“本机原片”中查看。</p>}
       {error && (
         <p role="alert" className="error">
           {error}
