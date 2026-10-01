@@ -6,6 +6,7 @@ import { ApiError, FamilyApi } from './api';
 import { RegionEditor } from './RegionEditor';
 import { TutoringResult } from './TutoringResult';
 import { reviewDrafts } from './drafts';
+import { photoSubjectKey, readPhotoSubject, rememberPhotoSubject } from './photo-subject';
 import {
   emptyQuestion,
   mergeQuestions,
@@ -35,6 +36,9 @@ export function Review({
   onUpdate,
 }: Props) {
   const draftId = `${owner}|${initial.id}`;
+  const subjectKey = photoSubjectKey(owner, initial.studentId, initial.id);
+  const [photoSubject, setPhotoSubject] = useState<Subject | undefined>(() =>
+    readPhotoSubject(subjectKey, initial.questions || []));
   const draftRevision = useRef(initial.revision);
   const editing = useRef(false),
     latestRevision = useRef(initial.revision);
@@ -52,6 +56,8 @@ export function Review({
   const [draftReady, setDraftReady] = useState(false),
     [conflict, setConflict] = useState(false);
   const question = questions.find((q) => q.id === selected);
+  const newQuestionSubject = questions.some((q) => q.subject === photoSubject)
+    ? photoSubject : undefined;
   const hasPendingAnalysis = questions.some((q) => ['queued', 'processing'].includes(q.tutoring?.status || ''));
   const analyzing = ['queued', 'processing'].includes(question?.tutoring?.status || '');
   const validQuestion = !!question?.subject && question.regions.some((r) => r.kind === 'stem');
@@ -74,6 +80,7 @@ export function Review({
         draftRevision.current = draft.revision;
         editing.current = true;
         setQuestions(draft.questions);
+        setPhotoSubject(readPhotoSubject(subjectKey, draft.questions));
         setSelected(draft.questions.some((q) => q.id === selectedQuestionId) ? selectedQuestionId! : draft.questions[0]?.id || '');
         setDirty(true);
         if (draft.revision !== initial.revision) {
@@ -92,7 +99,7 @@ export function Review({
     return () => {
       alive = false;
     };
-  }, [draftId, initial.revision, selectedQuestionId]);
+  }, [draftId, initial.revision, selectedQuestionId, subjectKey]);
   useEffect(() => {
     const abort = new AbortController();
     let url = '';
@@ -176,6 +183,16 @@ export function Review({
           : q,
       ),
     );
+  }
+  function chooseSubject(subject?: Subject) {
+    if (!question) return;
+    setPhotoSubject(subject);
+    rememberPhotoSubject(subjectKey, question.id, subject);
+    update(question.id, { subject });
+  }
+  function newQuestion() {
+    return { ...emptyQuestion(String(questions.length + 1)),
+      subject: newQuestionSubject };
   }
   function replaceRegion(questionId: string, value: Region) {
     change(
@@ -276,7 +293,7 @@ export function Review({
     }
   }
   function addQuestion() {
-    const q = emptyQuestion(String(questions.length + 1));
+    const q = newQuestion();
     change([...questions, q]);
     setSelected(q.id);
     setRegion('');
@@ -286,6 +303,7 @@ export function Review({
     const moved = question.regions.find((r) => r.id === region);
     if (!moved) return;
     const q = emptyQuestion(String(questions.length + 1));
+    q.subject = question.subject;
     q.regions = [moved];
     // A step spanning several regions needs explicit reassignment, not silent duplication.
     const exclusive = question.answerSteps.filter(
@@ -324,7 +342,7 @@ export function Review({
         </button>
         <div>
           <small>{studentName} · {question?.subject || '框题后选科目'}</small>
-          <h1>框出题目，再选科目</h1>
+          <h1>框出要收录的题目</h1>
         </div>
         <button
           className="primary save-button"
@@ -351,7 +369,7 @@ export function Review({
           {scan.status === 'failed' ? '重试识别' : '识别这张照片'}
         </button>
       </div>
-      <p className="hint">直接框住要收录的一道题，保留题干、配图和孩子的手写过程。每道题分别选科，原图始终保留。</p>
+      <p className="hint">框住完整题干、配图和孩子的手写过程。同一张照片选一次科目，后续新题自动沿用，也可逐题修改。</p>
       {error && (
         <p role="alert" className="error">
           {error}
@@ -409,6 +427,7 @@ export function Review({
                 editing.current = false;
                 setScan(next);
                 setQuestions(next.questions);
+                setPhotoSubject(readPhotoSubject(subjectKey, next.questions));
                 setSelected(next.questions[0]?.id || '');
                 setDirty(false);
                 setConflict(false);
@@ -436,7 +455,7 @@ export function Review({
           }}
           onChange={replaceRegion}
           onCreate={(r) => {
-            const q = emptyQuestion(String(questions.length + 1));
+            const q = newQuestion();
             q.regions = [r];
             change([...questions, q]);
             setSelected(q.id);
@@ -453,11 +472,14 @@ export function Review({
             <div className="section-line"><strong>已选第 {question.number || questions.indexOf(question) + 1} 题</strong>
               {question.wrongBook && <span className="saved-tag">已存错题本</span>}</div>
             <label>这道题的科目
-              <select value={question.subject || ''} onChange={(e) => update(question.id, { subject: (e.target.value || undefined) as Subject | undefined })}>
+              <select value={question.subject || ''} onChange={(e) => chooseSubject((e.target.value || undefined) as Subject | undefined)}>
                 <option value="">请选择科目</option>
                 {subjects.map((subject) => <option key={subject}>{subject}</option>)}
               </select>
             </label>
+            <output className="hint">{newQuestionSubject
+              ? `同一张照片后续新框题沿用${newQuestionSubject}，可逐题修改；已有题目不变。`
+              : '选一次，同一张照片后续新框的题会自动沿用。'}</output>
             {!validQuestion && <p className="hint">{question.regions.some((r) => r.kind === 'stem') ? '选好科目，就能保存和分析这道题。' : '请先为这道题补充题干框。'}</p>}
             <div className="question-save-actions">
               <button className="primary" disabled={!validQuestion || busy || conflict || hasPendingAnalysis || !recognitionEnabled}

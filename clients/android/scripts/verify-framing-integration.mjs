@@ -79,11 +79,12 @@ try {
   assert.ok(saved.questions[0].wrongBook.savedAt);
   const original = await page.request.get(api + '/scans/' + saved.id + '/file', { headers });
   assert.deepEqual(await original.body(), png);
-  // A second region in the same photo has an independent subject.
+  // A new question inherits this photo's explicit choice, but remains editable.
   await page.getByRole('button', { name: '浏览照片', exact: true }).click();
   await page.locator('.paper-scroll').evaluate((el) => { el.scrollTop = 350; });
   await draw();
-  assert.equal(await page.getByLabel('这道题的科目').inputValue(), '');
+  assert.equal(await page.getByLabel('这道题的科目').inputValue(), '物理');
+  assert.equal(await page.getByRole('button', { name: '只存错题本', exact: true }).isEnabled(), true);
   await page.getByLabel('这道题的科目').selectOption('生物');
   await page.getByRole('button', { name: '只存错题本', exact: true }).click();
   await page.getByText('已存入当前学生的错题本', { exact: true }).waitFor();
@@ -104,13 +105,41 @@ try {
   saved = (await (await page.request.get(api + '/scans/' + originalScan.id, { headers })).json()).scan;
   assert.deepEqual(saved.questions.map((q) => q.subject), ['物理', '化学']);
   assert.equal(saved.questions[0].tutoring.status, 'needs_review', 'editing different question must not invalidate first');
+  // Persisted choice survives reopening; merely visiting an older physics question
+  // must not replace the last explicit chemistry choice on this same device.
+  await page.getByRole('button', { name: '返回资料列表', exact: true }).click();
+  await page.locator('.wrong-question-card').filter({ hasText: '物理' }).click();
+  assert.equal(await page.getByLabel('这道题的科目').inputValue(), '物理');
+  await draw();
+  assert.equal(await page.getByLabel('这道题的科目').inputValue(), '化学');
+  await page.getByRole('button', { name: '只存错题本', exact: true }).click();
+  await page.getByText('已存入当前学生的错题本', { exact: true }).waitFor();
+  saved = (await (await page.request.get(api + '/scans/' + originalScan.id, { headers })).json()).scan;
+  assert.deepEqual(saved.questions.map((q) => q.subject), ['物理', '化学', '化学']);
+  assert.equal(saved.questions[0].tutoring.status, 'needs_review');
+  // A different image still starts without a subject even for the same student.
+  const secondUpload = await page.request.post(api + '/scans', { headers, multipart: {
+    file: { name: '另一张合成照片.png', mimeType: 'image/png', buffer: png },
+    studentId, clientRequestId: crypto.randomUUID(), source: '合成测试',
+  } });
+  assert.equal(secondUpload.status(), 201);
+  await page.getByRole('button', { name: '返回资料列表', exact: true }).click();
+  await page.getByRole('button', { name: /^全部照片/ }).click();
+  await page.getByRole('button', { name: /另一张合成照片/ }).click();
+  await page.waitForFunction(() => ![...document.querySelectorAll('button')].find((b) => b.textContent.includes('框选一道题')).disabled);
+  await draw();
+  assert.equal(await page.getByLabel('这道题的科目').inputValue(), '');
+  assert.equal(await page.getByRole('button', { name: '只存错题本', exact: true }).isDisabled(), true);
   assert.deepEqual(errors, []);
   mkdirSync('test-results', { recursive: true });
   await page.screenshot({ path: 'test-results/framing-integration.png', fullPage: true });
   writeFileSync('test-results/framing-integration.json', JSON.stringify({ syntheticOnly: true, model: 'local stub; no network model',
     checks: ['upload subject pending', 'touch frame no manual text required', 'per-question physics/biology/chemistry independent subjects',
       'save wrongbook then queued-to-result', 'no invented answer evidence', 'original exact bytes preserved', 'wrongbook API and UI reopen selected qid',
-      'reopen scrolls frame into photo viewport', 'unrelated question edit preserves result'], errors }, null, 2));
+      'reopen scrolls frame into photo viewport', 'unrelated question edit preserves result',
+      'new frames inherit explicit photo subject; independent overrides remain',
+      'reopen mixed photo remembers chemistry even when visiting older physics question',
+      'another photo requires its own subject selection'], errors }, null, 2));
   console.log('Real isolated backend and local worker passed framing/subjects/wrongbook/tutoring roundtrip; no external model or production data.');
 } finally { await browser.close(); }
 

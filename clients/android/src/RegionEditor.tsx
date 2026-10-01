@@ -94,7 +94,7 @@ export function RegionEditor({
       result.id = crypto.randomUUID();
       if (mode === 'new') onCreate(result); else onAdd(result);
       setMode('move');
-      setHint(mode === 'new' ? '题目已框好，请在下方为这道题选择科目。' : '已补充区域，可拖动调整。');
+      setHint(mode === 'new' ? '题目已框好，可在下方保存或修改科目。' : '已补充区域，可拖动调整。');
     } else if (result.x !== d.origin!.x || result.y !== d.origin!.y ||
       result.width !== d.origin!.width || result.height !== d.origin!.height) {
       onChange(d.questionId, result);
