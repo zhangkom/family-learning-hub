@@ -38,6 +38,9 @@ const localBindingConfig = {
 export default defineConfig(async (): Promise<UserConfig> => {
   if (process.env.FAMILY_SELF_HOSTED === 'true') {
     return {
+      build: {
+        emptyOutDir: process.env.FAMILY_KEEP_BUILD_ROOT === 'true' ? false : undefined,
+      },
       css: { postcss: { plugins: [tailwindcss()] } },
       resolve: {
         alias: {

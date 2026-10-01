@@ -1,4 +1,4 @@
-import { readFileSync, copyFileSync } from 'node:fs';
+import { readFileSync, copyFileSync, existsSync, lstatSync, realpathSync, readdirSync, rmSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
 
@@ -8,11 +8,27 @@ if (!/^\/[a-z0-9-]+(?:\/[a-z0-9-]+)*$/.test(basePath)) {
 }
 const packageRoot = resolve('node_modules/vinext');
 const pkg = JSON.parse(readFileSync(resolve(packageRoot, 'package.json'), 'utf8'));
+// The centralized server layout keeps generated files outside code/. vinext's
+// default cleanup removes the dist symlink itself, so clean its verified target
+// here and tell the builder to preserve the directory entry.
+const dist = resolve('dist');
+const keepBuildRoot = existsSync(dist) && lstatSync(dist).isSymbolicLink();
+if (keepBuildRoot) {
+  const project = resolve('..');
+  const expected = resolve(project, 'runtime/development-build');
+  if (resolve('.') !== resolve(project, 'code') || realpathSync(dist) !== expected) {
+    throw new Error('Refusing to clean an unexpected build symlink target.');
+  }
+  for (const entry of readdirSync(expected)) {
+    rmSync(resolve(expected, entry), { recursive: true, force: true });
+  }
+}
 const result = spawnSync(process.execPath, [resolve(packageRoot, pkg.bin.vinext), 'build'], {
   stdio: 'inherit',
   env: {
     ...process.env,
     FAMILY_SELF_HOSTED: 'true',
+    FAMILY_KEEP_BUILD_ROOT: String(keepBuildRoot),
     NEXT_PUBLIC_SELF_HOSTED: 'true',
     NEXT_PUBLIC_BASE_PATH: basePath,
   },
