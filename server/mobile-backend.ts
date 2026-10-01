@@ -7,6 +7,8 @@ import {
   registerFamily,
   registrationEnabled,
   RegistrationError,
+  AccountError,
+  updateAccountCredentials,
   passwordField,
   HttpError,
   json,
@@ -111,7 +113,14 @@ async function login(request: Request, store: FamilyStore) {
     password,
     row ? String(row.password) : `${'0'.repeat(32)}:${'0'.repeat(128)}`,
   );
-  if (!row || !valid) throw new HttpError(401, '账号或密码不正确');
+  if (
+    !row ||
+    !valid ||
+    store.db
+      .prepare('SELECT password FROM accounts WHERE id=? AND username=?')
+      .get(row.id, username)?.password !== row.password
+  )
+    throw new HttpError(401, '账号或密码不正确');
   return issueMobileSession(
     { id: String(row.id), username: String(row.username) },
     store,
@@ -304,6 +313,21 @@ async function handle(
           .prepare('DELETE FROM mobile_sessions WHERE token=?')
           .run(session.token);
         response = json({ ok: true });
+      } else if (
+        parts.length === 2 &&
+        parts[0] === 'account' &&
+        (parts[1] === 'username' || parts[1] === 'password')
+      ) {
+        response = await updateAccountCredentials(
+          request,
+          store,
+          session.user,
+          parts[1],
+          () => {
+            bearer(request, store);
+          },
+          (account) => issueMobileSession(account, store),
+        );
       } else response = await dispatch(request, parts, store, session.user);
     }
     for (const [key, value] of Object.entries(headers))
@@ -315,7 +339,9 @@ async function handle(
         {
           error: e.message,
           code:
-            e instanceof MobileError || e instanceof RegistrationError
+            e instanceof MobileError ||
+            e instanceof RegistrationError ||
+            e instanceof AccountError
               ? e.code
               : codes[e.status] || 'REQUEST_FAILED',
         },
