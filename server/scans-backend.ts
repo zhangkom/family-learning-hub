@@ -136,7 +136,7 @@ export async function handleScans(
       );
     if (action === 'recognize') {
       if (!recognitionEnabled())
-        throw new HttpError(503, 'AI 识题尚未配置，原件已保存，可先手动整理');
+        throw new HttpError(503, 'AI 识题暂未启用，原件已保存，可先手动整理');
       const maximum = Math.max(
         1,
         Math.min(50, Number(process.env.FAMILY_AI_DAILY_LIMIT) || 10),

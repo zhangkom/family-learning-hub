@@ -34,6 +34,8 @@ const server = spawn(process.execPath, ['dist/standalone/server.js'], {
     FAMILY_DATA_DIR: dataDir,
     FAMILY_SETUP_TOKEN: setupToken,
     FAMILY_PUBLIC_ORIGIN: origin,
+    FAMILY_RECOGNITION_ENABLED:
+      process.env.FAMILY_TEST_AI === '1' ? 'true' : 'false',
   },
 });
 server.stdout.on('data', (chunk) => {

@@ -28,6 +28,7 @@ const server = spawn(process.execPath, ['dist/standalone/server.js'], {
     FAMILY_SETUP_TOKEN: setupToken,
     FAMILY_PUBLIC_ORIGIN: origin,
     FAMILY_AI_API_KEY: '',
+    FAMILY_RECOGNITION_ENABLED: 'false',
     OPENAI_API_KEY: '',
     FAMILY_MOBILE_ORIGINS: 'https://localhost,http://127.0.0.1:3178',
   },
