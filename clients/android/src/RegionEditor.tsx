@@ -13,6 +13,7 @@ type Props = {
   onAdd: (region: Region) => void;
   onCreate: (region: Region) => void;
   candidateIds?: string[];
+  selectedCandidateIds?: string[];
   readOnlyIds?: string[];
   showExtraRegions?: boolean;
   allowCreate?: boolean;
@@ -29,7 +30,7 @@ const percent = (n: number) => `${n * 100}%`;
 
 export function RegionEditor({
   image, questions, selectedId, activeRegion, onSelect, onChange, onAdd, onCreate, children,
-  candidateIds = [], readOnlyIds = [], showExtraRegions = true, allowCreate = true,
+  candidateIds = [], selectedCandidateIds = [], readOnlyIds = [], showExtraRegions = true, allowCreate = true,
   onToggleCandidate,
   onImageDimensions,
 }: Props) {
@@ -122,7 +123,9 @@ export function RegionEditor({
           <Move size={16} /> 调整框</button>}
       </div>
       <output className="hint">{hint || (
-        mode === 'browse' ? '先滑动照片找到题目，再点“框选一道题”。' :
+        mode === 'browse' ? onToggleCandidate
+          ? '点建议框选择或取消；滑动查看照片，需改范围时点“调整框”。'
+          : '先滑动照片找到题目，再点“框选一道题”。' :
         mode === 'new' ? '拖动框住一道题的完整题干和配图，松手就能建题。' :
         mode === 'append' ? '拖动给当前题补框；需要另一道题请点“框选一道题”。' :
         '拖动框调整位置；拖动右下角圆点调整大小。滑动照片请切回“浏览照片”。'
@@ -143,7 +146,7 @@ export function RegionEditor({
               return <g key={r.id}>
                 <rect x={percent(r.x)} y={percent(r.y)} width={percent(r.width)} height={percent(r.height)}
                   data-region-id={r.id} data-question-id={q.id}
-                  className={`${q.id === selectedId ? 'active-region' : 'other-region'}${candidateIds.includes(q.id) ? ' candidate-region' : ''}${readOnlyIds.includes(q.id) ? ' readonly-region' : ''}`}
+                  className={`${q.id === selectedId ? 'active-region' : 'other-region'}${candidateIds.includes(q.id) ? ' candidate-region' : ''}${selectedCandidateIds.includes(q.id) ? ' candidate-selected' : ''}${readOnlyIds.includes(q.id) ? ' readonly-region' : ''}`}
                   onPointerDown={(e) => start(e, q.id, r)}
                   onClick={() => {
                     if (mode !== 'browse' || readOnlyIds.includes(q.id)) return;
@@ -152,6 +155,7 @@ export function RegionEditor({
                   }} />
                 <text x={percent(r.x)} y={percent(r.y)} dx="5" dy="19" className="region-number">
                   {q.number || index + 1}{r.kind === 'answer' ? ' · 作答' : r.kind === 'figure' ? ' · 配图' : ''}
+                  {selectedCandidateIds.includes(q.id) ? ' · ✓ 已选' : ''}
                 </text>
                 {r.id === activeRegion && mode === 'move' && <g>
                   <circle cx={percent(r.x + r.width)} cy={percent(r.y + r.height)} r="10" className="resize-handle" />

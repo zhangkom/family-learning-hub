@@ -54,6 +54,7 @@ export function CandidatePicker({ image, suggestions, existing, defaultSubject, 
     <p className="hint">虚线框是建议，可能漏掉配图或作答。点选需要的题框，再调整、拆分或合并。原有题框保留。</p>
     <RegionEditor image={image} questions={[...existing, ...items]} selectedId={active}
       activeRegion={current?.regions[0]?.id || ''} candidateIds={items.map((q) => q.id)}
+      selectedCandidateIds={selected}
       readOnlyIds={existing.map((q) => q.id)} showExtraRegions={false} allowCreate={items.length < candidateLimit}
       onSelect={focus} onToggleCandidate={(id) => {
         setActive(id); setSelected(selected.includes(id) ? selected.filter((value) => value !== id) : [...selected, id]);

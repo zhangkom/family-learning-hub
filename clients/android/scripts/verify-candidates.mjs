@@ -83,7 +83,11 @@ try {
   await picker().getByRole('button', { name: '撤销上次调整' }).click(); assert.equal(await checksBoxes().count(), 2);
   await picker().getByRole('button', { name: '浏览照片', exact: true }).click();
   await picker().locator('.candidate-region').first().tap(); assert.equal(await checksBoxes().nth(0).isChecked(), false);
+  assert.equal(await picker().locator('.candidate-selected').count(), 0);
+  assert.equal(await picker().locator('.region-number').filter({ hasText: '✓ 已选' }).count(), 0);
   await picker().locator('.candidate-region').first().tap(); assert.equal(await checksBoxes().nth(0).isChecked(), true);
+  assert.equal(await picker().locator('.candidate-selected').count(), 1);
+  assert.equal(await picker().locator('.region-number').filter({ hasText: '✓ 已选' }).count(), 1);
   await picker().getByRole('button', { name: '调整框', exact: true }).click();
   await picker().locator('.paper-scroll').scrollIntoViewIfNeeded();
   const handle = await picker().locator('.resize-target').boundingBox();
@@ -97,6 +101,8 @@ try {
   assert.equal(await picker().locator('.candidate-region').first().getAttribute('width'), beforeWidth);
   checks.push('touch toggles selection; 44px resize commits; split and resize undo restore original candidates');
   await checksBoxes().nth(1).check();
+  assert.equal(await picker().locator('.candidate-selected').count(), 2);
+  assert.equal(await picker().locator('.region-number').filter({ hasText: '✓ 已选' }).count(), 2);
   await picker().getByRole('button', { name: '合并所选建议' }).click(); assert.equal(await checksBoxes().count(), 1);
   await picker().getByRole('button', { name: '撤销上次调整' }).click(); assert.equal(await checksBoxes().count(), 2);
   await picker().getByRole('button', { name: '移除所选建议' }).click(); assert.equal(await checksBoxes().count(), 0);

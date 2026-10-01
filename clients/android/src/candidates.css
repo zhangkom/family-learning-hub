@@ -11,7 +11,9 @@
 .candidate-tools button { min-height: 44px; }
 .candidate-subject { display: grid; gap: 6px; font-size: 14px; }
 .candidate-subject select { width: 100%; min-height: 44px; font-size: 16px; }
-.region-overlay .candidate-region { stroke-dasharray: 6 4; }
+.region-overlay .candidate-region { stroke-dasharray: 6 4; fill: transparent; }
+.region-overlay .candidate-selected { fill: #15803d26; stroke: #15803d; }
+.region-overlay .candidate-region.active-region { stroke-width: 3; }
 .region-overlay .readonly-region { stroke: #6e7685; fill: #64748b0c; pointer-events: none; }
 .candidate-picker .paper-panel { max-width: 100%; }
 @media (min-width: 700px) { .candidate-picker { max-width: 820px; margin-inline: auto; } }
