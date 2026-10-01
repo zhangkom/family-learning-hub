@@ -4,6 +4,8 @@
 
 ## 0.2.4 游客首页与账号密码注册
 
+2026-10-01 已发布：[下载 0.2.4](https://123.207.232.151/family-learning/downloads/android/family-learning-0.2.4-release-7287efa.apk)，[最新版入口](https://123.207.232.151/family-learning/downloads/android/latest.apk)。大小 6,690,297 字节（约 6.69 MB），SHA-256 `E44876C8AB20FF7B8E6F1282D6C02E040E16EC9AD1D7F42B2D16C077DCB345E8`，APK 源码 `7287efa5dc8955efb2992433a2338088ee7102a4`，包名和长期证书保持一致。腾讯后台先切换至 `67a8d2f82c316c8395e60cb53b65bce334cdefc2` 并开启普通注册，再发布 APK。本机北京时间 18:33 经 latest 完整公网下载，正常 TLS、固定目标、字节数/哈希、最终权限白名单、清单精确 CORS/no-store、`registrationEnabled=true` 和家长网站状态均核验通过；记录在 `outputs/android/download-check/verification-0.2.4.json`。旧版本可覆盖升级，不需卸载；真机尚未验收。
+
 版本 `0.2.4`、`versionCode=6`。未登录先显示功能首页，公开展示拍照收题、相册选图、错题本、分步辅导、举一反三与学习报告入口；点击需要账号的入口再进入注册/登录。游客浏览不加载孩子、家庭记录或本机学习草稿，只有公开版本信息请求。已有有效登录仍直接进入本家庭首页；注销后回到游客首页。
 
 按钮和页签直接使用“注册”“登录”。注册只填写账号与密码，密码 6–128 字符，支持 6 位数字，保留原有长密码兼容；不再要求填写启用码或重复确认密码，可主动显示/隐藏密码。普通注册调用 `POST /api/mobile/v1/session/register`，只有 `username,password`，成功后直接保存 Bearer 会话；不把旧启用码塞进 APK。使用 `/setup` 的 `registrationEnabled` 控制注册可用状态，登录独立于此状态；重名可改账号后重试或转登录，断网/关闭注册不妨碍浏览游客首页。
