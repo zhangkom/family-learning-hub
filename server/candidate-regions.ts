@@ -1,5 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { createRequire } from 'node:module';
+import { resolve } from 'node:path';
 import { Buffer } from 'node:buffer';
 import type { CandidateRegions } from '../lib/mobile';
 import { MAX_SCAN_BYTES } from '../lib/upload-security';
@@ -10,7 +11,10 @@ import { readScanFile } from './scan-files';
 import workerSource from './candidate-worker.cjs?raw';
 
 type Detection = Omit<CandidateRegions, 'scanId' | 'revision'>;
-const require = createRequire(import.meta.url);
+// vinext rewrites import.meta.url to the build-time source path. The standalone
+// entrypoint sets cwd to its own release root; development/tests use the repo
+// root. Resolve only from that runtime root, including in private service mounts.
+const require = createRequire(resolve(process.cwd(), 'package.json'));
 function dimensions(value: unknown): value is Detection['image'] {
   const v = value as Detection['image'] | undefined;
   return Boolean(
