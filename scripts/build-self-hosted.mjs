@@ -1,5 +1,6 @@
 import {
   readFileSync,
+  writeFileSync,
   copyFileSync,
   existsSync,
   lstatSync,
@@ -54,6 +55,20 @@ const result = spawnSync(
 );
 if (result.error) throw result.error;
 if (result.status === 0) {
+  // Keep runtime dependency resolution independent of the caller's directory.
+  // This also makes relocated standalone releases work without source access.
+  const entry = 'dist/standalone/server.js';
+  const launcher = readFileSync(entry, 'utf8');
+  if (!launcher.includes('startProdServer({')) {
+    throw new Error('Unrecognized standalone launcher; cannot set runtime root.');
+  }
+  writeFileSync(
+    entry,
+    launcher.replace(
+      'startProdServer({',
+      'process.chdir(import.meta.dirname);\n\nstartProdServer({',
+    ),
+  );
   copyFileSync(
     'scripts/backup-family.mjs',
     'dist/standalone/backup-family.mjs',
