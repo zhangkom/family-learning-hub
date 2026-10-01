@@ -4,18 +4,20 @@
 
 ## 当前交付（2026-10-01）
 
-- 固定版本：[知燃 AI 0.2.6 release / 34ea987](https://123.207.232.151/family-learning/downloads/android/family-learning-0.2.6-release-34ea987.apk)
+- 固定版本：[知燃 AI 0.2.7 release / 26b2e1d](https://123.207.232.151/family-learning/downloads/android/family-learning-0.2.7-release-26b2e1d.apk)
 - 最新版本：[latest.apk](https://123.207.232.151/family-learning/downloads/android/latest.apk)
 - 公开元数据：[latest.json](https://123.207.232.151/family-learning/downloads/android/latest.json)
-- APK 源码提交：`34ea98765bed6e39ed30385044ce8ce6d5214f5d`；versionCode 8；大小：6,696,489 字节。
-- SHA-256：`2840f510e53fe35b9af8f21d5fd03c47576da62e7dbd9277eaa7398ae6789140`。
+- APK 源码提交：`26b2e1d61616cc8cc4e91d2a6404f9817c142210`；versionCode 9；大小：6,696,841 字节。
+- SHA-256：`583e56ca6bbcf616d2f3efd5fcf59f262448161d2e26730d804aaf08d37e992f`。
 - 0.1.0 固定链接继续保留；新版已内置腾讯服务地址，并使用长期发布签名。
 
-这是家庭试用包，未完成安卓真机拍照验收。后台已于 2026-10-01 18:29 部署普通多家庭注册，注册只需账号及 6–128 位密码，新家庭与历史资料隔离；游客可先浏览功能入口。详见 [普通家庭注册上线记录](普通家庭注册上线记录.md)。0.2.0 至 0.2.5 可直接覆盖升级，无需卸载。0.1.0 调试版升级前应确认本机草稿已上传，再卸载旧版；之后沿用固定发布签名。
+这是家庭试用包，0.2.7 真机覆盖/增量升级尚待验收。用户已在红米 Turbo3 使用 0.2.6 完成手动框选与分析流程；这不代表答案正确率或本版升级已验收。后台已于 2026-10-01 18:29 部署普通多家庭注册，注册只需账号及 6–128 位密码，新家庭与历史资料隔离；游客可先浏览功能入口。详见 [普通家庭注册上线记录](普通家庭注册上线记录.md)。0.2.0 至 0.2.6 可直接覆盖升级，无需卸载。0.1.0 调试版升级前应确认本机草稿已上传，再卸载旧版；之后沿用固定发布签名。
 
 0.2.2 新增更新入口与系统安装引导，详见 [安卓更新发布记录](安卓更新发布记录.md)。0.2.3 更名为“知燃 AI”，更新图标、首页和权限说明，详见 [知燃 AI 安卓发布记录](知燃AI安卓发布记录.md)。0.2.0、0.2.1、0.2.2 均可使用原签名覆盖升级。
 
 0.2.5 新增“我的 → 账号设置”，支持修改用户名和密码，并加入差异更新能力；其历史清单无 deltas。0.2.6 支持直接框题后逐题选科、错题收录与单题 AI 讲解（待核对），并首次向已安装 0.2.5/code7 的客户端提供 127,814 字节补丁，节省 98.091%。首次安装和更早版本直接使用完整包，无需先安装 0.2.5。详见 [0.2.6 发布记录](单题讲解与026发布记录.md)、[账号设置](账号设置与025发布记录.md) 及 [安卓增量更新](安卓增量更新.md)。
+
+0.2.7 记住同一照片中用户已选的科目，后续新框题自动沿用，仍可逐题修改，并修复删除题目后的科目提示。从 0.2.6/code8 和 0.2.5/code7 均可直接增量升级，后台仍为 9bf7515。详见 [0.2.7 发布记录](同图科目与027发布记录.md)。
 
 ## 文件与配置位置
 
@@ -41,15 +43,15 @@
 ```sh
 P=/home/ubuntu/codex_project/workspace_own/family-learning-hub
 sudo python3 "$P/runtime/tools/publish-apk.py" \
-  --source "$P/artifacts/android/20261001-34ea987/family-learning-0.2.6-release.apk" \
-  --version 0.2.6 --channel release \
-  --version-code 8 \
-  --changelog '直接框题→逐题选科→保存错题并AI讲解（待核对）；支持触屏滚动、缩放和题框调节；已安装0.2.5优先增量升级。' \
-  --commit 34ea98765bed6e39ed30385044ce8ce6d5214f5d \
-  --sha256 2840f510e53fe35b9af8f21d5fd03c47576da62e7dbd9277eaa7398ae6789140 \
-  --bytes 6696489 \
-  --delta-manifest "$P/artifacts/android/20261001-34ea987/delta-7-to-8.json" \
-  --notes '知燃 AI 家庭试用版；直接框题后逐题选择科目，保存错题并获取AI讲解（结果待核对），支持触屏滚动、缩放和题框调节；我的可修改用户名和密码。已安装0.2.5时优先增量升级，校验失败可回退完整包。沿用长期签名；真机安装与增量升级尚待设备验收。'
+  --source "$P/artifacts/android/20261001-26b2e1d/family-learning-0.2.7-release.apk" \
+  --version 0.2.7 --channel release \
+  --version-code 9 \
+  --changelog '同一照片记住已选科目，后续框题自动沿用；保留逐题修改，修复删除题目后的科目提示。' \
+  --commit 26b2e1d61616cc8cc4e91d2a6404f9817c142210 \
+  --sha256 583e56ca6bbcf616d2f3efd5fcf59f262448161d2e26730d804aaf08d37e992f \
+  --bytes 6696841 \
+  --delta-manifest "$P/artifacts/android/20261001-26b2e1d/deltas.json" \
+  --notes '知燃 AI 家庭试用版；同一照片记住用户已选科目，后续框题自动沿用，仍可逐题修改。已安装0.2.5或0.2.6可优先使用适配增量，首次安装或不适用时下载完整包。本版未加入自动框题、端侧处理或AI提速。沿用长期发布签名；0.2.7真机升级尚待设备验收。'
 ```
 
 固定版本文件禁止覆盖为不同内容；重新构建产生不同二进制时应使用新版本或新提交。工具备份配置，更新路由，校验 Nginx 后平滑重载；等待新配置生效，再完整下载固定地址和 latest 地址核对大小/哈希，检查 Range、公开元数据和私有路径拒绝访问。TLS 使用系统信任链，不关闭证书校验。失败会恢复配置和 latest 指向，保留不可变文件供排查。
@@ -58,7 +60,7 @@ sudo python3 "$P/runtime/tools/publish-apk.py" \
 
 公开 `latest.json` 保留 `app,version,channel,commit,publishedAt,fileName,downloadUrl,bytes,sha256,notes`，新增整数 `versionCode` 和简短中文字符串 `changelog`。客户端以 `versionCode` 与本机版本比较；`downloadUrl` 指向固定版本 APK，下载后可核对字节数及 SHA-256。目前没有最低版本字段或强制更新规则。
 
-自 0.2.3 起，新建版本清单的 `app` 展示名称为 `知燃 AI`，当前为 0.2.6 / versionCode 8，清单含一条 fromVersionCode 7 的可选 `deltas`。已有登记条目仍使用原元数据，历史固定 APK 和版本 JSON 不改名、不改内容；URL 结构、包名及长期签名保持不变。后续也只有收到完成验证的签名 APK 和对应源码归档后才运行发布工具并切换 latest。
+自 0.2.3 起，新建版本清单的 `app` 展示名称为 `知燃 AI`，当前为 0.2.7 / versionCode 9，清单含 fromVersionCode 8 和 7 两条可选 `deltas`。已有登记条目仍使用原元数据，历史固定 APK 和版本 JSON 不改名、不改内容；URL 结构、包名及长期签名保持不变。后续也只有收到完成验证的签名 APK 和对应源码归档后才运行发布工具并切换 latest。
 
 该地址使用 `Cache-Control: no-store`；安卓 Origin `https://localhost` 可 GET/HEAD/OPTIONS，响应带精确的 `Access-Control-Allow-Origin` 及 `Vary: Origin`。其他来源不获得允许跨来源读取的头，无 Origin 的普通读取保持正常；公开文件仍限已有精确文件名，不开放工程目录。
 
