@@ -4,14 +4,14 @@
 
 ## 当前交付（2026-10-01）
 
-- 固定版本：[0.2.0 release / 11f3bb7](https://123.207.232.151/family-learning/downloads/android/family-learning-0.2.0-release-11f3bb7.apk)
+- 固定版本：[0.2.1 release / 55045ec](https://123.207.232.151/family-learning/downloads/android/family-learning-0.2.1-release-55045ec.apk)
 - 最新版本：[latest.apk](https://123.207.232.151/family-learning/downloads/android/latest.apk)
 - 公开元数据：[latest.json](https://123.207.232.151/family-learning/downloads/android/latest.json)
-- APK 源码提交：`11f3bb781d2ed6dd444adcf65fdabb7eba38f995`；versionCode 2；大小：6,677,781 字节。
-- SHA-256：`77926a11a75806b6d547170d7bdc0d5bee140aee51499e6c20599a2bbbe1a893`。
+- APK 源码提交：`55045ecd9a05767e6389c31b5b6755812f043ff7`；versionCode 3；大小：6,679,185 字节。
+- SHA-256：`2656ba94926514028da62c1884b9f7808bd01182617199fe951d3740b55d1337`。
 - 0.1.0 固定链接继续保留；新版已内置腾讯服务地址，并使用长期发布签名。
 
-这是家庭试用包，未完成安卓真机拍照验收。后台已于 2026-10-01 13:32 上线，见 [移动后台上线记录](移动后台上线记录.md)。用户需先在网页首次开通家庭账号。0.1.0 调试版升级前应确认本机草稿已上传，再卸载旧版；之后沿用固定发布签名。
+这是家庭试用包，未完成安卓真机拍照验收。后台已于 2026-10-01 13:32 上线，见 [移动后台上线记录](移动后台上线记录.md)。0.2.1 可在 App 内使用私下提供的启用码首次注册并直接登录，见 [首次开通修复](移动首次开通修复.md)。0.2.0 可直接覆盖升级，无需卸载。0.1.0 调试版升级前应确认本机草稿已上传，再卸载旧版；之后沿用固定发布签名。
 
 ## 文件与配置位置
 
@@ -37,11 +37,11 @@
 ```sh
 P=/home/ubuntu/codex_project/workspace_own/family-learning-hub
 sudo python3 "$P/runtime/tools/publish-apk.py" \
-  --source "$P/artifacts/android/20261001-11f3bb7/family-learning-0.2.0-release.apk" \
-  --version 0.2.0 --channel release \
-  --commit 11f3bb781d2ed6dd444adcf65fdabb7eba38f995 \
-  --sha256 77926a11a75806b6d547170d7bdc0d5bee140aee51499e6c20599a2bbbe1a893 \
-  --bytes 6677781 \
+  --source "$P/artifacts/android/20261001-55045ec/family-learning-0.2.1-release.apk" \
+  --version 0.2.1 --channel release \
+  --commit 55045ecd9a05767e6389c31b5b6755812f043ff7 \
+  --sha256 2656ba94926514028da62c1884b9f7808bd01182617199fe951d3740b55d1337 \
+  --bytes 6679185 \
   --notes '家庭试用版，内置腾讯服务地址；支持多孩子、照片上传、手动分题与手写校对；识别结果需人工核对，精确区域仍需手动框选；尚未完成安卓真机验收；0.1.0 调试版升级前需确认草稿已上传并卸载旧版，之后沿用固定发布签名。'
 ```
 
