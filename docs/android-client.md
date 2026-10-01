@@ -41,7 +41,13 @@ APK 编译成功不等于真机相机、Keystore、相机进程恢复或各种�
 
 私有归档和公开下载职责不同：`artifacts/android/` 中可以保存工程快照与合成测试结果，但不得把该目录整体映射到公网。签名私钥及其密码只进入受控私有保存位置。
 
-当前待发布包：`family-learning-0.1.0-debug.apk`，`versionCode=1`，8,279,164 字节；SHA-256 为 `709B6D0E3F917677ED4A25DCA49515802C3696CEACC54D68750103B4A7AA49A6`。源码集成提交 `2950f3c0e0dcf3f2f2e3a43a0ab906c754608184`，调试签名已验证。此包没有预置服务器地址，腾讯云当前正式版本也尚未启用移动端接口；首次公开下载不代表已完成日常试用闭环。
+2026-10-01 已发布开发包，`versionCode=1`，8,279,164 字节；SHA-256 为 `709B6D0E3F917677ED4A25DCA49515802C3696CEACC54D68750103B4A7AA49A6`。源码集成提交 `2950f3c0e0dcf3f2f2e3a43a0ab906c754608184`，调试签名已验证。此包没有预置服务器地址，腾讯云当前正式版本也尚未启用移动端接口；首次公开下载不代表已完成日常试用闭环。
+
+- [0.1.0 开发版固定下载地址](https://123.207.232.151/family-learning/downloads/android/family-learning-0.1.0-debug-2950f3c.apk)
+- [最新 APK 下载入口](https://123.207.232.151/family-learning/downloads/android/latest.apk)
+- [公开版本信息与校验值](https://123.207.232.151/family-learning/downloads/android/latest.json)
+
+服务器仅将工程内 `artifacts/public/android/` 的公开文件通过只读挂载与精确文件名路由提供下载。服务端完整下载校验、Range 请求与私有文件路径拦截已通过；本机使用正常 TLS 校验从最新入口跟随跳转完整下载，文件大小与 SHA-256 均一致，证明文件可从外网完整获取。复核记录保存在忽略目录 `outputs/android/download-check/`。此发布没有更换线上应用版本或启用新的移动后台。
 
 ## 下一阶段与验收顺序
 
