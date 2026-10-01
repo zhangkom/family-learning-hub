@@ -6,6 +6,7 @@ const paths = [
   '/',
   '/account',
   '/family-review',
+  '/students',
   '/scans',
   '/xiaobao',
   '/dabao',

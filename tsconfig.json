@@ -17,7 +17,8 @@
     "paths": {
       "@/*": ["./*"],
       "@family/backend": ["./server/family-backend.ts"],
-      "@family/scans": ["./server/scans-backend.ts"]
+      "@family/scans": ["./server/scans-backend.ts"],
+      "@family/mobile": ["./server/mobile-backend.ts"]
     }
   },
   "include": [
@@ -28,5 +29,5 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules"]
+  "exclude": ["node_modules", "work", "outputs", "dist", "clients"]
 }

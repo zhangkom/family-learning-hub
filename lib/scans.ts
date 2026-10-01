@@ -1,5 +1,6 @@
 import type { ChildId } from './family-state';
 import type { LearningSubject } from './learning';
+import type { Question } from './mobile';
 export const scanSubjects: LearningSubject[] = [
   '数学',
   '英语',
@@ -26,6 +27,9 @@ export type ScanQuestion = Record<keyof typeof scanFields, string> & {
 export type ScanRecord = {
   id: string;
   child?: ChildId;
+  studentId?: string;
+  structuredQuestions?: Question[];
+  uploadFingerprint?: string;
   subject: string;
   source: string;
   originalName: string;

@@ -47,6 +47,12 @@ export default function FamilyReview() {
             </Link>
           )}
         </header>
+        <Link href="/students" className="block rounded-2xl border bg-card p-5">
+          <span className="text-lg font-bold">学生资料与作答校对 →</span>
+          <span className="mt-2 block text-sm text-muted-foreground">
+            添加或切换学生，查看手机上传的原图、分题区域和孩子的可见步骤。
+          </span>
+        </Link>
         {children.map((child) => {
           const s = records[child];
           const recent = s.attempts.filter((a) => Date.parse(a.at) >= weekAgo);

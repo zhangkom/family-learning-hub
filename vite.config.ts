@@ -39,14 +39,24 @@ export default defineConfig(async (): Promise<UserConfig> => {
   if (process.env.FAMILY_SELF_HOSTED === 'true') {
     return {
       build: {
-        emptyOutDir: process.env.FAMILY_KEEP_BUILD_ROOT === 'true' ? false : undefined,
+        emptyOutDir:
+          process.env.FAMILY_KEEP_BUILD_ROOT === 'true' ? false : undefined,
       },
       css: { postcss: { plugins: [tailwindcss()] } },
       resolve: {
         alias: {
-          '@family/backend': fileURLToPath(new URL('./server/family-backend.ts', import.meta.url)),
-          '@family/scans': fileURLToPath(new URL('./server/scans-backend.ts', import.meta.url)),
-          'cloudflare:workers': fileURLToPath(new URL('./server/unavailable-cloud-bindings.ts', import.meta.url)),
+          '@family/backend': fileURLToPath(
+            new URL('./server/family-backend.ts', import.meta.url),
+          ),
+          '@family/scans': fileURLToPath(
+            new URL('./server/scans-backend.ts', import.meta.url),
+          ),
+          '@family/mobile': fileURLToPath(
+            new URL('./server/mobile-backend.ts', import.meta.url),
+          ),
+          'cloudflare:workers': fileURLToPath(
+            new URL('./server/unavailable-cloud-bindings.ts', import.meta.url),
+          ),
         },
       },
       plugins: [vinext()],
@@ -63,7 +73,19 @@ export default defineConfig(async (): Promise<UserConfig> => {
   const { cloudflare } = await import('@cloudflare/vite-plugin');
 
   return {
-    resolve: { alias: { '@family/backend': fileURLToPath(new URL('./server/family-unavailable.ts', import.meta.url)), '@family/scans': fileURLToPath(new URL('./server/family-unavailable.ts', import.meta.url)) } },
+    resolve: {
+      alias: {
+        '@family/backend': fileURLToPath(
+          new URL('./server/family-unavailable.ts', import.meta.url),
+        ),
+        '@family/scans': fileURLToPath(
+          new URL('./server/family-unavailable.ts', import.meta.url),
+        ),
+        '@family/mobile': fileURLToPath(
+          new URL('./server/family-unavailable.ts', import.meta.url),
+        ),
+      },
+    },
     css: { postcss: { plugins: [tailwindcss()] } },
     server: isCodexSeatbeltSandbox
       ? { watch: { useFsEvents: false, usePolling: true } }

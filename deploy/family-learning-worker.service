@@ -1,0 +1,32 @@
+[Unit]
+Description=Family Learning Hub persistent scan worker
+After=network.target
+RequiresMountsFor=/home/ubuntu/codex_project/workspace_own/family-learning-hub
+
+[Service]
+Type=simple
+User=family-learning-app
+Group=family-learning-app
+WorkingDirectory=/home/ubuntu/codex_project/workspace_own/family-learning-hub/runtime/current
+ExecStart=/usr/local/bin/node worker/worker.mjs
+EnvironmentFile=/home/ubuntu/codex_project/workspace_own/family-learning-hub/config/family-learning-hub.env
+EnvironmentFile=/home/ubuntu/codex_project/workspace_own/family-learning-hub/config/family-learning-sync.env
+Environment=NODE_ENV=production
+Environment=TMPDIR=/home/ubuntu/codex_project/workspace_own/family-learning-hub/temp/service
+StandardOutput=append:/home/ubuntu/codex_project/workspace_own/family-learning-hub/runtime/logs/worker.log
+StandardError=append:/home/ubuntu/codex_project/workspace_own/family-learning-hub/runtime/logs/worker-error.log
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=110
+MemoryMax=384M
+CPUQuota=100%
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=tmpfs
+BindReadOnlyPaths=/home/ubuntu/codex_project/workspace_own/family-learning-hub/runtime/current
+BindPaths=/home/ubuntu/codex_project/workspace_own/family-learning-hub/data /home/ubuntu/codex_project/workspace_own/family-learning-hub/temp/service
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
