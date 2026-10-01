@@ -72,6 +72,16 @@ export class FamilyApi {
       password,
     });
   }
+  setupStatus() {
+    return this.request<{ enabled: boolean; needsSetup: boolean }>('/setup');
+  }
+  setup(username: string, password: string, setupToken: string) {
+    return this.request<Login>('/session/setup', 'POST', {
+      username,
+      password,
+      setupToken,
+    });
+  }
   me() {
     return this.request<{ user: User }>('/session');
   }

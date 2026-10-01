@@ -22,6 +22,7 @@ await page.route('**/*', async (route) => {
   if (!url.startsWith(`${api}/`)) return route.abort('blockedbyclient');
   const send = (data) => route.fulfill({ contentType: 'application/json', body: JSON.stringify(data) });
   const path = new URL(url).pathname.split('/v1')[1];
+  if (path === '/setup') return send({ enabled: true, needsSetup: false });
   if (path === '/session/login') return send({ token: 'pilot-synthetic-token', user: { id: 'pilot-family', username: '测试家庭' }, expiresAt: Date.now() + 60000 });
   assert.equal(request.headers().authorization, 'Bearer pilot-synthetic-token');
   if (path === '/students') return send({ students: [student] });

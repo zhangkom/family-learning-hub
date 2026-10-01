@@ -130,6 +130,7 @@ await page.route(`${api}/**`, async (route) => {
       contentType: 'application/json',
       body: JSON.stringify(data),
     });
+  if (path === '/setup') return send({ enabled: true, needsSetup: false });
   if (path === '/session/login')
     return send({
       token: 'synthetic-test-token',
