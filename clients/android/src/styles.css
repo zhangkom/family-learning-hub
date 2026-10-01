@@ -1175,3 +1175,6 @@ fieldset:disabled .region-overlay {
 summary {
   cursor: pointer;
 }
+.family-links { font-size: 12px; color: var(--muted); text-align: center; margin-top: 16px; }
+.family-links nav { display: flex; justify-content: center; gap: 16px; flex-wrap: wrap; margin-top: 8px; }
+.family-links a { color: var(--green); text-underline-offset: 3px; padding: 5px 0; }

@@ -1,5 +1,14 @@
 apply plugin: 'com.android.application'
 
+def clientPackage = new groovy.json.JsonSlurper().parse(new File(rootProject.projectDir.parentFile, 'package.json'))
+def signingPath = System.getenv('FAMILY_ANDROID_KEYSTORE')
+def signingPassword = System.getenv('FAMILY_ANDROID_STORE_PASSWORD')
+def signingAlias = System.getenv('FAMILY_ANDROID_KEY_ALIAS')
+def releaseRequested = gradle.startParameter.taskNames.any { it.toLowerCase().contains('release') }
+if (releaseRequested && (!signingPath || !signingPassword || !signingAlias)) {
+    throw new GradleException('Release signing is required. Use scripts/build-pilot.ps1 with the private signing directory.')
+}
+
 android {
     namespace = "cn.familylearning.study"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -7,8 +16,8 @@ android {
         applicationId "cn.familylearning.study"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "0.1.0"
+        versionCode clientPackage.androidVersionCode
+        versionName clientPackage.version
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -16,8 +25,19 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        if (signingPath && signingPassword && signingAlias) {
+            familyRelease {
+                storeFile file(signingPath)
+                storePassword signingPassword
+                keyAlias signingAlias
+                keyPassword signingPassword
+            }
+        }
+    }
     buildTypes {
         release {
+            if (signingPath && signingPassword && signingAlias) signingConfig signingConfigs.familyRelease
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }

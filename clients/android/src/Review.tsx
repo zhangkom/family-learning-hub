@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
+import { Capacitor } from '@capacitor/core';
+import { App as NativeApp } from '@capacitor/app';
 import { ArrowLeft, Check, Plus, Save, RefreshCw, Trash2 } from 'lucide-react';
 import { ApiError, FamilyApi } from './api';
 import { RegionEditor } from './RegionEditor';
@@ -16,6 +18,7 @@ type Props = {
   owner: string;
   scan: Scan;
   studentName: string;
+  recognitionEnabled: boolean;
   onBack: () => void;
   onUpdate: (scan: Scan) => void;
 };
@@ -24,6 +27,7 @@ export function Review({
   owner,
   scan: initial,
   studentName,
+  recognitionEnabled,
   onBack,
   onUpdate,
 }: Props) {
@@ -44,6 +48,16 @@ export function Review({
   const [draftReady, setDraftReady] = useState(false),
     [conflict, setConflict] = useState(false);
   const question = questions.find((q) => q.id === selected);
+  const backAction = useRef<() => void>(() => {});
+  backAction.current = () => {
+    if (busy || !draftReady) return;
+    if (!dirty || window.confirm('还有未保存的校对，确定返回吗？')) onBack();
+  };
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+    const listener = NativeApp.addListener('backButton', () => backAction.current());
+    return () => { void listener.then((handle) => handle.remove()); };
+  }, []);
   useEffect(() => {
     let alive = true;
     void reviewDrafts
@@ -240,10 +254,8 @@ export function Review({
         <button
           className="icon-button"
           aria-label="返回资料列表"
-          onClick={() => {
-            if (!dirty || window.confirm('还有未保存的校对，确定返回吗？'))
-              onBack();
-          }}
+          disabled={busy || !draftReady}
+          onClick={() => backAction.current()}
         >
           <ArrowLeft />
         </button>
@@ -268,7 +280,7 @@ export function Review({
         </span>
         <button
           disabled={
-            busy || dirty || ['queued', 'processing'].includes(scan.status)
+            !recognitionEnabled || busy || dirty || questions.length > 0 || ['queued', 'processing'].includes(scan.status)
           }
           onClick={() => void recognize()}
         >
@@ -276,6 +288,13 @@ export function Review({
           {scan.status === 'failed' ? '重试识别' : '识别这张照片'}
         </button>
       </div>
+      <p className="hint">
+        {recognitionEnabled
+          ? questions.length > 0
+            ? '已有题目会保留，识别不会覆盖校对。可以直接修改题干、框线和手写步骤。'
+            : '识别结果需要核对；不确定的题框请手动补齐，原图始终保留。'
+          : '识别服务暂不可用，仍可补题、手动框选并保存孩子的作答过程。'}
+      </p>
       {error && (
         <p role="alert" className="error">
           {error}

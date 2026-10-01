@@ -1,0 +1,57 @@
+import { createRequire } from 'node:module';
+import { readFileSync, mkdirSync } from 'node:fs';
+import assert from 'node:assert/strict';
+const require = createRequire(import.meta.url);
+const { chromium } = require(process.env.PLAYWRIGHT_MODULE_PATH || 'playwright');
+const client = process.env.PILOT_PREVIEW_URL || 'http://127.0.0.1:3179';
+assert.equal(new URL(client).hostname, '127.0.0.1', 'Only run against a local production build preview');
+const website = 'https://123.207.232.151/family-learning/';
+const api = `${website}api/mobile/v1`;
+const { version } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+const browser = await chromium.launch({ headless: true, channel: process.env.PLAYWRIGHT_CHANNEL || 'chrome' });
+const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+const errors = [];
+page.on('pageerror', (error) => errors.push(error.message));
+const student = { id: 'pilot-student', name: '试用测试学生', grade: '初一', createdAt: new Date().toISOString() };
+const scan = { id: 'pilot-scan', studentId: student.id, subject: '数学', source: '合成样例', originalName: '合成测试照片.png', mimeType: 'image/png', size: 200, createdAt: new Date().toISOString(), revision: 1, status: 'needs_review', questions: [] };
+let recognitionRequests = 0;
+// This preview never contacts production, even if a new client route is added.
+await page.route('**/*', async (route) => {
+  const request = route.request(), url = request.url();
+  if (new URL(url).origin === new URL(client).origin) return route.continue();
+  if (!url.startsWith(`${api}/`)) return route.abort('blockedbyclient');
+  const send = (data) => route.fulfill({ contentType: 'application/json', body: JSON.stringify(data) });
+  const path = new URL(url).pathname.split('/v1')[1];
+  if (path === '/session/login') return send({ token: 'pilot-synthetic-token', user: { id: 'pilot-family', username: '测试家庭' }, expiresAt: Date.now() + 60000 });
+  assert.equal(request.headers().authorization, 'Bearer pilot-synthetic-token');
+  if (path === '/students') return send({ students: [student] });
+  if (path === '/scans') return send({ scans: [scan], recognition: false });
+  if (path === '/scans/pilot-scan/file') return route.fulfill({ contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="600" height="800"><rect width="600" height="800" fill="white"/><text x="30" y="80">Synthetic test: 2 + 3 = ?</text></svg>' });
+  if (path.endsWith('/recognize')) recognitionRequests++;
+  errors.push(`Unexpected mocked request: ${request.method()} ${path}`);
+  return route.abort('blockedbyclient');
+});
+try {
+  await page.goto(client);
+  assert.equal(await page.getByLabel('家庭服务地址').count(), 0);
+  await page.getByText(`一起学 ${version} · 家庭试用版`, { exact: true }).waitFor();
+  assert.equal(await page.getByRole('link', { name: '家长账号' }).getAttribute('href'), `${website}account`);
+  assert.equal(await page.getByRole('link', { name: '家长查看' }).getAttribute('href'), `${website}students`);
+  mkdirSync('test-results', { recursive: true });
+  await page.screenshot({ path: 'test-results/pilot-login.png', fullPage: true });
+  await page.getByLabel('家庭账号', { exact: true }).fill('synthetic-family');
+  await page.getByLabel('密码', { exact: true }).fill('synthetic-password');
+  await page.getByRole('button', { name: '进入家庭学习' }).click();
+  await page.getByRole('button', { name: /合成测试照片/ }).click();
+  await page.locator('.paper-surface img').waitFor();
+  assert.equal(await page.getByRole('button', { name: '识别这张照片' }).isDisabled(), true);
+  await page.getByText('识别服务暂不可用，仍可补题、手动框选并保存孩子的作答过程。', { exact: true }).waitFor();
+  await page.getByRole('button', { name: '补题', exact: true }).click();
+  await page.getByLabel('完整题干').fill('2 + 3 = ?');
+  assert.equal(await page.getByRole('button', { name: '保存校对', exact: true }).isEnabled(), true);
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
+  await page.screenshot({ path: 'test-results/pilot-review.png', fullPage: true });
+  assert.equal(recognitionRequests, 0);
+  assert.deepEqual(errors, []);
+  console.log('Pilot production assets verified with mocked API: preconfigured HTTPS, version, parent links, disabled recognition, manual review, mobile layout. No production requests were made.');
+} finally { await browser.close(); }

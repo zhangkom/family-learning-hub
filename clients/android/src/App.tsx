@@ -15,14 +15,14 @@ import {
   RefreshCw,
   Users,
 } from 'lucide-react';
-import { FamilyApi, validateServer, sessionExpiredEvent } from './api';
+import { ApiError, FamilyApi, validateServer, sessionExpiredEvent } from './api';
 import { session } from './session';
 import { drafts, type Draft } from './drafts';
 import { Review } from './Review';
-import { statusNames, type Scan, type Student, type User } from './types';
+import { statusNames, type Scan, type Student } from './types';
+import { appVersion, configuredServer, familyWebsite } from './release';
+import { restoreSession, type Auth } from './restore-session';
 
-const configuredServer = import.meta.env.VITE_API_URL || '';
-type Auth = { base: string; token: string; user: User };
 function message(error: unknown) {
   return error instanceof Error ? error.message : '操作未完成，请重试';
 }
@@ -45,6 +45,8 @@ export function App() {
   const [auth, setAuth] = useState<Auth | null>(null),
     [loading, setLoading] = useState(true),
     [error, setError] = useState('');
+  const [restoreError, setRestoreError] = useState(''),
+    [restoreAttempt, setRestoreAttempt] = useState(0);
   useEffect(() => {
     const expired = (event: Event) => {
       const source = (event as CustomEvent<{ base: string; token: string }>)
@@ -60,18 +62,16 @@ export function App() {
   }, [auth]);
   useEffect(() => {
     let alive = true;
-    void session
-      .read()
-      .then(async (stored) => {
-        if (!stored) return;
-        const value = JSON.parse(stored) as { base: string; token: string };
-        const base = validateServer(value.base);
-        const { user } = await new FamilyApi(base, value.token).me();
-        if (alive) setAuth({ ...value, base, user });
+    setLoading(true);
+    setRestoreError('');
+    void restoreSession()
+      .then((value) => {
+        if (alive && value) setAuth(value);
       })
-      .catch(async (e) => {
-        await session.clear();
-        if (alive) setError(`请重新登录：${message(e)}`);
+      .catch((e) => {
+        if (!alive) return;
+        if (e instanceof ApiError && e.status === 401) setError(message(e));
+        else setRestoreError(message(e));
       })
       .finally(() => {
         if (alive) setLoading(false);
@@ -79,13 +79,31 @@ export function App() {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [restoreAttempt]);
   if (loading)
     return (
       <div className="loading-screen">
         <BookOpen />
         <p>正在打开家庭学习…</p>
       </div>
+    );
+  if (restoreError)
+    return (
+      <main className="loading-screen">
+        <BookOpen />
+        <h2>暂时连不上家庭服务</h2>
+        <p>登录信息和本机草稿仍然保留，请检查网络后重试。</p>
+        <p className="hint" role="alert">{restoreError}</p>
+        <div className="button-row">
+          <button className="primary" onClick={() => setRestoreAttempt((n) => n + 1)}>重新连接</button>
+          <button onClick={async () => {
+            try {
+              await session.clear();
+              setRestoreError('');
+            } catch (e) { setRestoreError(message(e)); }
+          }}>换账号登录</button>
+        </div>
+      </main>
     );
   if (!auth)
     return (
@@ -243,6 +261,7 @@ function LoginForm({
           <p className="login-help">
             账号由家长开通。一个家庭账号，可以管理多个孩子的学习记录。
           </p>
+          <FamilyLinks />
         </form>
       </section>
     </main>
@@ -467,6 +486,7 @@ function Home({
         studentName={
           students.find((s) => s.id === openScan.studentId)?.name || '当前学生'
         }
+        recognitionEnabled={recognition}
         onBack={() => {
           setOpenScan(null);
           void refresh();
@@ -764,8 +784,21 @@ function Home({
             </button>
           </div>
         )}
-        <footer>一起学 · 看清思路，尊重每一次尝试</footer>
+        <footer><FamilyLinks /></footer>
       </main>
+    </div>
+  );
+}
+function FamilyLinks() {
+  const target = Capacitor.isNativePlatform() ? '_self' : '_blank';
+  return (
+    <div className="family-links">
+      <span>一起学 {appVersion} · 家庭试用版</span>
+      <nav aria-label="家长与版本入口">
+        <a href={`${familyWebsite}account`} target={target} rel="noopener noreferrer">家长账号</a>
+        <a href={`${familyWebsite}students`} target={target} rel="noopener noreferrer">家长查看</a>
+        <a href={`${familyWebsite}downloads/android/latest.apk`} target={target} rel="noopener noreferrer">下载新版</a>
+      </nav>
     </div>
   );
 }
