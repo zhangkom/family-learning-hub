@@ -12,6 +12,12 @@ type Props = {
   onChange: (questionId: string, region: Region) => void;
   onAdd: (region: Region) => void;
   onCreate: (region: Region) => void;
+  candidateIds?: string[];
+  readOnlyIds?: string[];
+  showExtraRegions?: boolean;
+  allowCreate?: boolean;
+  onToggleCandidate?: (id: string) => void;
+  onImageDimensions?: (width: number, height: number) => void;
   children?: ReactNode;
 };
 type Mode = 'browse' | 'new' | 'append' | 'move';
@@ -23,6 +29,9 @@ const percent = (n: number) => `${n * 100}%`;
 
 export function RegionEditor({
   image, questions, selectedId, activeRegion, onSelect, onChange, onAdd, onCreate, children,
+  candidateIds = [], readOnlyIds = [], showExtraRegions = true, allowCreate = true,
+  onToggleCandidate,
+  onImageDimensions,
 }: Props) {
   const surface = useRef<SVGSVGElement>(null);
   const drag = useRef<Drag | null>(null);
@@ -52,6 +61,7 @@ export function RegionEditor({
   function switchMode(next: Mode) { cancel(); setMode(next); setHint(''); }
   function start(event: React.PointerEvent, questionId = selectedId, region?: Region, resize = false) {
     if (mode === 'browse' || !loaded || event.button !== 0 || !event.isPrimary) return;
+    if ((mode === 'move' && readOnlyIds.includes(questionId)) || (mode === 'new' && !allowCreate)) return;
     if ((mode === 'append' && !selectedQuestion) || (mode === 'move' && !region)) return;
     event.preventDefault();
     event.stopPropagation();
@@ -103,7 +113,7 @@ export function RegionEditor({
   return (
     <section className="paper-panel" aria-label="原图与题目框">
       <div className="paper-toolbar framing-toolbar">
-        <button className={mode === 'new' ? 'selected' : ''} disabled={!loaded}
+        <button className={mode === 'new' ? 'selected' : ''} disabled={!loaded || !allowCreate}
           onClick={() => switchMode('new')}><ScanLine size={16} /> 框选一道题</button>
         <button className={mode === 'browse' ? 'selected' : ''} onClick={() => switchMode('browse')}>
           <Hand size={16} /> 浏览照片</button>
@@ -120,7 +130,10 @@ export function RegionEditor({
       <div className="paper-scroll" aria-label="照片浏览区域">
         <div className="paper-surface" style={{ width: percent(zoom) }}>
           {image ? <img src={image} alt="上传的完整作业原图" draggable={false}
-            onLoad={() => setLoaded(true)} onError={() => { setLoaded(false); setHint('原图未能显示，请返回后重试。'); }} />
+            onLoad={(event) => {
+              setLoaded(true);
+              onImageDimensions?.(event.currentTarget.naturalWidth, event.currentTarget.naturalHeight);
+            }} onError={() => { setLoaded(false); setHint('原图未能显示，请返回后重试。'); }} />
             : <div className="image-loading">正在加载原图…</div>}
           {image && loaded && <svg ref={surface} className={`region-overlay ${mode}`}
             onPointerDown={(e) => start(e)} onPointerMove={move} onPointerUp={finish}
@@ -129,9 +142,14 @@ export function RegionEditor({
               const r = preview?.id === original.id ? preview : original;
               return <g key={r.id}>
                 <rect x={percent(r.x)} y={percent(r.y)} width={percent(r.width)} height={percent(r.height)}
-                  data-region-id={r.id} data-question-id={q.id} className={q.id === selectedId ? 'active-region' : 'other-region'}
+                  data-region-id={r.id} data-question-id={q.id}
+                  className={`${q.id === selectedId ? 'active-region' : 'other-region'}${candidateIds.includes(q.id) ? ' candidate-region' : ''}${readOnlyIds.includes(q.id) ? ' readonly-region' : ''}`}
                   onPointerDown={(e) => start(e, q.id, r)}
-                  onClick={() => { if (mode === 'browse') onSelect(q.id, r.id); }} />
+                  onClick={() => {
+                    if (mode !== 'browse' || readOnlyIds.includes(q.id)) return;
+                    if (candidateIds.includes(q.id) && onToggleCandidate) onToggleCandidate(q.id);
+                    else onSelect(q.id, r.id);
+                  }} />
                 <text x={percent(r.x)} y={percent(r.y)} dx="5" dy="19" className="region-number">
                   {q.number || index + 1}{r.kind === 'answer' ? ' · 作答' : r.kind === 'figure' ? ' · 配图' : ''}
                 </text>
@@ -155,7 +173,7 @@ export function RegionEditor({
         <button aria-label="放大照片" disabled={zoom >= 3} onClick={() => { switchMode('browse'); setZoom((z) => z + 0.5); }}><ZoomIn size={18} /></button>
       </div>
       {children}
-      {selectedQuestion && <details className="extra-regions">
+      {selectedQuestion && showExtraRegions && <details className="extra-regions">
         <summary>补充作答、配图或批注区域</summary>
         <div className="paper-toolbar">
           <button className={mode === 'append' ? 'selected' : ''} disabled={!loaded}

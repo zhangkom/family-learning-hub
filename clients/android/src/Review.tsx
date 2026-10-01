@@ -4,6 +4,8 @@ import { App as NativeApp } from '@capacitor/app';
 import { ArrowLeft, Check, Plus, Save, RefreshCw, Trash2 } from 'lucide-react';
 import { ApiError, FamilyApi } from './api';
 import { RegionEditor } from './RegionEditor';
+import { CandidatePicker } from './CandidatePicker';
+import { adoptCandidates, candidateQuestions, overlapsExisting } from './candidates';
 import { TutoringResult } from './TutoringResult';
 import { reviewDrafts } from './drafts';
 import { photoSubjectKey, readPhotoSubject, rememberPhotoSubject } from './photo-subject';
@@ -55,6 +57,11 @@ export function Review({
     [mergeTarget, setMergeTarget] = useState('');
   const [draftReady, setDraftReady] = useState(false),
     [conflict, setConflict] = useState(false);
+  const [suggestions, setSuggestions] = useState<Question[] | null>(null);
+  const [finding, setFinding] = useState(false);
+  const [imageSize, setImageSize] = useState<{ width: number; height: number }>();
+  const candidateRequest = useRef(0), localEdits = useRef(0);
+  useEffect(() => () => { candidateRequest.current++; }, [draftId]);
   const question = questions.find((q) => q.id === selected);
   const newQuestionSubject = questions.some((q) => q.subject === photoSubject)
     ? photoSubject : undefined;
@@ -155,6 +162,7 @@ export function Review({
     };
   }, [api, draftReady, dirty, scan.id, scan.status, hasPendingAnalysis, onUpdate]);
   function change(all: Question[]) {
+    localEdits.current++;
     all = all.map((q) => {
       const old = questions.find((item) => item.id === q.id);
       const input = (item: Question) => JSON.stringify([item.subject, item.prompt, item.diagram, item.regions,
@@ -292,6 +300,53 @@ export function Review({
       setBusy(false);
     }
   }
+  async function findCandidates() {
+    if (finding || busy || conflict || !image || !imageSize || !draftReady) return;
+    const request = ++candidateRequest.current;
+    const edits = localEdits.current, revision = latestRevision.current;
+    const source = { ...scan, revision };
+    setFinding(true); setError(''); setNotice('');
+    try {
+      const result = await api.candidateRegions(source);
+      if (request !== candidateRequest.current) return;
+      if (edits !== localEdits.current || revision !== latestRevision.current) {
+        setNotice('你已修改题框，本次建议未应用。'); return;
+      }
+      const proposed = candidateQuestions(result, source);
+      if (imageSize.width !== result.image.width || imageSize.height !== result.image.height)
+        throw new Error('建议框暂时无法与这张原图对应，请手动框题。');
+      if (!proposed.length) setNotice('暂时没有找到可用的建议框，请手动框题。');
+      else setSuggestions(proposed);
+    } catch (e) {
+      if (request !== candidateRequest.current) return;
+      if (e instanceof ApiError && e.status === 409) {
+        setConflict(true);
+        setError('这张照片已有更新，本机修改已保留。核对最新内容后可重新找题。');
+      } else if (e instanceof ApiError && [429, 503].includes(e.status))
+        setError('找题服务正忙，稍后重试，或先手动框题。');
+      else if (e instanceof ApiError && [404, 405].includes(e.status))
+        setError('当前服务尚未开启自动找题，请先手动框题。');
+      else if (e instanceof Error && ['TimeoutError', 'AbortError'].includes(e.name))
+        setError('本次未能完成找题，原图和已有题目仍保留。');
+      else setError((e as Error).message || '找题未完成，请手动框题。');
+    } finally {
+      if (request === candidateRequest.current) setFinding(false);
+    }
+  }
+  function acceptCandidates(proposed: Question[], subject: Subject) {
+    if (conflict || busy) return false;
+    if (proposed.some((q) => overlapsExisting(q, questions)) &&
+      !window.confirm('所选建议与已有题框重叠，可能重复。核对后仍要采用吗？')) return false;
+    try {
+      const next = adoptCandidates(questions, proposed, subject);
+      const first = next[questions.length];
+      change(next);
+      setPhotoSubject(subject); rememberPhotoSubject(subjectKey, first.id, subject);
+      setSelected(first.id); setRegion(first.regions[0].id);
+      setNotice(`已采用 ${proposed.length} 个题框，尚未保存到服务器。`);
+      return true;
+    } catch (e) { setError((e as Error).message); return false; }
+  }
   function addQuestion() {
     const q = newQuestion();
     change([...questions, q]);
@@ -359,9 +414,17 @@ export function Review({
         <span>
           {questions.length} 道题{dirty ? ' · 有修改未保存' : ''}
         </span>
+        {!suggestions && <button
+          disabled={finding || busy || conflict || !draftReady || !image || !imageSize || hasPendingAnalysis || ['queued', 'processing'].includes(scan.status)}
+          onClick={() => void findCandidates()}>
+          {finding ? '正在查找建议框…' : '自动找题'}
+        </button>}
+        {finding && <button onClick={() => {
+          candidateRequest.current++; setFinding(false); setNotice('已取消找题，原图和已有题目保持不变。');
+        }}>取消找题</button>}
         <button
           disabled={
-            !recognitionEnabled || busy || dirty || questions.length > 0 || ['queued', 'processing'].includes(scan.status)
+            !recognitionEnabled || busy || finding || !!suggestions || dirty || questions.length > 0 || ['queued', 'processing'].includes(scan.status)
           }
           onClick={() => void recognize()}
         >
@@ -431,6 +494,7 @@ export function Review({
                 setSelected(next.questions[0]?.id || '');
                 setDirty(false);
                 setConflict(false);
+                setSuggestions(null);
                 setError('');
                 onUpdate(next);
               } catch (e) {
@@ -443,9 +507,14 @@ export function Review({
         </div>
       )}
       {scan.error && <p className="hint">{scan.error}</p>}
-      <fieldset className="review-grid" disabled={!draftReady || busy}>
+      {suggestions ? <fieldset className="candidate-fieldset" disabled={!draftReady || busy || conflict}>
+        <CandidatePicker image={image} suggestions={suggestions} existing={questions}
+          defaultSubject={newQuestionSubject} onAdopt={acceptCandidates}
+          onCancel={() => setSuggestions(null)} />
+      </fieldset> : <fieldset className="review-grid" disabled={!draftReady || busy}>
         <RegionEditor
           image={image}
+          onImageDimensions={(width, height) => setImageSize({ width, height })}
           questions={questions}
           selectedId={selected}
           activeRegion={region}
@@ -877,7 +946,7 @@ export function Review({
             </>
           )}
         </section>
-      </fieldset>
+      </fieldset>}
     </main>
   );
 }

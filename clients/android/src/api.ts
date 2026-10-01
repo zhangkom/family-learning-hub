@@ -1,4 +1,5 @@
 import type { Login, Question, Scan, Student, User, WrongBookItem } from './types';
+import type { CandidateReply } from './candidates';
 
 export class ApiError extends Error {
   constructor(
@@ -134,6 +135,10 @@ export class FamilyApi {
       'POST',
       { revision: scan.revision },
     );
+  }
+  candidateRegions(scan: Scan) {
+    return this.request<CandidateReply>(`/scans/${encodeURIComponent(scan.id)}/candidate-regions`,
+      'POST', { revision: scan.revision });
   }
   review(scan: Scan, questions: Question[]) {
     return this.request<{ scan: Scan }>(
