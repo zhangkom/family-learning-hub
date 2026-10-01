@@ -20,6 +20,7 @@ import {
 } from './scan-files';
 import type { ScanRecord } from '../lib/scans';
 import { scanSubjects } from '../lib/scans';
+import { questionContext } from '../lib/question-context';
 import {
   validateQuestions,
   type MobileScan,
@@ -153,7 +154,7 @@ export async function uploadMobileScan(
   }
   const student = requireStudent(store, account, form.get('studentId'));
   const source = form.get('source'),
-    subject = form.get('subject'),
+    subject = form.get('subject') || '待选择',
     clientId = form.get('clientRequestId'),
     file = form.get('file');
   if (
@@ -161,7 +162,7 @@ export async function uploadMobileScan(
     !source.trim() ||
     source.length > 200 ||
     typeof subject !== 'string' ||
-    !scanSubjects.includes(subject as never) ||
+    (subject !== '待选择' && !scanSubjects.includes(subject as never)) ||
     typeof clientId !== 'string' ||
     !/^[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(clientId) ||
     !(file instanceof File)
@@ -295,6 +296,30 @@ export async function reviewMobileScan(
     if (current.deletedAt) throw new HttpError(404, '资料不存在');
     if (body.revision !== current.revision)
       throw new HttpError(409, '其他设备或后台已更新，请重新打开并比较草稿');
+    const previous = questionsOf(current);
+    // These fields are server-owned. Old clients may omit them; never trust
+    // fabricated AI output or a forged wrong-book mark in a review request.
+    questions = questions.map((q) => {
+      const before = previous.find((old) => old.id === q.id);
+      if (!before) return q;
+      let tutoring = before.tutoring;
+      if (
+        tutoring &&
+        (['queued', 'processing'].includes(tutoring.status) ||
+          JSON.stringify(questionContext(q, questions)) !==
+            JSON.stringify(questionContext(before, previous)))
+      )
+        tutoring = {
+          ...tutoring,
+          status: 'stale',
+          error: '题目内容或选框已修改，请重新讲解并核对',
+        };
+      return {
+        ...q,
+        ...(before.wrongBook ? { wrongBook: before.wrongBook } : {}),
+        ...(tutoring ? { tutoring } : {}),
+      };
+    });
     const ready = questions.length > 0 && questions.every((q) => q.confirmed);
     store.db
       .prepare(

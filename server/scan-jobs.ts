@@ -5,9 +5,15 @@ import { readScanFile, readStoredScan, writeStoredScan } from './scan-files';
 import {
   recognitionEnabled,
   recognizeStructuredQuestions,
+  explainQuestion,
 } from './model-gateway';
+import { selectedQuestion } from './question-learning';
 import { questionsOf, requireStudent } from './mobile-service';
-import { validateQuestions, type Question } from '../lib/mobile';
+import {
+  validateQuestions,
+  type Question,
+  type TutoringResult,
+} from '../lib/mobile';
 import type { ScanRecord } from '../lib/scans';
 
 export function enqueueRecognition(
@@ -93,7 +99,84 @@ export type ClaimedJob = {
   revision: number;
   attempts: number;
   record: ScanRecord;
+  questionId?: string;
 };
+
+export function enqueueExplanation(
+  store: FamilyStore,
+  account: string,
+  scanId: string,
+  questionId: string,
+  revision: unknown,
+) {
+  if (!Number.isSafeInteger(revision) || Number(revision) < 0)
+    throw new HttpError(400, '资料版本无效');
+  if (!recognitionEnabled())
+    throw new HttpError(503, 'AI 讲题暂未启用，错题与原件仍保留');
+  const owner = store.scanOwner(account);
+  return store.transaction(() => {
+    const current = readStoredScan(store, owner, scanId);
+    if (!current || current.deletedAt) throw new HttpError(404, '资料不存在');
+    requireStudent(
+      store,
+      account,
+      current.studentId || current.child || 'dabao',
+    );
+    if (current.revision !== revision)
+      throw new HttpError(409, '资料已更新，请刷新后讲解');
+    selectedQuestion(current, questionId);
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(current.mimeType))
+      throw new HttpError(400, '单题框选讲解暂支持照片，PDF 原件仍保留');
+    const running = store.db
+      .prepare(
+        "SELECT question_id FROM scan_jobs WHERE owner=? AND scan_id=? AND status IN ('queued','processing')",
+      )
+      .get(owner, scanId);
+    if (running) {
+      if (running.question_id === questionId) return current;
+      throw new HttpError(409, '本页还有 AI 任务，请完成后再讲解另一题');
+    }
+    const next: ScanRecord = {
+      ...current,
+      revision: current.revision + 1,
+      status: 'queued',
+      error: undefined,
+      structuredQuestions: questionsOf(current).map((q) =>
+        q.id === questionId ? { ...q, tutoring: { status: 'queued' } } : q,
+      ),
+    };
+    writeStoredScan(store, owner, next, 'enqueue-question-explanation');
+    store.db
+      .prepare(
+        'INSERT INTO scan_jobs (id,account_id,owner,student_id,scan_id,revision,status,available_at,created_at,question_id) VALUES (?,?,?,?,?,?,?,?,?,?)',
+      )
+      .run(
+        randomUUID(),
+        account,
+        owner,
+        current.studentId || current.child || 'dabao',
+        scanId,
+        next.revision,
+        'queued',
+        Date.now(),
+        Date.now(),
+        questionId,
+      );
+    return next;
+  });
+}
+
+function withTutoring(
+  record: ScanRecord,
+  questionId: string | undefined,
+  tutoring: NonNullable<Question['tutoring']>,
+) {
+  return questionId
+    ? questionsOf(record).map((q) =>
+        q.id === questionId ? { ...q, tutoring } : q,
+      )
+    : record.structuredQuestions;
+}
 export function claimJob(
   store: FamilyStore,
   now = Date.now(),
@@ -108,6 +191,8 @@ export function claimJob(
     const owner = String(row.owner),
       scanId = String(row.scan_id),
       account = String(row.account_id);
+    const questionId =
+      typeof row.question_id === 'string' ? row.question_id : undefined;
     const record = readStoredScan(store, owner, scanId);
     const student = store.db
       .prepare('SELECT id FROM students WHERE account_id=? AND id=?')
@@ -118,7 +203,8 @@ export function claimJob(
       record.revision !== row.revision ||
       !student ||
       store.scanOwner(account) !== owner ||
-      (record.studentId || record.child || 'dabao') !== row.student_id
+      (record.studentId || record.child || 'dabao') !== row.student_id ||
+      (questionId && !questionsOf(record).some((q) => q.id === questionId))
     ) {
       store.db
         .prepare(
@@ -137,7 +223,16 @@ export function claimJob(
       writeStoredScan(
         store,
         owner,
-        { ...record, revision: record.revision + 1, status: 'failed', error },
+        {
+          ...record,
+          revision: record.revision + 1,
+          status: 'failed',
+          error,
+          structuredQuestions: withTutoring(record, questionId, {
+            status: 'failed',
+            error,
+          }),
+        },
         'job-exhausted',
       );
       return null;
@@ -149,6 +244,9 @@ export function claimJob(
       revision: record.revision + 1,
       status: 'processing',
       error: undefined,
+      structuredQuestions: withTutoring(record, questionId, {
+        status: 'processing',
+      }),
     };
     writeStoredScan(store, owner, next, 'job-start');
     store.db
@@ -166,6 +264,7 @@ export function claimJob(
       revision: next.revision,
       attempts,
       record: next,
+      questionId,
     };
   });
 }
@@ -175,6 +274,7 @@ export function finishJob(
   questions?: Question[],
   failure?: { message: string; retry: boolean },
   now = Date.now(),
+  tutoring?: TutoringResult,
 ) {
   return store.transaction(() => {
     const row = store.db
@@ -199,12 +299,21 @@ export function finishJob(
           revision: record.revision + 1,
           status: retry ? 'queued' : 'failed',
           error: failure.message,
+          structuredQuestions: withTutoring(record, job.questionId, {
+            status: retry ? 'queued' : 'failed',
+            error: failure.message,
+          }),
         }
       : {
           ...record,
           revision: record.revision + 1,
           status: 'needs_review',
-          structuredQuestions: questions,
+          structuredQuestions: job.questionId
+            ? withTutoring(record, job.questionId, {
+                status: 'needs_review',
+                result: tutoring,
+              })
+            : questions,
           error: undefined,
           confirmedAt: undefined,
         };
@@ -231,6 +340,7 @@ export function finishJob(
 export async function runNextJob(
   store: FamilyStore,
   recognize = recognizeStructuredQuestions,
+  explain = explainQuestion,
 ) {
   // Pausing recognition must not consume queued jobs, attempts or daily quota.
   if (!recognitionEnabled()) return false;
@@ -246,6 +356,16 @@ export async function runNextJob(
         429,
         '已达到本家庭 24 小时识题限额，可手动整理或稍后重试',
       );
+    if (job.questionId) {
+      selectedQuestion(job.record, job.questionId);
+      const result = await explain(
+        job.record,
+        await readScanFile(job.owner, job.scanId),
+        job.questionId,
+      );
+      finishJob(store, job, undefined, undefined, Date.now(), result);
+      return true;
+    }
     const result = await recognize(
       job.record,
       await readScanFile(job.owner, job.scanId),

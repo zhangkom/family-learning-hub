@@ -1,3 +1,16 @@
+import type { LearningSubject } from './learning';
+import { scanSubjects } from './scans';
+
+export type TutoringResult = {
+  transcribedPrompt: string;
+  referenceAnswer: string;
+  explanation: string;
+  answerEvidence: { text: string; author: 'student' | 'teacher' | 'unknown' }[];
+  errorHypotheses: { text: string; evidenceIndexes: number[] }[];
+  uncertainties: string[];
+  generatedAt: string;
+  needsReview: true;
+};
 export type Student = {
   id: string;
   name: string;
@@ -25,6 +38,13 @@ export type AnswerStep = {
 };
 export type Question = {
   id: string;
+  subject?: LearningSubject;
+  wrongBook?: { savedAt: string };
+  tutoring?: {
+    status: 'queued' | 'processing' | 'needs_review' | 'failed' | 'stale';
+    result?: TutoringResult;
+    error?: string;
+  };
   number: string;
   prompt: string;
   diagram: string;
@@ -87,6 +107,11 @@ export function validateQuestions(value: unknown): Question[] {
   const result = list(value, 100).map((entry): Question => {
     const q = object(entry),
       key = id(q.id);
+    if (
+      q.subject !== undefined &&
+      !scanSubjects.includes(q.subject as LearningSubject)
+    )
+      throw new Error('请选择支持的题目学科');
     if (questionIds.has(key)) throw new Error('题目 ID 重复');
     questionIds.add(key);
     const regions = list(q.regions, 50).map((entry): Region => {
@@ -152,6 +177,9 @@ export function validateQuestions(value: unknown): Question[] {
     });
     return {
       id: key,
+      ...(q.subject === undefined
+        ? {}
+        : { subject: q.subject as LearningSubject }),
       number: text(q.number, 200),
       prompt: text(q.prompt),
       diagram: text(q.diagram),
