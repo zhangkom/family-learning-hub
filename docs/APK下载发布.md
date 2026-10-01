@@ -4,13 +4,14 @@
 
 ## 当前交付（2026-10-01）
 
-- 固定版本：[0.1.0 debug / 2950f3c](https://123.207.232.151/family-learning/downloads/android/family-learning-0.1.0-debug-2950f3c.apk)
+- 固定版本：[0.2.0 release / 11f3bb7](https://123.207.232.151/family-learning/downloads/android/family-learning-0.2.0-release-11f3bb7.apk)
 - 最新版本：[latest.apk](https://123.207.232.151/family-learning/downloads/android/latest.apk)
 - 公开元数据：[latest.json](https://123.207.232.151/family-learning/downloads/android/latest.json)
-- 源码提交：`2950f3c0e0dcf3f2f2e3a43a0ab906c754608184`；大小：8,279,164 字节。
-- SHA-256：`709b6d0e3f917677ed4a25dca49515802c3696ceacc54d68750103b4a7aa49a6`。
+- APK 源码提交：`11f3bb781d2ed6dd444adcf65fdabb7eba38f995`；versionCode 2；大小：6,677,781 字节。
+- SHA-256：`77926a11a75806b6d547170d7bdc0d5bee140aee51499e6c20599a2bbbe1a893`。
+- 0.1.0 固定链接继续保留；新版已内置腾讯服务地址，并使用长期发布签名。
 
-这是开发验证包，未完成安卓真机拍照验收。移动端后台尚未部署；下载成功不代表生产登录、上传、识别全流程已经可用。
+这是家庭试用包，未完成安卓真机拍照验收。后台已于 2026-10-01 13:32 上线，见 [移动后台上线记录](移动后台上线记录.md)。用户需先在网页首次开通家庭账号。0.1.0 调试版升级前应确认本机草稿已上传，再卸载旧版；之后沿用固定发布签名。
 
 ## 文件与配置位置
 
@@ -48,7 +49,7 @@ sudo python3 "$P/runtime/tools/publish-apk.py" \
 
 发布后还需从服务器之外完整下载复核，并在交付消息中给出地址、版本和实际验收边界。网站发布时必须保留 `config/nginx/family-learning-location.conf` 中的下载 snippet include，不能直接用较旧 Git 模板覆盖。
 
-## 移动后台上线差项
+## 首次 APK 发布时的移动后台差项（历史记录）
 
 2026-10-01 核实：生产运行版本仍为 `20261001T023232Z-private-sync-f44496e`；服务器源码工作区 HEAD 为 `58b3ee3`。公网移动 session 路径返回 404；`family-learning-worker.service` 尚未安装，`FAMILY_MOBILE_ORIGINS` 尚未配置。整合源码和 APK 已归档、第一阶段移动接口和独立 worker 已完成开发及隔离测试，本轮只发布 APK 下载。
 
@@ -60,4 +61,4 @@ sudo python3 "$P/runtime/tools/publish-apk.py" \
 4. 部署并验证家庭初始化、移动登录、不同家庭隔离、原件上传/读取、人工框选与步骤复核，再用真机验收相机和完整流程。保留已有网页首次家庭设置流程；APK 没有开放注册入口。
 5. 回退同时恢复对应数据库和文件快照，不能只切换旧代码：新版本导入后以 SQLite 中的扫描文档/版本为准，旧 `record.json` 只是兼容投影。回退前另存上线后新增数据，避免丢失。
 
-这些步骤尚未在生产执行；真实模型效果、诊断、变式练习及掌握度报告不属于本次 APK 发布验收。
+上述后台部署、显式识别开关、一致性备份与恢复验证已在后续移动后台上线中完成；合成图片实测成功 1 次。真机与真实手写效果、诊断、变式练习及掌握度报告仍不属于本次 APK 发布验收。
