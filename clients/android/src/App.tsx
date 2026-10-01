@@ -22,6 +22,7 @@ import { Review } from './Review';
 import { statusNames, type Scan, type Student } from './types';
 import { appVersion, configuredServer, familyWebsite } from './release';
 import { restoreSession, type Auth } from './restore-session';
+import { UpdateControl } from './UpdateControl';
 
 function message(error: unknown) {
   return error instanceof Error ? error.message : '操作未完成，请重试';
@@ -103,6 +104,7 @@ export function App() {
             } catch (e) { setRestoreError(message(e)); }
           }}>换账号登录</button>
         </div>
+        <FamilyLinks />
       </main>
     );
   if (!auth)
@@ -896,10 +898,10 @@ function FamilyLinks() {
   return (
     <div className="family-links">
       <span>一起学 {appVersion} · 家庭试用版</span>
+      <UpdateControl />
       <nav aria-label="家长与版本入口">
         <a href={`${familyWebsite}account`} target={target} rel="noopener noreferrer">家长账号</a>
         <a href={`${familyWebsite}students`} target={target} rel="noopener noreferrer">家长查看</a>
-        <a href={`${familyWebsite}downloads/android/latest.apk`} target={target} rel="noopener noreferrer">下载新版</a>
       </nav>
     </div>
   );
