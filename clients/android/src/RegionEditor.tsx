@@ -112,7 +112,7 @@ export function RegionEditor({
     }
   }
   return (
-    <section className="paper-panel" aria-label="原图与题目框">
+    <section className="paper-panel" aria-label="上传图片与题目框">
       <div className="paper-toolbar framing-toolbar">
         <button className={mode === 'new' ? 'selected' : ''} disabled={!loaded || !allowCreate}
           onClick={() => switchMode('new')}><ScanLine size={16} /> 框选一道题</button>
@@ -132,12 +132,12 @@ export function RegionEditor({
       )}</output>
       <div className="paper-scroll" aria-label="照片浏览区域">
         <div className="paper-surface" style={{ width: percent(zoom) }}>
-          {image ? <img src={image} alt="上传的完整作业原图" draggable={false}
+          {image ? <img src={image} alt="已上传的作业图片" draggable={false}
             onLoad={(event) => {
               setLoaded(true);
               onImageDimensions?.(event.currentTarget.naturalWidth, event.currentTarget.naturalHeight);
-            }} onError={() => { setLoaded(false); setHint('原图未能显示，请返回后重试。'); }} />
-            : <div className="image-loading">正在加载原图…</div>}
+            }} onError={() => { setLoaded(false); setHint('图片未能显示，请返回后重试。'); }} />
+            : <div className="image-loading">正在加载图片…</div>}
           {image && loaded && <svg ref={surface} className={`region-overlay ${mode}`}
             onPointerDown={(e) => start(e)} onPointerMove={move} onPointerUp={finish}
             onPointerCancel={cancel} onLostPointerCapture={cancel}>

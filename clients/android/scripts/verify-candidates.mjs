@@ -133,7 +133,7 @@ try {
   await picker().getByRole('button', { name: '放弃本轮剩余建议' }).click();
   checks.push('same-photo subject inherited; overlap requires explicit confirmation; existing question unchanged; four viewport widths');
   for (const [scenario, text] of [['empty', '暂时没有找到可用的建议框，请手动框题。'], ['busy', '找题服务正忙，稍后重试，或先手动框题。'],
-    ['unsupported', '当前服务尚未开启自动找题，请先手动框题。'], ['wrong-image', '建议框暂时无法与这张原图对应，请手动框题。']]) {
+    ['unsupported', '当前服务尚未开启自动找题，请先手动框题。'], ['wrong-image', '建议框暂时无法与这张上传图对应，请手动框题。']]) {
     mode = scenario; await find(); await page.getByText(text, { exact: true }).waitFor();
     assert.equal(await picker().count(), 0); assert.equal(scan.questions.length, 2);
   }

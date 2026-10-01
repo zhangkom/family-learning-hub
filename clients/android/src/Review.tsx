@@ -314,7 +314,7 @@ export function Review({
       }
       const proposed = candidateQuestions(result, source);
       if (imageSize.width !== result.image.width || imageSize.height !== result.image.height)
-        throw new Error('建议框暂时无法与这张原图对应，请手动框题。');
+        throw new Error('建议框暂时无法与这张上传图对应，请手动框题。');
       if (!proposed.length) setNotice('暂时没有找到可用的建议框，请手动框题。');
       else setSuggestions(proposed);
     } catch (e) {
@@ -327,7 +327,7 @@ export function Review({
       else if (e instanceof ApiError && [404, 405].includes(e.status))
         setError('当前服务尚未开启自动找题，请先手动框题。');
       else if (e instanceof Error && ['TimeoutError', 'AbortError'].includes(e.name))
-        setError('本次未能完成找题，原图和已有题目仍保留。');
+        setError('本次未能完成找题，上传图和已有题目仍保留。');
       else setError((e as Error).message || '找题未完成，请手动框题。');
     } finally {
       if (request === candidateRequest.current) setFinding(false);
@@ -420,7 +420,7 @@ export function Review({
           {finding ? '正在查找建议框…' : '自动找题'}
         </button>}
         {finding && <button onClick={() => {
-          candidateRequest.current++; setFinding(false); setNotice('已取消找题，原图和已有题目保持不变。');
+          candidateRequest.current++; setFinding(false); setNotice('已取消找题，上传图和已有题目保持不变。');
         }}>取消找题</button>}
         <button
           disabled={
@@ -645,7 +645,7 @@ export function Review({
                   onChange={(e) =>
                     update(question.id, { diagram: e.target.value })
                   }
-                  placeholder="几何图、表格等保留在原图中"
+                  placeholder="几何图、表格等保留在上传图中"
                 />
               </label>
               {questions.some(
@@ -805,7 +805,7 @@ export function Review({
                       </label>
                     </div>
                     <details>
-                      <summary>对应原图区域（{step.regionIds.length}）</summary>
+                      <summary>对应上传图区域（{step.regionIds.length}）</summary>
                       <div className="checks">
                         {question.regions.map((r, ri) => (
                           <label key={r.id}>
@@ -940,7 +940,7 @@ export function Review({
                 这道题的条件、区域和可见作答已核对
               </label>
               <p className="hint">
-                每个步骤需关联原图区域并完成校对；未完成时，可以先保存草稿。
+                每个步骤需关联上传图区域并完成校对；未完成时，可以先保存草稿。
               </p>
               </details>
             </>
