@@ -2,9 +2,9 @@
 
 ## 工作位置
 
-- 腾讯云开发目录：`/home/ubuntu/codex_project/workspace_own/family-learning-hub`。
+- 腾讯云工程总目录：`/home/ubuntu/codex_project/workspace_own/family-learning-hub`；源码与 Git 根目录在其 `code/` 子目录。
 - GitHub：`https://github.com/zhangkom/family-learning-hub`；当前功能分支为 `codex/family-private-sync`。
-- 正式服务仍运行于 `/opt/family-learning-hub/current`，由 `family-learning-hub.service` 管理。
+- 正式服务运行于工程内 `runtime/current`，由 `family-learning-hub.service` 管理。目录职责见 `docs/工程目录.md`。
 - 同级 `7080laoyou` 属于另一个项目及其上传存档，不属于本项目操作范围。
 
 ## 开发与验证
@@ -19,7 +19,7 @@
 
 ## 数据与凭据
 
-正式学习数据在 `/var/lib/family-learning-hub`（systemd 私有 StateDirectory），配置在 `/etc/family-learning-hub.env` 与 `/etc/family-learning-sync.env`。
+正式学习数据在工程总目录的 `data/`，配置在 `config/`。应用使用专用系统用户 `family-learning-app`，由 systemd 的私有挂载视图限制访问范围。
 密钥、启用码、真实扫描、学习数据库和备份不得进入 Git、公开静态目录、日志或构建产物。
 `work/`、`outputs/`、`dist/` 与 `private-learning-data/` 为忽略目录；其中本次移交的 QA 截图及备份文件使用合成测试数据。
-定时完整备份保留在私有数据目录的 `backups/`，线上数据无需搬到开发目录。
+定时完整备份在 `backups/daily/`，发布前备份在 `backups/releases/`，迁移回退资料在 `backups/migrations/`。不要把整个工程根目录初始化为 Git 仓库。

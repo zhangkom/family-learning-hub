@@ -1,16 +1,23 @@
 [Unit]
 Description=Family Learning Hub
 After=network.target
+RequiresMountsFor=/home/ubuntu/codex_project/workspace_own/family-learning-hub
 
 [Service]
 Type=simple
-DynamicUser=yes
-WorkingDirectory=/opt/family-learning-hub/current
+User=family-learning-app
+Group=family-learning-app
+WorkingDirectory=/home/ubuntu/codex_project/workspace_own/family-learning-hub/runtime/current
 ExecStart=/usr/local/bin/node server.js
+EnvironmentFile=/home/ubuntu/codex_project/workspace_own/family-learning-hub/config/family-learning-hub.env
+EnvironmentFile=/home/ubuntu/codex_project/workspace_own/family-learning-hub/config/family-learning-sync.env
 Environment=NODE_ENV=production
 Environment=HOST=127.0.0.1
 Environment=PORT=3190
 Environment=NEXT_PUBLIC_SELF_HOSTED=true
+Environment=TMPDIR=/home/ubuntu/codex_project/workspace_own/family-learning-hub/temp/service
+StandardOutput=append:/home/ubuntu/codex_project/workspace_own/family-learning-hub/runtime/logs/web.log
+StandardError=append:/home/ubuntu/codex_project/workspace_own/family-learning-hub/runtime/logs/web-error.log
 Restart=on-failure
 RestartSec=5
 TimeoutStopSec=20
@@ -19,7 +26,9 @@ CPUQuota=100%
 NoNewPrivileges=yes
 PrivateTmp=yes
 ProtectSystem=strict
-ProtectHome=yes
+ProtectHome=tmpfs
+BindReadOnlyPaths=/home/ubuntu/codex_project/workspace_own/family-learning-hub/runtime/current
+BindPaths=/home/ubuntu/codex_project/workspace_own/family-learning-hub/data /home/ubuntu/codex_project/workspace_own/family-learning-hub/temp/service
 ProtectKernelTunables=yes
 ProtectControlGroups=yes
 RestrictSUIDSGID=yes

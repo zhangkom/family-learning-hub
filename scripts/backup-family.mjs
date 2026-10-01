@@ -16,7 +16,9 @@ import { createHash, randomUUID } from 'node:crypto';
 if (!process.env.FAMILY_DATA_DIR)
   throw new Error('FAMILY_DATA_DIR is required');
 const root = resolve(process.env.FAMILY_DATA_DIR);
-const directory = join(root, 'backups');
+const directory = process.env.FAMILY_BACKUP_DIR
+  ? resolve(process.env.FAMILY_BACKUP_DIR)
+  : join(root, 'backups');
 mkdirSync(directory, { recursive: true, mode: 0o700 });
 const name = `family-${new Date().toISOString().replace(/[:.]/g, '-')}`;
 const staging = join(directory, `.pending-${randomUUID()}`);

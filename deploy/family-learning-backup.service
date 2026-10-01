@@ -1,17 +1,21 @@
 [Unit]
 Description=Private backup of Family Learning Hub
+RequiresMountsFor=/home/ubuntu/codex_project/workspace_own/family-learning-hub
 
 [Service]
 Type=oneshot
-User=family-learning-hub
-DynamicUser=yes
-StateDirectory=family-learning-hub
-StateDirectoryMode=0700
-EnvironmentFile=/etc/family-learning-hub.env
-EnvironmentFile=/etc/family-learning-sync.env
-ExecStart=/usr/local/bin/node /opt/family-learning-hub/current/backup-family.mjs
+User=family-learning-app
+Group=family-learning-app
+EnvironmentFile=/home/ubuntu/codex_project/workspace_own/family-learning-hub/config/family-learning-hub.env
+EnvironmentFile=/home/ubuntu/codex_project/workspace_own/family-learning-hub/config/family-learning-sync.env
+ExecStart=/usr/local/bin/node /home/ubuntu/codex_project/workspace_own/family-learning-hub/runtime/tools/backup-family.mjs
+ExecStartPost=/usr/sbin/logrotate --state /home/ubuntu/codex_project/workspace_own/family-learning-hub/runtime/logs/logrotate.status /home/ubuntu/codex_project/workspace_own/family-learning-hub/config/logrotate/family-learning.conf
+StandardOutput=append:/home/ubuntu/codex_project/workspace_own/family-learning-hub/runtime/logs/backup.log
+StandardError=append:/home/ubuntu/codex_project/workspace_own/family-learning-hub/runtime/logs/backup-error.log
 UMask=0077
 NoNewPrivileges=yes
 PrivateTmp=yes
 ProtectSystem=strict
-ProtectHome=yes
+ProtectHome=tmpfs
+BindReadOnlyPaths=/home/ubuntu/codex_project/workspace_own/family-learning-hub/runtime/tools /home/ubuntu/codex_project/workspace_own/family-learning-hub/config/logrotate
+BindPaths=/home/ubuntu/codex_project/workspace_own/family-learning-hub/data /home/ubuntu/codex_project/workspace_own/family-learning-hub/backups/daily /home/ubuntu/codex_project/workspace_own/family-learning-hub/runtime/logs
