@@ -4,14 +4,14 @@
 
 ## 当前交付（2026-10-01）
 
-- 固定版本：[0.2.0 release / 11f3bb7](https://123.207.232.151/family-learning/downloads/android/family-learning-0.2.0-release-11f3bb7.apk)
+- 固定版本：[0.2.1 release / 55045ec](https://123.207.232.151/family-learning/downloads/android/family-learning-0.2.1-release-55045ec.apk)
 - 最新版本：[latest.apk](https://123.207.232.151/family-learning/downloads/android/latest.apk)
 - 公开元数据：[latest.json](https://123.207.232.151/family-learning/downloads/android/latest.json)
-- APK 源码提交：`11f3bb781d2ed6dd444adcf65fdabb7eba38f995`；versionCode 2；大小：6,677,781 字节。
-- SHA-256：`77926a11a75806b6d547170d7bdc0d5bee140aee51499e6c20599a2bbbe1a893`。
+- APK 源码提交：`55045ecd9a05767e6389c31b5b6755812f043ff7`；versionCode 3；大小：6,679,185 字节。
+- SHA-256：`2656ba94926514028da62c1884b9f7808bd01182617199fe951d3740b55d1337`。
 - 0.1.0 固定链接继续保留；新版已内置腾讯服务地址，并使用长期发布签名。
 
-这是家庭试用包，未完成安卓真机拍照验收。后台已于 2026-10-01 13:32 上线，见 [移动后台上线记录](移动后台上线记录.md)。用户需先在网页首次开通家庭账号。0.1.0 调试版升级前应确认本机草稿已上传，再卸载旧版；之后沿用固定发布签名。
+这是家庭试用包，未完成安卓真机拍照验收。后台已于 2026-10-01 13:32 上线，见 [移动后台上线记录](移动后台上线记录.md)。0.2.1 可在 App 内使用私下提供的启用码首次注册并直接登录，见 [首次开通修复](移动首次开通修复.md)。0.2.0 可直接覆盖升级，无需卸载。0.1.0 调试版升级前应确认本机草稿已上传，再卸载旧版；之后沿用固定发布签名。
 
 ## 文件与配置位置
 
@@ -37,15 +37,25 @@
 ```sh
 P=/home/ubuntu/codex_project/workspace_own/family-learning-hub
 sudo python3 "$P/runtime/tools/publish-apk.py" \
-  --source "$P/artifacts/android/20261001-11f3bb7/family-learning-0.2.0-release.apk" \
-  --version 0.2.0 --channel release \
-  --commit 11f3bb781d2ed6dd444adcf65fdabb7eba38f995 \
-  --sha256 77926a11a75806b6d547170d7bdc0d5bee140aee51499e6c20599a2bbbe1a893 \
-  --bytes 6677781 \
+  --source "$P/artifacts/android/20261001-55045ec/family-learning-0.2.1-release.apk" \
+  --version 0.2.1 --channel release \
+  --version-code 3 \
+  --changelog '新增 App 内首次开通家庭账号，成功后直接登录；0.2.0 可覆盖升级。' \
+  --commit 55045ecd9a05767e6389c31b5b6755812f043ff7 \
+  --sha256 2656ba94926514028da62c1884b9f7808bd01182617199fe951d3740b55d1337 \
+  --bytes 6679185 \
   --notes '家庭试用版，内置腾讯服务地址；支持多孩子、照片上传、手动分题与手写校对；识别结果需人工核对，精确区域仍需手动框选；尚未完成安卓真机验收；0.1.0 调试版升级前需确认草稿已上传并卸载旧版，之后沿用固定发布签名。'
 ```
 
 固定版本文件禁止覆盖为不同内容；重新构建产生不同二进制时应使用新版本或新提交。工具备份配置，更新路由，校验 Nginx 后平滑重载；等待新配置生效，再完整下载固定地址和 latest 地址核对大小/哈希，检查 Range、公开元数据和私有路径拒绝访问。TLS 使用系统信任链，不关闭证书校验。失败会恢复配置和 latest 指向，保留不可变文件供排查。
+
+## App 检查更新协议
+
+公开 `latest.json` 保留 `app,version,channel,commit,publishedAt,fileName,downloadUrl,bytes,sha256,notes`，新增整数 `versionCode` 和简短中文字符串 `changelog`。客户端以 `versionCode` 与本机版本比较；`downloadUrl` 指向固定版本 APK，下载后可核对字节数及 SHA-256。目前没有最低版本字段或强制更新规则。
+
+该地址使用 `Cache-Control: no-store`；安卓 Origin `https://localhost` 可 GET/HEAD/OPTIONS，响应带精确的 `Access-Control-Allow-Origin` 及 `Vary: Origin`。其他来源不获得允许跨来源读取的头，无 Origin 的普通读取保持正常；公开文件仍限已有精确文件名，不开放工程目录。
+
+发布参数中的 `--version-code` 必须与私有批次 `manifest.json` 的 versionCode 匹配；新 APK 不得复用旧 versionCode，latest 不接受版本号倒退。旧的不可变版本 JSON 保持原字节不变；更新客户端读取 latest.json。后续新版本 JSON 同时包含更新字段。
 
 发布后还需从服务器之外完整下载复核，并在交付消息中给出地址、版本和实际验收边界。网站发布时必须保留 `config/nginx/family-learning-location.conf` 中的下载 snippet include，不能直接用较旧 Git 模板覆盖。
 

@@ -127,7 +127,14 @@ def nginx_config(entries, latest):
         'location = /family-learning/downloads/android/latest.json {\n'
         f'    alias {MOUNT}/latest.json;\n'
         '    types { }\n    default_type application/json;\n    disable_symlinks on;\n'
-        '    limit_except GET { deny all; }\n'
+        '    set $family_apk_cors_origin "";\n'
+        '    if ($http_origin = "https://localhost") { set $family_apk_cors_origin "https://localhost"; }\n'
+        '    if ($request_method = OPTIONS) { return 204; }\n'
+        '    limit_except GET OPTIONS { deny all; }\n'
+        '    add_header Access-Control-Allow-Origin $family_apk_cors_origin always;\n'
+        '    add_header Access-Control-Allow-Methods "GET, HEAD, OPTIONS" always;\n'
+        '    add_header Access-Control-Allow-Headers "Content-Type" always;\n'
+        '    add_header Vary "Origin" always;\n'
         '    add_header X-Content-Type-Options nosniff always;\n'
         '    add_header Cache-Control "no-store" always;\n}',
         'location ^~ /family-learning/downloads/ { return 404; }',
@@ -139,6 +146,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--source', required=True, type=Path)
     parser.add_argument('--version', required=True)
+    parser.add_argument('--version-code', required=True, type=int)
+    parser.add_argument('--changelog', required=True, help='Short public Chinese update summary')
     parser.add_argument('--commit', required=True)
     parser.add_argument('--sha256', required=True)
     parser.add_argument('--bytes', required=True, type=int)
@@ -148,11 +157,14 @@ def main():
     assert os.geteuid() == 0, 'Run on the Tencent host with sudo'
     os.umask(0o077)
     assert re.fullmatch(r'[0-9]+(?:\.[0-9]+){1,3}', args.version)
+    assert 1 <= args.version_code <= 2100000000 and 0 < len(args.changelog) <= 300
     assert re.fullmatch(r'[a-f0-9]{40}', args.commit)
     assert re.fullmatch(r'[A-Fa-f0-9]{64}', args.sha256)
     assert 0 < args.bytes < 1024 * 1024 * 1024 and len(args.notes) <= 1000
     source = args.source.resolve()
     assert source.is_relative_to(PROJECT / 'artifacts/android') and source.is_file() and source.suffix == '.apk'
+    archive = json.loads((source.parent / 'manifest.json').read_bytes())
+    assert archive['versionCode'] == args.version_code and archive['commit'] == args.commit
     content = source.read_bytes()
     assert len(content) == args.bytes and sha(content) == args.sha256.lower()
     name = f'family-learning-{args.version}-{args.channel}-{args.commit[:7]}.apk'
@@ -182,14 +194,21 @@ def main():
             (snapshot / key).write_bytes(original[key])
     registry = json.loads(original['registry.json']) if original['registry.json'] else {'version': 1, 'releases': []}
     entries = registry['releases']
+    previous_latest = registry.get('latestMetadata', {})
+    if previous_latest:
+        assert args.version_code >= previous_latest['versionCode'], 'Refusing a version-code downgrade'
+        if args.version_code == previous_latest['versionCode']:
+            assert name == previous_latest['fileName'], 'A different APK needs a higher version code'
     existing = next((x for x in entries if x['fileName'] == name), None)
     if existing:
         assert existing['sha256'] == sha(content) and existing['bytes'] == len(content)
+        assert existing.get('versionCode', args.version_code) == args.version_code
         public = existing
     else:
         public = dict(app='一起学', version=args.version, channel=args.channel, commit=args.commit,
                       publishedAt=datetime.now(timezone.utc).isoformat(), fileName=name,
-                      downloadUrl=URL_ROOT + name, bytes=len(content), sha256=sha(content), notes=args.notes)
+                      downloadUrl=URL_ROOT + name, bytes=len(content), sha256=sha(content), notes=args.notes,
+                      versionCode=args.version_code, changelog=args.changelog)
         # A failed publish may leave verified immutable files for the next retry.
         staged_metadata = PUBLIC / (name[:-4] + '.json')
         if staged_metadata.exists():
@@ -200,6 +219,9 @@ def main():
             datetime.fromisoformat(staged['publishedAt'])
             public = staged
         entries.append(public)
+    # Old immutable JSON stays byte-for-byte unchanged; latest adds the update
+    # contract for existing releases as well as all future publications.
+    latest_public = {**public, 'versionCode': args.version_code, 'changelog': args.changelog}
     mount_was_active = is_mounted()
     link_existed = {str(link): os.path.lexists(link) for link in (INCLUDE, UNIT_LINK)}
     unit_existed = UNIT_CONFIG.exists()
@@ -210,7 +232,7 @@ def main():
         immutable(PUBLIC / name, content)
         immutable(PUBLIC / (name[:-4] + '.json'), json_bytes(public))
         if not (PUBLIC / 'latest.json').exists():
-            atomic(PUBLIC / 'latest.json', json_bytes(public), 0o644)
+            atomic(PUBLIC / 'latest.json', json_bytes(latest_public), 0o644)
         MOUNT.mkdir(mode=0o755, exist_ok=True)
         unit = f'''[Unit]
 Description=Read-only Family Learning Hub public APK files
@@ -258,9 +280,18 @@ WantedBy=multi-user.target
                 time.sleep(0.5)
         downloads = [download(public['downloadUrl'], sha(content), len(content)), download(URL_ROOT + 'latest.apk', sha(content), len(content))]
         assert all(d['final_url'] == public['downloadUrl'] for d in downloads)
-        atomic(PUBLIC / 'latest.json', json_bytes(public), 0o644)
-        with urllib.request.urlopen(URL_ROOT + 'latest.json', timeout=20) as response:
-            assert json.load(response) == public
+        atomic(PUBLIC / 'latest.json', json_bytes(latest_public), 0o644)
+        for origin in ('https://localhost', 'https://untrusted.example'):
+            request = urllib.request.Request(URL_ROOT + 'latest.json', headers={'Origin': origin})
+            with urllib.request.urlopen(request, timeout=20) as response:
+                assert json.load(response) == latest_public
+                expected_origin = 'https://localhost' if origin == 'https://localhost' else None
+                assert response.headers.get('Access-Control-Allow-Origin') == expected_origin
+                assert 'Origin' in response.headers.get('Vary', '')
+                assert 'no-store' in response.headers.get('Cache-Control', '')
+        request = urllib.request.Request(URL_ROOT + 'latest.json', method='OPTIONS', headers={'Origin':'https://localhost','Access-Control-Request-Method':'GET','Access-Control-Request-Headers':'Content-Type'})
+        with urllib.request.urlopen(request, timeout=20) as response:
+            assert response.status == 204 and response.headers.get('Access-Control-Allow-Origin') == 'https://localhost'
         request = urllib.request.Request(public['downloadUrl'], headers={'Range': 'bytes=0-1023'})
         with urllib.request.urlopen(request, timeout=20) as response:
             assert response.status == 206 and response.read() == content[:1024]
@@ -273,14 +304,17 @@ WantedBy=multi-user.target
         with urllib.request.urlopen(ORIGIN + '/family-learning/', timeout=20) as response:
             assert response.status == 200
         registry['latest'] = name
+        registry['latestMetadata'] = latest_public
         atomic(REGISTRY, json_bytes(registry))
-        proof = dict(status='published', release=public, downloads=downloads, private_paths=blocked,
+        proof = dict(status='published', release=latest_public, downloads=downloads, private_paths=blocked,
+                     update_cors='exact https://localhost; GET/HEAD/OPTIONS',
                      readonly_mount=str(MOUNT), physical_directory=str(PUBLIC), snapshot=str(snapshot),
                      production_release_unchanged=before_release, production_pid_unchanged=before_pid,
                      verified_at=datetime.now(timezone.utc).isoformat())
         atomic(snapshot / 'verification.json', json_bytes(proof))
         atomic(PROJECT / 'temp/development/apk-publish-latest.json', json_bytes(proof), 0o640)
         print(json.dumps(dict(status='published', version=args.version, channel=args.channel,
+                              version_code=args.version_code,
                               immutable_url=public['downloadUrl'], latest_url=URL_ROOT + 'latest.apk',
                               metadata_url=URL_ROOT + 'latest.json', sha256=sha(content), bytes=len(content),
                               private_paths_blocked=len(blocked), website='unchanged and healthy'), indent=2))
