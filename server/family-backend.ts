@@ -194,6 +194,75 @@ export class RegistrationError extends HttpError {
   }
 }
 
+export class AccountError extends HttpError {
+  constructor(
+    status: number,
+    message: string,
+    public code: string,
+  ) {
+    super(status, message);
+  }
+}
+
+// Change credentials without changing the account ID or its learning data.
+// Recheck session and credentials after the asynchronous password derivations.
+export async function updateAccountCredentials(
+  request: Request,
+  store: FamilyStore,
+  user: FamilyUser,
+  action: 'username' | 'password',
+  requireSession: () => void,
+  complete: (user: FamilyUser) => Response,
+) {
+  if (request.method !== 'POST') throw new HttpError(405, '请求方式不支持');
+  if (!store.allow(`password:${user.id}`, 8, 15 * 60000))
+    throw new HttpError(429, '尝试次数过多，请 15 分钟后再试');
+  const body = await readJson(request, 8192);
+  const old = passwordField(body.currentPassword);
+  const username =
+    action === 'username'
+      ? typeof body.username === 'string'
+        ? body.username.trim().toLowerCase()
+        : ''
+      : user.username;
+  if (!/^[a-z0-9_-]{3,32}$/.test(username))
+    throw new HttpError(400, '用户名使用 3 至 32 位字母、数字、下划线或短横线');
+  const next = action === 'password' ? passwordField(body.password) : undefined;
+  const row = store.db
+    .prepare('SELECT username,password FROM accounts WHERE id=?')
+    .get(user.id);
+  if (!row) throw new HttpError(401, '登录已过期，请重新登录');
+  const encoded = String(row.password);
+  if (!(await verifyPassword(old, encoded)))
+    throw new AccountError(400, '当前密码不正确', 'INVALID_CURRENT_PASSWORD');
+  const hashed = next === undefined ? encoded : await hashPassword(next);
+  return store.transaction(() => {
+    requireSession();
+    const current = store.db
+      .prepare('SELECT username,password FROM accounts WHERE id=?')
+      .get(user.id);
+    if (
+      !current ||
+      current.password !== encoded ||
+      current.username !== row.username
+    )
+      throw new HttpError(401, '账号信息已变更，请重新登录');
+    const taken = store.db
+      .prepare('SELECT id FROM accounts WHERE username=? AND id<>?')
+      .get(username, user.id);
+    if (taken)
+      throw new AccountError(409, '用户名已被使用，请换一个', 'USERNAME_TAKEN');
+    store.db
+      .prepare('UPDATE accounts SET username=?,password=? WHERE id=?')
+      .run(username, hashed, user.id);
+    store.db.prepare('DELETE FROM sessions WHERE account_id=?').run(user.id);
+    store.db
+      .prepare('DELETE FROM mobile_sessions WHERE account_id=?')
+      .run(user.id);
+    return complete({ id: user.id, username });
+  });
+}
+
 function registrationAddress(request: Request) {
   // Enable only behind a proxy that overwrites X-Real-IP (our loopback Nginx).
   // Never accept client-supplied X-Forwarded-For as a rate-limit identity.
@@ -334,7 +403,14 @@ export async function handleFamily(
         ? String(row.password)
         : `${'0'.repeat(32)}:${'0'.repeat(128)}`;
       const valid = await verifyPassword(password, encoded);
-      if (!row || !valid) throw new HttpError(401, '账号或密码不正确');
+      if (
+        !row ||
+        !valid ||
+        store.db
+          .prepare('SELECT password FROM accounts WHERE id=? AND username=?')
+          .get(row.id, username)?.password !== encoded
+      )
+        throw new HttpError(401, '账号或密码不正确');
       store.db
         .prepare('DELETE FROM limits WHERE key=?')
         .run(`user:${username}`);
@@ -345,31 +421,17 @@ export async function handleFamily(
     }
     if (!user) throw new HttpError(401, '请先登录家庭账号');
     if (action === 'password') {
-      if (!store.allow(`password:${user.id}`, 8, 15 * 60000))
-        throw new HttpError(429, '尝试次数过多，请稍后再试');
-      const body = await readJson(request, 8192);
-      const old = passwordField(body.currentPassword),
-        next = passwordField(body.password);
-      const encoded = String(
-        store.db
-          .prepare('SELECT password FROM accounts WHERE id=?')
-          .get(user.id)?.password,
+      return await updateAccountCredentials(
+        request,
+        store,
+        user,
+        'password',
+        () => {
+          if (currentUser(request, store)?.id !== user.id)
+            throw new HttpError(401, '登录已过期，请重新登录');
+        },
+        (account) => issueSession(account, store),
       );
-      if (!(await verifyPassword(old, encoded)))
-        throw new HttpError(401, '当前密码不正确');
-      const hashed = await hashPassword(next);
-      store.transaction(() => {
-        store.db
-          .prepare('UPDATE accounts SET password=? WHERE id=?')
-          .run(hashed, user.id);
-        store.db
-          .prepare('DELETE FROM sessions WHERE account_id=?')
-          .run(user.id);
-        store.db
-          .prepare('DELETE FROM mobile_sessions WHERE account_id=?')
-          .run(user.id);
-      });
-      return issueSession(user, store);
     }
     if (action === 'sync') {
       const savedScans = process.env.FAMILY_DATA_DIR
