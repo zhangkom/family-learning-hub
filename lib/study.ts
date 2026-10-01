@@ -49,7 +49,7 @@ function afterDays(date: string, days: number) {
   return next.toISOString().slice(0, 10);
 }
 
-export function parseStudyAttempts(raw: string | null): StudyAttempt[] {
+export function parseStudyAttempts(raw: string | null, maxItems = 20000): StudyAttempt[] {
   try {
     const items: unknown = JSON.parse(raw ?? '[]');
     if (!Array.isArray(items)) return [];
@@ -70,7 +70,7 @@ export function parseStudyAttempts(raw: string | null): StudyAttempt[] {
           Number.isFinite(Date.parse(a.at as string))
         );
       })
-      .slice(-5000);
+      .slice(-maxItems);
   } catch {
     return [];
   }
@@ -83,7 +83,7 @@ export function recordStudyAttempt(
   wrong?: WrongQuestion,
 ) {
   return {
-    attempts: [...attempts, attempt].slice(-5000),
+    attempts: [...attempts, attempt],
     // Preserve the first failure; later evidence lives in the attempt history.
     wrongQuestions:
       !attempt.correct &&

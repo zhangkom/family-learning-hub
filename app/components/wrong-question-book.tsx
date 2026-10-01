@@ -1,5 +1,7 @@
 'use client';
 
+import { learningStorage, listenLearning } from '@/lib/family-client';
+
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import {
@@ -40,21 +42,16 @@ export function WrongQuestionBook({
   const storageKey = `twin-stars:${child}:wrong-questions`;
 
   useEffect(() => {
-    const timer = window.setTimeout(() => {
+    const refresh = () => {
       try {
-        const saved = window.localStorage.getItem(storageKey);
-        setAttempts(
-          parseStudyAttempts(
-            window.localStorage.getItem(`twin-stars:${child}:study-attempts`),
-          ),
-        );
-        if (!saved) return;
-        setItems(parseStoredWrongQuestions(saved));
-      } catch {
-        setLoadError('无法读取浏览器记录，请检查存储权限。记录未被删除。');
-      }
-    }, 0);
-    return () => window.clearTimeout(timer);
+        setItems(parseStoredWrongQuestions(learningStorage.getItem(storageKey)));
+        setAttempts(parseStudyAttempts(learningStorage.getItem(`twin-stars:${child}:study-attempts`)));
+        setLoadError('');
+      } catch { setLoadError('无法读取浏览器记录，请检查存储权限。记录未被删除。'); }
+    };
+    const timer = window.setTimeout(refresh, 0);
+    const stop = listenLearning(refresh);
+    return () => { window.clearTimeout(timer); stop(); };
   }, [storageKey, child]);
 
   const subjects = useMemo(
@@ -125,7 +122,7 @@ export function WrongQuestionBook({
                 这里还没有错题
               </h2>
               <p className="mt-2 text-sm text-muted-foreground">
-                在线练习答错，或在家长批改台勾选错题并保存后，会出现在这里。记录仅保存在当前浏览器。
+                在线练习答错，或在家长批改台勾选错题并保存后，会出现在这里。登录后自动同步，保存状态见页顶。
               </p>
             </div>
           </section>
@@ -167,6 +164,7 @@ export function WrongQuestionBook({
                       </p>
                       <p className="mt-2 text-sm leading-6">
                         {item.learnerAnswer}
+                        {item.scanId && <Link className="mt-2 block text-primary underline" href={`/scans?id=${item.scanId}`}>查看扫描原件与完整讲解</Link>}
                       </p>
                     </div>
                     <details className="rounded-2xl border border-primary/20 bg-secondary/25 p-4">

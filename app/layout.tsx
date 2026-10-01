@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { appPath } from '@/lib/deployment';
 import './globals.css';
+import { FamilyProvider } from './components/family-provider';
 
 export const metadata: Metadata = {
   title: '双宝名校计划',
@@ -13,7 +14,7 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="zh-CN">
-      <body>{children}</body>
+      <body><FamilyProvider>{children}</FamilyProvider></body>
     </html>
   );
 }

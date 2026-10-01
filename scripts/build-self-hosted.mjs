@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, copyFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
 
@@ -18,4 +18,5 @@ const result = spawnSync(process.execPath, [resolve(packageRoot, pkg.bin.vinext)
   },
 });
 if (result.error) throw result.error;
+if (result.status === 0) copyFileSync('scripts/backup-family.mjs', 'dist/standalone/backup-family.mjs');
 process.exit(result.status ?? 1);

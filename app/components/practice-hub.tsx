@@ -1,5 +1,7 @@
 'use client';
 
+import { learningStorage, listenLearning } from '@/lib/family-client';
+
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import {
@@ -56,13 +58,10 @@ export function PracticeHub({
   const storageKey = `twin-stars:${child}:practice-complete`;
 
   useEffect(() => {
-    const saved = window.localStorage.getItem(storageKey);
-    const timer = window.setTimeout(() => {
-      if (saved) {
-        setCompleted(parseStoredStringList(saved));
-      }
-    }, 0);
-    return () => window.clearTimeout(timer);
+    const refresh = () => { try { setCompleted(parseStoredStringList(learningStorage.getItem(storageKey), 2000)); } catch { /* Keep previous state. */ } };
+    const timer = window.setTimeout(refresh, 0);
+    const stop = listenLearning(refresh);
+    return () => { window.clearTimeout(timer); stop(); };
   }, [storageKey]);
 
   const progress = useMemo(

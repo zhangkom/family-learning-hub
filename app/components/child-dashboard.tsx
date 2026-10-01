@@ -1,5 +1,7 @@
 'use client';
 
+import { learningStorage, listenLearning } from '@/lib/family-client';
+
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import {
@@ -66,24 +68,23 @@ export function ChildDashboard({ plan }: { plan: ChildPlan }) {
   const taskCount = plan.tasks.length;
 
   useEffect(() => {
-    const saved = window.localStorage.getItem(storageKey);
-    const timer = window.setTimeout(() => {
-      if (saved) {
-        setChecked(parseStoredStringList(saved, taskCount));
-      }
+    const refresh = () => {
+      try { setChecked(parseStoredStringList(learningStorage.getItem(storageKey), taskCount)); }
+      catch { /* Keep the last visible state if storage is unavailable. */ }
       setReady(true);
-    }, 0);
-    return () => window.clearTimeout(timer);
+    };
+    const timer = window.setTimeout(refresh, 0);
+    const stop = listenLearning(refresh);
+    return () => { window.clearTimeout(timer); stop(); };
   }, [storageKey, taskCount]);
 
   const toggleTask = (taskId: string) => {
-    setChecked((current) => {
-      const next = current.includes(taskId)
-        ? current.filter((id) => id !== taskId)
-        : [...current, taskId];
-      window.localStorage.setItem(storageKey, JSON.stringify(next));
-      return next;
-    });
+    try {
+      const current = parseStoredStringList(learningStorage.getItem(storageKey), taskCount);
+      const next = current.includes(taskId) ? current.filter(id => id !== taskId) : [...current, taskId];
+      learningStorage.setItem(storageKey, JSON.stringify(next));
+      setChecked(next);
+    } catch { window.alert('任务保存失败，请检查浏览器存储空间或权限。'); }
   };
 
   const progress = useMemo(

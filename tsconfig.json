@@ -15,7 +15,9 @@
     "jsx": "react-jsx",
     "incremental": true,
     "paths": {
-      "@/*": ["./*"]
+      "@/*": ["./*"],
+      "@family/backend": ["./server/family-backend.ts"],
+      "@family/scans": ["./server/scans-backend.ts"]
     }
   },
   "include": [

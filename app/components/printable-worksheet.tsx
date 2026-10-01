@@ -1,5 +1,7 @@
 'use client';
 
+import { learningStorage } from '@/lib/family-client';
+
 import Link from 'next/link';
 import { useState } from 'react';
 import {
@@ -55,26 +57,26 @@ export function PrintableWorksheet({
   const saveReview = () => {
     try {
       const current = parseStoredWrongQuestions(
-        window.localStorage.getItem(storageKey),
+        learningStorage.getItem(storageKey),
       );
-      window.localStorage.setItem(
+      learningStorage.setItem(
         storageKey,
         JSON.stringify(mergePracticeWrongQuestions(current, sheet, wrongIds)),
       );
 
       const completed = parseStoredStringList(
-        window.localStorage.getItem(completionKey),
+        learningStorage.getItem(completionKey),
       );
-      window.localStorage.setItem(
+      learningStorage.setItem(
         completionKey,
         JSON.stringify(markPracticeComplete(completed, sheet.id)),
       );
       if (sheet.methodLessonId) {
         const attemptsKey = `twin-stars:${sheet.child}:study-attempts`;
         const attempts = parseStudyAttempts(
-          window.localStorage.getItem(attemptsKey),
+          learningStorage.getItem(attemptsKey),
         );
-        window.localStorage.setItem(
+        learningStorage.setItem(
           attemptsKey,
           JSON.stringify(recordWorksheetMistakes(attempts, sheet, wrongIds)),
         );
@@ -144,7 +146,7 @@ export function PrintableWorksheet({
             先学方法与趣味小图
           </Link>
           <p className="mt-2 text-xs text-muted-foreground">
-            这里是强化训练，不是预设错题。保存批改只记录本页完成，不等同于独立掌握。记录仅在当前浏览器。
+            这里是强化训练，不是预设错题。保存批改只记录本页完成，不等同于独立掌握。登录后自动同步，保存状态见页顶。
           </p>
         </div>
       )}

@@ -1,5 +1,7 @@
 'use client';
 
+import { learningStorage, listenLearning } from '@/lib/family-client';
+
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { WorkbenchHeader } from './workbench-header';
@@ -37,8 +39,8 @@ export function StudyWorkspace({ child }: { child: 'xiaobao' | 'dabao' }) {
     const timer = window.setTimeout(() => {
       let history: StudyAttempt[] = [];
       try {
-        history = parseStudyAttempts(window.localStorage.getItem(attemptKey));
-        setNotice('记录保存在当前浏览器；换设备不会自动同步。');
+        history = parseStudyAttempts(learningStorage.getItem(attemptKey));
+        setNotice('作答先保存在本机；登录后自动同步，状态见页顶。');
       } catch {
         setNotice('浏览器存储不可用，仍可练习，但本次记录不会长期保存。');
       }
@@ -59,7 +61,8 @@ export function StudyWorkspace({ child }: { child: 'xiaobao' | 'dabao' }) {
       setReview(requested ? query.get('review') === '1' : Boolean(overdue));
       setReady(true);
     }, 0);
-    return () => window.clearTimeout(timer);
+    const stop = listenLearning(() => { try { setAttempts(parseStudyAttempts(learningStorage.getItem(attemptKey))); } catch { setNotice("读取记录失败，请检查浏览器存储权限。"); } });
+    return () => { window.clearTimeout(timer); stop(); };
   }, [child, attemptKey]);
 
   function choose(id: string, asReview = false) {
@@ -80,10 +83,10 @@ export function StudyWorkspace({ child }: { child: 'xiaobao' | 'dabao' }) {
     if (!question) return;
     try {
       const latest = parseStudyAttempts(
-        window.localStorage.getItem(attemptKey),
+        learningStorage.getItem(attemptKey),
       );
       const wrongQuestions = parseStoredWrongQuestions(
-        window.localStorage.getItem(wrongKey),
+        learningStorage.getItem(wrongKey),
       );
       const result = recordStudyAttempt(
         latest,
@@ -99,15 +102,15 @@ export function StudyWorkspace({ child }: { child: 'xiaobao' | 'dabao' }) {
           source: studySource(lesson, question),
         }),
       );
-      window.localStorage.setItem(
+      learningStorage.setItem(
         wrongKey,
         JSON.stringify(result.wrongQuestions),
       );
-      window.localStorage.setItem(attemptKey, JSON.stringify(result.attempts));
+      learningStorage.setItem(attemptKey, JSON.stringify(result.attempts));
       setAttempts(result.attempts);
       setNotice(
         attempt.correct
-          ? '作答已保存在当前浏览器；讲清理由比猜中答案重要。'
+          ? '作答已保存，同步状态见页顶；讲清理由比猜中答案重要。'
           : '已保留这道题的首次错误；后续作答另记历史，不覆盖原答案。',
       );
     } catch {

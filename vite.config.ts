@@ -1,7 +1,7 @@
 import { sites } from '@openai/sites-vite-plugin';
 import tailwindcss from '@tailwindcss/postcss';
 import vinext from 'vinext';
-import { defineConfig } from 'vite';
+import { defineConfig, type UserConfig } from 'vite';
 import { fileURLToPath } from 'node:url';
 import hostingConfig from './.openai/hosting.json' with { type: 'json' };
 
@@ -35,12 +35,14 @@ const localBindingConfig = {
     : [],
 };
 
-export default defineConfig(async () => {
+export default defineConfig(async (): Promise<UserConfig> => {
   if (process.env.FAMILY_SELF_HOSTED === 'true') {
     return {
       css: { postcss: { plugins: [tailwindcss()] } },
       resolve: {
         alias: {
+          '@family/backend': fileURLToPath(new URL('./server/family-backend.ts', import.meta.url)),
+          '@family/scans': fileURLToPath(new URL('./server/scans-backend.ts', import.meta.url)),
           'cloudflare:workers': fileURLToPath(new URL('./server/unavailable-cloud-bindings.ts', import.meta.url)),
         },
       },
@@ -58,6 +60,7 @@ export default defineConfig(async () => {
   const { cloudflare } = await import('@cloudflare/vite-plugin');
 
   return {
+    resolve: { alias: { '@family/backend': fileURLToPath(new URL('./server/family-unavailable.ts', import.meta.url)), '@family/scans': fileURLToPath(new URL('./server/family-unavailable.ts', import.meta.url)) } },
     css: { postcss: { plugins: [tailwindcss()] } },
     server: isCodexSeatbeltSandbox
       ? { watch: { useFsEvents: false, usePolling: true } }

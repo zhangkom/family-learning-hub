@@ -1,0 +1,17 @@
+[Unit]
+Description=Private backup of Family Learning Hub
+
+[Service]
+Type=oneshot
+User=family-learning-hub
+DynamicUser=yes
+StateDirectory=family-learning-hub
+StateDirectoryMode=0700
+EnvironmentFile=/etc/family-learning-hub.env
+EnvironmentFile=/etc/family-learning-sync.env
+ExecStart=/usr/local/bin/node /opt/family-learning-hub/current/backup-family.mjs
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes

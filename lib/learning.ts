@@ -14,6 +14,7 @@ export type WrongQuestionInput = {
 };
 
 export type WrongQuestion = Omit<WrongQuestionInput, 'now'> & {
+  scanId?: string;
   id: string;
   status: '待重做';
   createdOn: string;
@@ -29,7 +30,7 @@ const learningSubjects = new Set<LearningSubject>([
   '生物',
 ]);
 
-function isShortString(value: unknown, maxLength = 2000): value is string {
+function isShortString(value: unknown, maxLength = 12000): value is string {
   return (
     typeof value === 'string' && value.length > 0 && value.length <= maxLength
   );
@@ -42,11 +43,12 @@ function isStoredWrongQuestion(value: unknown): value is WrongQuestion {
     isShortString(item.id, 200) &&
     isShortString(item.questionId, 200) &&
     learningSubjects.has(item.subject as LearningSubject) &&
-    isShortString(item.knowledgePoint, 200) &&
+    isShortString(item.knowledgePoint) &&
     isShortString(item.prompt) &&
     isShortString(item.answer) &&
     isShortString(item.learnerAnswer) &&
-    isShortString(item.source, 500) &&
+    isShortString(item.source, 12500) &&
+    (item.scanId === undefined || (typeof item.scanId === 'string' && /^[a-f0-9-]{36}$/.test(item.scanId))) &&
     item.status === '待重做' &&
     isShortString(item.createdOn, 50) &&
     Array.isArray(item.reviewDates) &&
@@ -57,7 +59,7 @@ function isStoredWrongQuestion(value: unknown): value is WrongQuestion {
 
 export function parseStoredWrongQuestions(
   value: string | null,
-  maxItems = 500,
+  maxItems = 5000,
 ) {
   if (!value) return [];
   try {

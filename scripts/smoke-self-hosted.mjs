@@ -4,6 +4,9 @@ const origin = process.argv[2] || 'http://127.0.0.1:3190';
 const base = `${origin}/family-learning`;
 const paths = [
   '/',
+  '/account',
+  '/family-review',
+  '/scans',
   '/xiaobao',
   '/dabao',
   '/xiaobao/study',
