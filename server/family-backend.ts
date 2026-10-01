@@ -128,12 +128,12 @@ function cookie(token: string, maxAge = lifetime) {
     process.env.FAMILY_PUBLIC_ORIGIN?.startsWith('https:');
   return `${cookieName}=${token}; Path=${path}; HttpOnly; SameSite=Strict; Max-Age=${maxAge}${secure ? '; Secure' : ''}`;
 }
-async function hashPassword(password: string) {
+export async function hashPassword(password: string) {
   const salt = Buffer.from(randomBytes(16)).toString('hex');
   const hash = await derive(password, salt);
   return `${salt}:${Buffer.from(hash).toString('hex')}`;
 }
-async function verifyPassword(password: string, encoded: string) {
+export async function verifyPassword(password: string, encoded: string) {
   const [salt, hash] = encoded.split(':');
   const actual = await derive(password, salt);
   return (
@@ -257,12 +257,15 @@ export async function handleFamily(
         store.db
           .prepare('DELETE FROM sessions WHERE account_id=?')
           .run(user.id);
+        store.db
+          .prepare('DELETE FROM mobile_sessions WHERE account_id=?')
+          .run(user.id);
       });
       return issueSession(user, store);
     }
     if (action === 'sync') {
       const savedScans = process.env.FAMILY_DATA_DIR
-        ? await scanWrongRecords(store.scanOwner(user.id))
+        ? await scanWrongRecords(store.scanOwner(user.id), store)
         : undefined;
       if (request.method === 'GET')
         return json({
