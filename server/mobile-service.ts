@@ -21,6 +21,7 @@ import {
 import type { ScanRecord } from '../lib/scans';
 import { scanSubjects } from '../lib/scans';
 import { questionContext } from '../lib/question-context';
+import { validatePhotoProcessing } from './photo-processing';
 import {
   validateQuestions,
   type MobileScan,
@@ -112,6 +113,9 @@ export function mobileScan(record: ScanRecord): MobileScan {
     revision: record.revision || 0,
     status,
     questions,
+    ...(record.sourceKind === 'processed-photo' && record.processing
+      ? { sourceKind: record.sourceKind, processing: record.processing }
+      : {}),
     ...(record.confirmedAt ? { confirmedAt: record.confirmedAt } : {}),
     ...(record.error ? { error: record.error } : {}),
   };
@@ -173,6 +177,33 @@ export async function uploadMobileScan(
     throw new HttpError(file.size > MAX_SCAN_BYTES ? 413 : 400, valid.reason);
   const content = new Uint8Array(await file.arrayBuffer());
   const contentHash = createHash('sha256').update(content).digest('hex');
+  if (form.has('processing') || form.has('sourceKind')) {
+    const allowed = [
+      'studentId',
+      'source',
+      'subject',
+      'clientRequestId',
+      'file',
+      'processing',
+      'sourceKind',
+    ];
+    for (const key of form.keys())
+      if (!allowed.includes(key) || form.getAll(key).length !== 1)
+        throw new HttpError(400, '照片上传字段无效或重复');
+  }
+  const processing = await validatePhotoProcessing(
+    form.get('processing'),
+    form.get('sourceKind'),
+    student.id,
+    content,
+    valid.mime,
+  );
+  if (processing && clientId.toLowerCase() !== processing.outputId)
+    throw new MobileError(
+      409,
+      '处理图片的上传标识不一致，请恢复对应处理版本后重试',
+      'IDEMPOTENCY_CONFLICT',
+    );
   const originalName = sanitizeDisplayName(file.name);
   const fingerprint = createHash('sha256')
     .update(
@@ -183,6 +214,7 @@ export async function uploadMobileScan(
         originalName,
         valid.mime,
         contentHash,
+        ...(processing ? ['processed-photo', processing] : []),
       ]),
     )
     .digest('hex');
@@ -238,6 +270,9 @@ export async function uploadMobileScan(
       structuredQuestions: [],
       questions: [],
       uploadFingerprint: fingerprint,
+      ...(processing
+        ? { sourceKind: 'processed-photo' as const, processing }
+        : {}),
       fileUrl: `/family-learning/api/mobile/v1/scans/${id}/file`,
     };
     const directory = scanDirectory(owner, id);

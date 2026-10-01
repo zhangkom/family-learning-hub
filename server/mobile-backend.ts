@@ -334,6 +334,7 @@ async function handle(
         enabled: true,
         needsSetup: familyNeedsSetup(store),
         registrationEnabled: registrationEnabled(),
+        processedPhotoMetadataVersion: 1,
       });
     } else if (!web && parts.join('/') === 'session/register') {
       if (request.method !== 'POST') throw new HttpError(405, '请求方式不支持');
