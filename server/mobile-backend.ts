@@ -30,6 +30,7 @@ import {
 import { recognitionEnabled } from './model-gateway';
 import { enqueueRecognition, enqueueExplanation } from './scan-jobs';
 import { setWrongBook, wrongBookItems } from './question-learning';
+import { candidateRegions } from './candidate-regions';
 
 const hash = (s: string) => createHash('sha256').update(s).digest('hex');
 const codes: Record<number, string> = {
@@ -38,6 +39,7 @@ const codes: Record<number, string> = {
   403: 'ORIGIN_DENIED',
   404: 'NOT_FOUND',
   405: 'METHOD_NOT_ALLOWED',
+  408: 'REQUEST_TIMEOUT',
   409: 'REVISION_CONFLICT',
   413: 'TOO_LARGE',
   429: 'RATE_LIMITED',
@@ -252,6 +254,18 @@ async function dispatch(
   if (parts.length === 2 && method === 'GET')
     return json({ scan: mobileScan(record) });
   if (parts.length !== 3) throw new HttpError(404, '接口不存在');
+  if (parts[2] === 'candidate-regions' && method === 'POST') {
+    const body = await readJson(request, 8192);
+    return json(
+      await candidateRegions(
+        store,
+        user.id,
+        record.id,
+        body.revision,
+        request.signal,
+      ),
+    );
+  }
   if (parts[2] === 'file' && method === 'GET') {
     return new Response(new Uint8Array(await readScanFile(owner, record.id)), {
       headers: {

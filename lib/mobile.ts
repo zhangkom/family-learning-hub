@@ -26,6 +26,34 @@ export type Region = {
   width: number;
   height: number;
 };
+export type CandidateWarning =
+  | 'LAYOUT_ONLY'
+  | 'REVIEW_FIGURES_AND_HANDWRITING'
+  | 'BLANK_OR_TOO_LITTLE_INK'
+  | 'LARGE_DARK_REGION'
+  | 'TEXT_TOO_SMALL'
+  | 'INK_TOUCHES_IMAGE_EDGE'
+  | 'MIXED_COLUMNS_OR_CROSSING_CONTENT'
+  | 'UNRESOLVED_SMALL_BLOCKS'
+  | 'NO_RELIABLE_SEPARATORS'
+  | 'TOO_MANY_FRAGMENTS'
+  | 'TOO_MANY_CANDIDATES'
+  | 'PROCESSING_TIMEOUT';
+export type CandidateRegions = {
+  scanId: string;
+  revision: number;
+  algorithm: 'layout-v1';
+  coordinateSpace: 'oriented-normalized';
+  image: { width: number; height: number };
+  status: 'candidates' | 'manual_required';
+  candidates: {
+    id: string;
+    order: number;
+    region: Pick<Region, 'x' | 'y' | 'width' | 'height'>;
+    reason: 'LAYOUT_GAP';
+  }[];
+  warnings: CandidateWarning[];
+};
 export type AnswerStep = {
   id: string;
   order: number;
