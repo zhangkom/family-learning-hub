@@ -103,12 +103,18 @@ public class PhotoProcessingPlugin extends Plugin {
         run(call, () -> {
             File root=ownerRoot(call);
             int offset=integer(call,"offset",0,0,1000000), limit=integer(call,"limit",30,1,100);
+            String studentId=call.getString("studentId");
+            if(studentId!=null&&(studentId.trim().isEmpty()||studentId.length()>200)) throw new IllegalArgumentException("请先选择学生");
             File[] dirs=root.listFiles(f->f.isDirectory()&&validId(f.getName())&&new File(f,"record.json").isFile());
             if(dirs==null) throw new IOException("list failed");
             Arrays.sort(dirs,Comparator.comparingLong((File f)->new File(f,"record.json").lastModified()).reversed().thenComparing(File::getName));
+            ArrayList<File> matching=new ArrayList<>();
+            for(File dir:dirs) {
+                if(studentId==null||studentId.equals(readJson(new File(dir,"record.json")).getString("studentId"))) matching.add(dir);
+            }
             JSArray originals=new JSArray();
-            for(int i=offset;i<Math.min(dirs.length,offset+limit);i++) originals.put(originalResult(dirs[i]));
-            JSObject result=new JSObject();result.put("originals",originals);result.put("total",dirs.length);
+            for(int i=offset;i<Math.min(matching.size(),offset+limit);i++) originals.put(originalResult(matching.get(i)));
+            JSObject result=new JSObject();result.put("originals",originals);result.put("total",matching.size());
             return result;
         });
     }
