@@ -30,7 +30,7 @@ export type PreparedPhoto = {
 interface NativePhotos {
   importPhoto(input: { owner: string; uri: string; studentId: string }): Promise<OriginalPhoto>;
   getOriginal(input: { owner: string; originalId: string }): Promise<OriginalPhoto>;
-  listOriginals(input: { owner: string; offset: number; limit: number }): Promise<{ originals: OriginalPhoto[]; total: number }>;
+  listOriginals(input: { owner: string; offset: number; limit: number; studentId?: string }): Promise<{ originals: OriginalPhoto[]; total: number }>;
   process(input: { owner: string; originalId: string } & ProcessOptions): Promise<PreparedPhoto>;
   deleteOriginal(input: { owner: string; originalId: string; confirmDelete: true }): Promise<void>;
 }
@@ -50,13 +50,14 @@ function localFile(uri: string) {
   if (typeof uri !== 'string' || !uri.startsWith('file:///') || uri.includes('\0')) throw new Error('返回的本机文件地址无效');
   return uri;
 }
-function validateOriginal(photo: OriginalPhoto) {
+export function validateOriginal(photo: OriginalPhoto) {
   if (photo.schemaVersion !== 1 || !uuid.test(photo.originalId) || !hash.test(photo.sha256) ||
     typeof photo.studentId !== 'string' || !photo.studentId.trim() || photo.studentId.length > 200 ||
     !Number.isSafeInteger(photo.bytes) || photo.bytes <= 0 || photo.bytes > 32 * 1024 * 1024 ||
     !['image/jpeg', 'image/png', 'image/webp'].includes(photo.mime) ||
     !Number.isInteger(photo.orientation) || photo.orientation < 1 || photo.orientation > 8 ||
-    ![photo.width, photo.height, photo.uprightWidth, photo.uprightHeight].every((v) => Number.isInteger(v) && v > 0))
+    !Number.isFinite(photo.createdAt) || photo.createdAt <= 0 ||
+    ![photo.width, photo.height, photo.uprightWidth, photo.uprightHeight].every((v) => Number.isInteger(v) && v > 0 && v <= 50000))
     throw new Error('本机原片记录无效');
   localFile(photo.originalUri); localFile(photo.previewUri);
   return photo;
@@ -81,12 +82,14 @@ export async function getOriginal(owner: string, originalId: string) {
   if (result.originalId !== originalId) throw new Error('原片编号不匹配');
   return result;
 }
-export async function listOriginals(owner: string, offset = 0, limit = 30) {
+export async function listOriginals(owner: string, offset = 0, limit = 30, studentId?: string) {
   requireNative(owner);
   if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isInteger(limit) || limit < 1 || limit > 100)
     throw new Error('原片列表范围无效');
-  const result = await native.listOriginals({ owner, offset, limit });
+  if (studentId !== undefined && (!studentId.trim() || studentId.length > 200)) throw new Error('请先选择学生');
+  const result = await native.listOriginals({ owner, offset, limit, studentId });
   result.originals.forEach(validateOriginal);
+  if (studentId !== undefined && result.originals.some(p => p.studentId !== studentId)) throw new Error('原片学生归属不匹配');
   return result;
 }
 export async function preparePhoto(owner: string, original: OriginalPhoto, options: ProcessOptions = {}) {
@@ -111,25 +114,51 @@ export function validatePrepared(photo: PreparedPhoto) {
     !uuid.test(photo.originalId) || !uuid.test(photo.outputId) || !hash.test(photo.sourceSha256) || !hash.test(photo.sha256) ||
     photo.mime !== 'image/jpeg' || photo.sourceSpace !== 'exif-upright-normalized-edges' || photo.outputSpace !== 'normalized-edges' ||
     !Number.isSafeInteger(photo.bytes) || photo.bytes < 1 || photo.bytes > 8 * 1024 * 1024 ||
+    ![0, 1, 2, 3].includes(photo.quarterTurns) || !['none', 'light'].includes(photo.enhancement) ||
+    !Number.isInteger(photo.jpegQuality) || photo.jpegQuality < 90 || photo.jpegQuality > 100 ||
+    !Number.isInteger(photo.maxEdge) || photo.maxEdge < 256 || photo.maxEdge > 4096 ||
+    !Number.isFinite(photo.createdAt) || photo.createdAt <= 0 ||
+    !photo.quality || photo.quality.advisoryOnly !== true || !Array.isArray(photo.quality.warnings) ||
+    photo.quality.warnings.some(code => !['low-light', 'low-contrast-or-blank', 'uneven-light-or-colored-background', 'possible-blur', 'small-output'].includes(code)) ||
     ![photo.width, photo.height].every((v) => Number.isInteger(v) && v >= 16 && v <= 4096))
     throw new Error('处理结果无效');
   validateQuad(photo.corners); validateMatrix(photo.sourceToOutput); validateMatrix(photo.outputToSource); localFile(photo.uri);
 }
 
 /** Caller must show the prepared image first. Does not upload or delete the original. */
-export async function readConfirmedUpload(photo: PreparedPhoto, confirmed: boolean): Promise<{ file: Blob; name: string; processing: Omit<PreparedPhoto, 'uri'> }> {
+export async function readConfirmedUpload(photo: PreparedPhoto, confirmed: boolean, signal?: AbortSignal): Promise<{ file: Blob; name: string; processing: Omit<PreparedPhoto, 'uri'> }> {
   if (confirmed !== true) throw new Error('请先预览并确认处理后的照片');
   validatePrepared(photo);
   if (!photoProcessingAvailable()) throw new Error('本地照片处理尚未接入');
-  const response = await fetch(Capacitor.convertFileSrc(photo.uri), { credentials: 'omit', redirect: 'error' });
-  if (!response.ok) throw new Error('无法读取处理后的照片');
+  const file = await readVerifiedFile(photo.uri, photo.bytes, photo.sha256, photo.mime, signal);
+  const { uri: _localUri, ...processing } = photo;
+  return { file, name: `题图-${photo.outputId}.jpg`, processing };
+}
+
+async function readVerifiedFile(uri: string, size: number, sha: string, mime: string, signal?: AbortSignal) {
+  signal?.throwIfAborted();
+  const response = await fetch(Capacitor.convertFileSrc(localFile(uri)), { credentials: 'omit', redirect: 'error', signal });
+  if (!response.ok) throw new Error('无法读取本机照片');
   const blob = await response.blob();
-  if (blob.size !== photo.bytes) throw new Error('处理图片大小不匹配，请重新生成');
+  if (blob.size !== size) throw new Error('图片大小不匹配，请重新读取');
   const bytes = await blob.arrayBuffer();
   const digest = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)), (b) => b.toString(16).padStart(2, '0')).join('');
-  if (digest !== photo.sha256) throw new Error('处理图片校验失败，请重新生成');
-  const { uri: _localUri, ...processing } = photo;
-  return { file: new Blob([bytes], { type: 'image/jpeg' }), name: `题图-${photo.outputId}.jpg`, processing };
+  signal?.throwIfAborted();
+  if (digest !== sha) throw new Error('图片校验失败，请重新读取');
+  return new Blob([bytes], { type: mime });
+}
+
+/** Optional export/transport capability. The normal upload flow NEVER calls this. No re-encoding. */
+export async function readOriginalUpload(owner: string, original: OriginalPhoto, signal?: AbortSignal) {
+  signal?.throwIfAborted(); validateOriginal(original);
+  const current = await getOriginal(owner, original.originalId);
+  if (current.sha256 !== original.sha256 || current.studentId !== original.studentId) throw new Error('原片归属或内容已变化');
+  const file = await readVerifiedFile(current.originalUri, current.bytes, current.sha256, current.mime, signal);
+  const extension = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' }[current.mime];
+  return { file, name: `原片-${current.originalId}.${extension}`, originalId: current.originalId,
+    studentId: current.studentId, sha256: current.sha256, mime: current.mime, bytes: current.bytes,
+    uploadEligibility: { status: current.bytes > 8 * 1024 * 1024 ? 'exceeds-current-limit' as const : 'within-current-limit' as const,
+      maxBytes: 8 * 1024 * 1024 } };
 }
 export async function deleteOriginal(owner: string, originalId: string, confirmed: boolean) {
   requireNative(owner, originalId);

@@ -1,0 +1,111 @@
+import assert from 'node:assert/strict';
+import { createRequire } from 'node:module';
+import { mkdir, writeFile } from 'node:fs/promises';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { createServer } from 'vite';
+const require = createRequire(import.meta.url);
+const { chromium } = require(process.env.PLAYWRIGHT_MODULE_PATH || 'playwright');
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+if (!process.env.PHOTO_QA_OUTPUT) throw new Error('Set PHOTO_QA_OUTPUT to a project artifacts/qa directory');
+const out = path.resolve(process.env.PHOTO_QA_OUTPUT); await mkdir(out, { recursive: true });
+const server = await createServer({ root, server: { host: '127.0.0.1', port: 3293, strictPort: true } });
+await server.listen();
+const browser = await chromium.launch({ channel: process.env.PLAYWRIGHT_CHANNEL || 'chrome', headless: true });
+const context = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 1, hasTouch: true });
+const page = await context.newPage(), errors = [], checks = [], layouts = [], unexpected = [];
+page.on('pageerror', e => errors.push(String(e)));
+await page.route('**/*', async route => {
+  const url = new URL(route.request().url());
+  if (url.origin === 'http://127.0.0.1:3293' || ['data:', 'blob:'].includes(url.protocol)) await route.continue();
+  else { unexpected.push(url.origin); await route.abort(); }
+});
+const open = async () => { await page.goto('http://127.0.0.1:3293/scripts/photo-preparation-fixture.html'); await page.getByRole('heading', { name: '把题目拍清楚' }).waitFor(); };
+const button = name => page.getByRole('button', { name, exact: true });
+const configure = value => page.evaluate(v => window.photoFixture.configure(v), value);
+const scope = (owner, studentId) => page.evaluate(v => window.photoFixture.switchScope(...v), [owner, studentId]);
+const makePreview = async () => { await button('生成预览').click(); await button('确认使用处理图').waitFor(); await page.waitForFunction(() => ![...document.querySelectorAll('button')].find(b => b.textContent === '确认使用处理图').disabled); };
+try {
+  await open();
+  assert.equal(await page.getByLabel('轻微提亮阴影').isChecked(), false);
+  assert.equal(await button('确认使用处理图').isEnabled(), false);
+  await button('调整四角').click();
+  const svg = page.getByLabel('原片四角调整区域'), rect = await svg.boundingBox();
+  // Click whichever letterbox axis this viewport produces; padding must not move a source corner.
+  const polygon = await svg.locator('polygon').getAttribute('points');
+  const fit = Math.min(rect.width / 900, rect.height / 1200);
+  if (rect.width - 900 * fit > 3) await page.mouse.click(rect.x + 1, rect.y + rect.height / 2);
+  else { assert.ok(rect.height - 1200 * fit > 3); await page.mouse.click(rect.x + rect.width / 2, rect.y + 1); }
+  assert.equal(await svg.locator('polygon').getAttribute('points'), polygon);
+  await page.getByRole('button', { name: '移动左上角' }).focus(); await page.keyboard.press('ArrowRight'); await page.keyboard.press('ArrowDown');
+  assert.notEqual(await svg.locator('polygon').getAttribute('points'), polygon);
+  // A touch tap inside the fitted image updates the selected corner in source coordinates.
+  await page.touchscreen.tap(rect.x + rect.width / 2 - 900 * fit * .4, rect.y + rect.height / 2 - 1200 * fit * .4);
+  const moved = (await svg.locator('polygon').getAttribute('points')).split(' ')[0].split(',').map(Number);
+  assert.ok(Math.abs(moved[0] / 900 - .1) < .01 && Math.abs(moved[1] / 1200 - .1) < .01);
+  await button('顺时针转 90°').click(); await page.getByLabel('轻微提亮阴影').check();
+  await makePreview();
+  const calls = await page.evaluate(() => window.photoFixture.log.prepares);
+  assert.equal(calls[0].options.quarterTurns, 1); assert.equal(calls[0].options.enhancement, 'light');
+  assert.ok(calls[0].options.corners[0] > 0);
+  assert.match(await page.locator('.photo-prep-quality').innerText(), /可能模糊/);
+  await page.getByText('放大检查细节', { exact: true }).click();
+  assert.equal(await page.getByAltText('可滑动查看的放大照片').isVisible(), true);
+  await page.getByText('放大检查细节', { exact: true }).click();
+  await page.screenshot({ path: path.join(out, 'prepared-mobile.png'), fullPage: true });
+  await button('顺时针转 90°').click();
+  assert.equal(await button('确认使用处理图').isEnabled(), false);
+  assert.equal(await button('查看处理结果').isEnabled(), false);
+  await makePreview(); await button('确认使用处理图').click();
+  await page.waitForFunction(() => window.photoFixture.log.confirms.length === 1);
+  assert.equal(await button('确认使用处理图').isEnabled(), false);
+  const persisted = await page.evaluate(() => Object.entries(localStorage).filter(([k]) => k.startsWith('family-photo-delivery-v1:')));
+  assert.equal(persisted.length, 1); assert.equal(JSON.parse(persisted[0][1]).policy, 'processed-only');
+  await page.reload(); await page.getByRole('heading', { name: '把题目拍清楚' }).waitFor();
+  assert.equal(await page.evaluate(() => Object.keys(localStorage).filter(k => k.startsWith('family-photo-delivery-v1:')).length), 1);
+  checks.push('四角留白/键盘调整、旋转提亮参数、预览后确认、改参数作废、持久记录重开');
+
+  await configure({ delay: 500 }); await button('生成预览').click(); await scope('账号乙', '学生乙');
+  await page.waitForTimeout(700);
+  assert.equal(await button('确认使用处理图').isEnabled(), false);
+  assert.equal(await page.getByAltText('处理后的题目照片').count(), 0);
+  assert.equal(await page.evaluate(() => window.photoFixture.log.confirms.length), 0);
+  checks.push('账号与学生切换后迟到处理结果不显示、不交付');
+  await configure({}); await makePreview();
+  await configure({ confirmDelay: 500 }); await button('确认使用处理图').click(); await scope('账号乙', '学生丙');
+  await page.waitForTimeout(700);
+  assert.equal(await page.evaluate(() => window.photoFixture.log.confirms.length), 0);
+  assert.equal(await page.evaluate(() => Object.keys(localStorage).filter(k => k.startsWith('family-photo-delivery-v1:')).length), 1);
+  checks.push('确认读取期间换学生，取消旧保存及回调');
+  await configure({ failure: true }); await button('生成预览').click(); await page.getByRole('alert').waitFor();
+  assert.match(await page.getByRole('alert').innerText(), /模拟处理失败/);
+  assert.equal(await button('确认使用处理图').isEnabled(), false);
+  await configure({}); await button('取消，保留原片').click(); await page.getByRole('heading', { name: '本机原片' }).waitFor();
+  await button('继续处理').waitFor(); await page.waitForFunction(() => ![...document.querySelectorAll('button')].find(b => b.textContent === '继续处理').disabled);
+  assert.equal(await button('导出原片').count(), 0);
+  assert.match(await page.locator('.photo-library').innerText(), /卸载应用或清除应用数据/);
+  await page.screenshot({ path: path.join(out, 'original-library-mobile.png'), fullPage: true });
+  await button('继续处理').click(); await page.getByRole('heading', { name: '把题目拍清楚' }).waitFor();
+  assert.deepEqual(await page.evaluate(() => window.photoFixture.log.resumes), ['学生丙']);
+  checks.push('处理失败可取消、原片保留入口可重开、未接导出不伪装成功');
+  await configure({ delay: 500 }); await page.evaluate(() => window.photoFixture.library());
+  await scope('账号丁', '学生丁'); await page.waitForTimeout(700);
+  assert.match(await page.locator('.photo-library').innerText(), /学生丁/);
+  assert.doesNotMatch(await page.locator('.photo-library').innerText(), /学生丙/);
+  await configure({}); await button('继续处理').click();
+  for (const width of [320, 390, 768]) {
+    await page.setViewportSize({ width, height: 844 }); await button('调整四角').click();
+    const measurement = await page.evaluate(() => ({ viewport: innerWidth, scroll: document.documentElement.scrollWidth }));
+    assert.ok(measurement.scroll <= width, JSON.stringify(measurement)); layouts.push(measurement);
+    await page.screenshot({ path: path.join(out, `original-corners-${width}.png`), fullPage: true });
+  }
+  checks.push('原片列表异步隔离，320/390/768宽度无横向溢出');
+  await configure({ delay: 500 }); await button('生成预览').click(); await button('取消，保留原片').click();
+  await page.getByRole('heading', { name: '本机原片' }).waitFor(); await page.waitForTimeout(700);
+  assert.equal(await page.getByAltText('处理后的题目照片').count(), 0);
+  assert.equal(await page.evaluate(() => window.photoFixture.log.confirms.length), 0);
+  checks.push('处理途中取消，迟到结果不交付，原片仍可发现');
+  assert.deepEqual(errors, []); assert.deepEqual(unexpected, []);
+  await writeFile(path.join(out, 'browser-result.json'), JSON.stringify({ syntheticOnly: true, nativeRuntimeTested: false, checks, layouts, errors, unexpected }, null, 2));
+  console.log(JSON.stringify({ checks, layouts, errors, unexpected }, null, 2));
+} finally { await browser.close(); await server.close(); }
