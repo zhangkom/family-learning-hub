@@ -55,6 +55,8 @@ sudo python3 "$P/runtime/tools/publish-apk.py" \
 
 公开 `latest.json` 保留 `app,version,channel,commit,publishedAt,fileName,downloadUrl,bytes,sha256,notes`，新增整数 `versionCode` 和简短中文字符串 `changelog`。客户端以 `versionCode` 与本机版本比较；`downloadUrl` 指向固定版本 APK，下载后可核对字节数及 SHA-256。目前没有最低版本字段或强制更新规则。
 
+为待发布的 0.2.3 / versionCode 5 准备：新建版本清单的 `app` 展示名称改为 `知燃 AI`。已有登记条目仍使用原元数据，历史固定 APK 和版本 JSON 不改名、不改内容；URL、包名及长期签名保持不变。只有收到完成验证的签名 APK 和对应源码归档后才运行发布工具并切换 latest。此源码准备不表示 0.2.3 已发布，当前线上仍为上述 0.2.2。
+
 该地址使用 `Cache-Control: no-store`；安卓 Origin `https://localhost` 可 GET/HEAD/OPTIONS，响应带精确的 `Access-Control-Allow-Origin` 及 `Vary: Origin`。其他来源不获得允许跨来源读取的头，无 Origin 的普通读取保持正常；公开文件仍限已有精确文件名，不开放工程目录。
 
 发布参数中的 `--version-code` 必须与私有批次 `manifest.json` 的 versionCode 匹配；新 APK 不得复用旧 versionCode，latest 不接受版本号倒退。旧的不可变版本 JSON 保持原字节不变；更新客户端读取 latest.json。后续新版本 JSON 同时包含更新字段。
