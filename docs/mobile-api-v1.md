@@ -4,7 +4,7 @@
 
 ## 身份与错误
 
-除登录、OPTIONS 外都必须 `Authorization: Bearer <token>`；本 API 忽略网页 Cookie，不设置 Cookie。token 有效期 7 天，数据库只保存哈希，退出撤销当前设备，修改家庭密码撤销全部网页和移动会话。现有家庭在网页 `/account` 开通；本轮不增加公开注册。
+除登录、首次开通状态/提交和 OPTIONS 外都必须 `Authorization: Bearer <token>`；本 API 忽略网页 Cookie，不设置 Cookie。token 有效期 7 天，数据库只保存哈希，退出撤销当前设备，修改家庭密码撤销全部网页和移动会话。首次家庭可在 APK 或网页 `/account` 使用私下提供的启用码开通，不开放无启用码注册或多家庭注册。
 
 无 Origin 的原生请求可用；浏览器 Origin 必须精确匹配服务端 `FAMILY_MOBILE_ORIGINS`（逗号分隔）或站点自身 `FAMILY_PUBLIC_ORIGIN`。双方联调配置为 `https://localhost,http://127.0.0.1:3178`。不允许通配符，不发送 Allow-Credentials，客户端使用 `credentials: 'omit'`。网页自己的 Cookie API 仍执行原有同源检查。
 
@@ -14,6 +14,8 @@
 
 | 方法与路径 | 输入 | 成功响应 |
 | --- | --- | --- |
+| GET `/setup` | 无，匿名可读 | 200 `{enabled,needsSetup}`；只返回两个布尔值，存储未配置时均为 false |
+| POST `/session/setup` | `{username,password,setupToken}` | 200 `{token,user:{id,username},expiresAt}`；与登录相同，不设置 Cookie |
 | POST `/session/login` | `{username,password,deviceName?}` | 200 `{token,user:{id,username},expiresAt}` |
 | GET `/session` | 无 | 200 `{user:{id,username},expiresAt}`；过期为 401 |
 | POST `/session/logout` | `{}` | 200 `{ok:true}` |
@@ -29,6 +31,8 @@
 `Student={id,name,grade?,createdAt,legacyChildId?}`。id 为不透明字符串；旧记录保留 `dabao`、`xiaobao`，同时返回对应 legacyChildId，新学生使用 UUID。学生按家庭隔离，每家庭最多 30 名；姓名 1–60 字，年级可选最多 80 字。不保存全局“当前学生”，上传和后台任务固定归属创建时的 studentId。
 
 上传支持 JPEG/PNG/WebP/PDF，单文件最多 8 MiB，家庭原件总量最多 500 MiB。subject 使用中文学科名，首批为 `数学`；source 1–200 字。clientRequestId 使用 UUID，客户端同一次上传重试必须复用；同标识改变学生、文件或元数据会返回 409。上传本身不调用模型，初始状态 `needs_review`，questions 为空；随后显式提交 recognize。PDF 暂存及手动整理可用，识别受模型能力限制。
+
+首次开通与网页登录共用启用码检查、密码散列、旧资料归属及事务中的首家庭限制；不开放多家庭注册。账号去除首尾空格并转小写，格式为 3–32 位英文字母、数字、下划线或短横线；密码为 12–128 字符。错误启用码 403，输入无效 400，家庭已开通 409，限流 429；客户端展示响应 error。GET `/setup` 不暴露启用码、用户名、账号数量或账号资料。开通成功的 token 直接用于 Bearer 登录；若其他设备抢先开通，刷新状态后转登录。
 
 ## 资料与题目
 
