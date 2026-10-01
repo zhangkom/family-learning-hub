@@ -1,4 +1,7 @@
 import type { Question } from './types';
+// Processed photos keep references to native files; browser/legacy drafts retain the existing Blob store.
+export { listPhotoDeliveries, recoverPhotoDelivery, removePhotoDelivery, removeDamagedPhotoDelivery } from './photo-processing/delivery';
+export type { PhotoDeliveryRecord, PhotoDeliveryIssue } from './photo-processing/delivery';
 export type Draft = {
   id: string;
   owner: string;

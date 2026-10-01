@@ -1,5 +1,7 @@
 /* eslint-disable jsx-a11y/prefer-tag-over-role -- SVG corner handles cannot be HTML buttons. */
-import { useLayoutEffect, useRef, useState, type PointerEvent } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent } from 'react';
+import { Capacitor } from '@capacitor/core';
+import { App as NativeApp } from '@capacitor/app';
 import { fullPage, pointerToImage, preparePhoto, previewUrl, type OriginalPhoto, type PreparedPhoto, type Quad } from './index';
 import { validateQuad } from './geometry';
 import { buildPhotoDelivery, savePhotoDelivery, type PhotoDelivery } from './delivery';
@@ -11,7 +13,7 @@ export type PreparationServices = {
 const defaults: PreparationServices = { prepare: preparePhoto, preview: previewUrl, deliver: buildPhotoDelivery, save: savePhotoDelivery };
 export type PhotoPreparationProps = {
   owner: string; studentId: string; studentLabel?: string; original: OriginalPhoto;
-  onConfirm: (delivery: PhotoDelivery) => void; onCancel: () => void;
+  onConfirm: (delivery: PhotoDelivery) => void | Promise<void>; onCancel: () => void;
   /** For an isolated browser fixture. Production callers should omit. */
   services?: PreparationServices;
 };
@@ -40,6 +42,13 @@ function PreparationSession({ owner, studentId, studentLabel, original, onConfir
   const stage = useRef<SVGSVGElement>(null), dragging = useRef<number | null>(null);
   const [scale, setScale] = useState(1);
   const lifecycle = useRef({ live: true, sequence: 0, abort: new AbortController() });
+  const cancelRef = useRef<() => void>(() => {}); cancelRef.current = cancel;
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+    // Cancel immediately inside the native event, before React's unmount can be deferred.
+    const listener = NativeApp.addListener('backButton', () => cancelRef.current());
+    return () => { void listener.then(handle => handle.remove()); };
+  }, []);
   useLayoutEffect(() => {
     const life = lifecycle.current; life.live = true; life.abort = new AbortController();
     return () => { life.live = false; life.sequence++; life.abort.abort(); };
@@ -83,8 +92,8 @@ function PreparationSession({ owner, studentId, studentLabel, original, onConfir
       const delivery = await services.deliver(owner, original, prepared, true, life.abort.signal);
       if (!life.live || ticket !== life.sequence) return;
       services.save(delivery);
-      setHandedOff(true);
-      if (life.live && ticket === life.sequence) onConfirm(delivery);
+      if (life.live && ticket === life.sequence) await onConfirm(delivery);
+      if (life.live && ticket === life.sequence) setHandedOff(true);
     } catch (e) { if (life.live && ticket === life.sequence) setError(e instanceof Error ? e.message : '保存未完成；原片仍保留在本机。'); }
     finally { if (life.live && ticket === life.sequence) setBusy(false); }
   }
@@ -134,6 +143,6 @@ function PreparationSession({ owner, studentId, studentLabel, original, onConfir
     <div className="photo-prep-actions"><button className="photo-prep-primary" type="button" disabled={busy} onClick={() => void process()}>{busy ? '正在处理…' : prepared ? '重新生成预览' : '生成预览'}</button>
       <button className="photo-prep-primary" type="button" disabled={busy || !prepared || !seen || handedOff} onClick={() => void confirm()}>确认使用处理图</button>
       <button type="button" onClick={cancel}>取消，保留原片</button></div>
-    <p className="photo-prep-footnote">原片保存在这台手机。确认后使用处理图上传；卸载应用或清除应用数据会删除本机照片。</p>
+    <p className="photo-prep-footnote">原片保存在这台手机。确认后加入待上传，上传时只发送处理图；卸载应用或清除应用数据会删除本机照片。</p>
   </section>;
 }

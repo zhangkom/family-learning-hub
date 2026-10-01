@@ -23,6 +23,7 @@ type Props = {
   onAddStudent: (name: string, grade: string) => Promise<boolean>;
   onUpdateAccount: (kind: AccountChange, value: string, currentPassword: string) => Promise<string>;
   renderDraft: (draft: Draft) => ReactNode; children: ReactNode;
+  processedPending?: ReactNode; processedCount?: number; onOpenOriginals?: () => void; cameraRecovery?: ReactNode;
 };
 
 export function HomeView(props: Props) {
@@ -33,6 +34,7 @@ export function HomeView(props: Props) {
   const [adding, setAdding] = useState(false), [name, setName] = useState(''), [grade, setGrade] = useState('');
   const student = students.find((s) => s.id === selected);
   const pending = localDrafts.filter((d) => d.studentId === selected);
+  const pendingCount = pending.length + (props.processedCount || 0);
   const reviewCount = records.filter((r) => r.status === 'needs_review').length;
   const wrongQuestions = records.flatMap((scan) => scan.questions.filter((q) => q.wrongBook).map((question) => ({ scan, question })))
     .sort((a, b) => (b.question.wrongBook?.savedAt || '').localeCompare(a.question.wrongBook?.savedAt || ''));
@@ -88,7 +90,7 @@ export function HomeView(props: Props) {
         {!student ? <section className="home-empty"><h2>先建一个孩子的学习档案</h2><p>一家多个孩子，资料分别保存。</p><button className="primary" onClick={addStudent}><Plus size={17} />添加第一名学生</button></section>
           : <>
             <section className="home-summary" aria-label="待处理事项">
-              <button onClick={() => navigate('library')}><span className="summary-number">{pending.length}</span><span>待上传</span><ChevronRight size={15} /></button>
+              <button onClick={() => navigate('library')}><span className="summary-number">{pendingCount}</span><span>待上传</span><ChevronRight size={15} /></button>
               <button onClick={() => navigate('library')}><span className="summary-number">{reviewCount}</span><span>待校对</span><ChevronRight size={15} /></button>
               <button onClick={() => navigate('library')}><span className="summary-number">{records.length}</span><span>已存资料</span><ChevronRight size={15} /></button>
             </section>
@@ -105,7 +107,9 @@ export function HomeView(props: Props) {
           <button disabled={refreshing || !student} onClick={props.onRefresh}><RefreshCw size={17} className={refreshing ? 'spin' : ''} />刷新</button>
         </div>
         {student ? <>
-          <div className="library-capture-actions"><button className="primary" disabled={busy} onClick={() => props.onCapture('camera')}><Camera size={18} />拍照收题</button><button disabled={busy} onClick={() => props.onCapture('gallery')}><ImagePlus size={18} />相册选图</button></div>
+          <div className="library-capture-actions"><button className="primary" disabled={busy} onClick={() => props.onCapture('camera')}><Camera size={18} />拍照收题</button><button disabled={busy} onClick={() => props.onCapture('gallery')}><ImagePlus size={18} />相册选图</button>
+            {props.onOpenOriginals && <button disabled={busy} onClick={props.onOpenOriginals}>本机原片</button>}</div>
+          {props.cameraRecovery}
           <nav className="library-modes" aria-label="题目分类">
             <button className={props.libraryMode === 'photos' ? 'selected' : ''} onClick={() => props.onLibraryMode('photos')}>全部照片 · {records.length}</button>
             <button className={props.libraryMode === 'wrong' ? 'selected' : ''} onClick={() => props.onLibraryMode('wrong')}>错题本 · {wrongQuestions.length}</button>
@@ -119,6 +123,7 @@ export function HomeView(props: Props) {
               <small>{new Date(question.wrongBook!.savedAt).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' })}</small>
             </button>) : <div className="empty-records"><FileImage size={30} /><p>还没有收录错题。打开一张照片，框题、选科后就能保存。</p><button onClick={() => props.onLibraryMode('photos')}>去照片里框题</button></div>}
           </section> : <>
+          {!!props.processedCount && <section className="draft-section"><div className="section-line"><h2>处理图待提交 · {props.processedCount}</h2><span className="hint">尚未发送 · 原片留在本机</span></div><div className="draft-grid">{props.processedPending}</div></section>}
           {pending.length > 0 && <section className="draft-section"><div className="section-line"><h2>待上传照片 · {pending.length}</h2><span className="hint">仅保存在本机</span></div><div className="draft-grid">{pending.map(props.renderDraft)}</div></section>}
           <section className="records-section"><div className="section-line"><h2>已保存资料 · {records.length}</h2></div>
             {records.length ? <div className="record-grid">{records.map((scan) => scanCard(scan))}</div> : <div className="empty-records"><FileImage size={30} /><p>{refreshing ? '正在读取资料…' : '还没有上传资料。可以拍照或从相册选图。'}</p></div>}
@@ -146,11 +151,11 @@ export function HomeView(props: Props) {
         </section>
         <PermissionInfo />
         <section className="profile-card"><h2>账号设置</h2><div className="button-row"><button disabled={busy || !!uploading} onClick={() => setAccountChange('username')}>修改用户名</button><button disabled={busy || !!uploading} onClick={() => setAccountChange('password')}>修改密码</button></div></section>
-        <section className="profile-card profile-storage"><h2>资料与功能</h2><p>确认上传的原图与校对结果保存在家庭服务器，按孩子、日期和科目关联。</p><p className="hint">框题选科后可存错题本并请求 AI 讲解，分析结果需核对。文档导入与举一反三正在准备中。</p></section>
+        <section className="profile-card profile-storage"><h2>资料与功能</h2><p>确认上传的照片与校对结果保存在家庭服务器，按孩子、日期和科目关联。使用本机照片处理时，上传处理图，原片留在手机。</p><p className="hint">卸载应用或清除应用数据会删除本机原片和待提交照片。框题选科后可存错题本并请求 AI 讲解，分析结果需核对。</p></section>
         {props.children}
       </div>}
     </main>
-    <BottomNavigation page={tab} onNavigate={navigate} pending={pending.length > 0} />
+    <BottomNavigation page={tab} onNavigate={navigate} pending={pendingCount > 0} />
     {accountChange && <AccountSettings kind={accountChange} username={username} onClose={() => setAccountChange(null)} onSave={props.onUpdateAccount} />}
     {feature && <FeatureDialog feature={feature} onClose={() => setFeature('')} onContinue={() => {
       setFeature(''); navigate('home');
