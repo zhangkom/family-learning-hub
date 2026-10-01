@@ -9,6 +9,7 @@ import {
   renameSync,
   rmSync,
   chmodSync,
+  lstatSync,
 } from 'node:fs';
 import { resolve, join, sep } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
@@ -56,6 +57,39 @@ for (const owner of readdirSync(root).filter((x) => /^[a-f0-9]{64}$/.test(x))) {
     record(`${relative}/original`);
   }
 }
+// Private, immutable attempt metadata only; never copy unrelated directories,
+// temporary files or symlinks. Old application versions safely ignore these files.
+const auditRoot = join(root, 'model-audit');
+if (existsSync(auditRoot)) {
+  const state = lstatSync(auditRoot);
+  if (!state.isDirectory() || state.isSymbolicLink())
+    throw new Error('Unsafe model audit root');
+  for (const day of readdirSync(auditRoot, { withFileTypes: true })) {
+    if (!day.isDirectory() || !/^\d{4}-\d{2}-\d{2}$/.test(day.name)) continue;
+    const source = join(auditRoot, day.name);
+    for (const file of readdirSync(source, { withFileTypes: true })) {
+      if (!file.isFile() || !/^[a-f0-9-]{36}-[1-3]\.json$/.test(file.name))
+        continue;
+      const input = join(source, file.name);
+      try {
+        const stat = lstatSync(input);
+        if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 8192)
+          throw new Error('Invalid model audit file');
+        const content = readFileSync(input);
+        JSON.parse(content.toString('utf8'));
+        const relative = `model-audit/${day.name}/${file.name}`;
+        mkdirSync(join(staging, 'model-audit', day.name), {
+          recursive: true,
+          mode: 0o700,
+        });
+        writeFileSync(join(staging, relative), content, { mode: 0o600 });
+        record(relative);
+      } catch (error) {
+        if (error.code !== 'ENOENT') throw error; // Retention may remove an old immutable audit concurrently.
+      }
+    }
+  }
+}
 const database = join(root, 'family.sqlite');
 if (existsSync(database)) {
   const target = join(staging, 'family.sqlite');
@@ -94,5 +128,5 @@ for (const old of backups.slice(30)) {
   rmSync(target, { recursive: true });
 }
 console.log(
-  `Verified private backup: ${name}, ${manifest.files.length} files (database and scan originals/metadata).`,
+  `Verified private backup: ${name}, ${manifest.files.length} files (database, scan originals/metadata and model audits).`,
 );

@@ -146,7 +146,10 @@ try {
     ...(worker ? { workerPid: worker.pid } : {}),
     ...(needsSetup ? { setupToken } : {}),
   };
-  const path = resolve('work/mobile-dev-connection.json');
+  const path = resolve(
+    process.env.FAMILY_MOBILE_TEST_CONNECTION ||
+      'work/mobile-dev-connection.json',
+  );
   writeFileSync(path, JSON.stringify(metadata, null, 2), { mode: 0o600 });
   server.unref();
   console.log(

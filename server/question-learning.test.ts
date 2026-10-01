@@ -1,6 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  writeFileSync,
+  rmSync,
+} from 'node:fs';
 import { join, resolve, sep } from 'node:path';
 import { sharp } from './sharp';
 import { FamilyStore } from './family-store';
@@ -74,6 +81,14 @@ const result = (): TutoringResult => ({
   generatedAt: new Date().toISOString(),
   needsReview: true,
 });
+function audits() {
+  const root = join(directory, 'model-audit');
+  return readdirSync(root).flatMap((day) =>
+    readdirSync(join(root, day))
+      .filter((f) => f.endsWith('.json'))
+      .map((f) => JSON.parse(readFileSync(join(root, day, f), 'utf8'))),
+  );
+}
 async function upload(subjectValue?: string) {
   const form = new FormData();
   form.set('studentId', student);
@@ -279,6 +294,15 @@ describe('selected question learning', () => {
     const mocked = vi.mocked(fetch).mockResolvedValue(
       new Response(
         JSON.stringify({
+          model: 'synthetic-returned-model',
+          id: 'chatcmpl-synthetic123456',
+          usage: {
+            prompt_tokens: 321,
+            completion_tokens: 123,
+            total_tokens: 444,
+            completion_tokens_details: { reasoning_tokens: 40 },
+            secret: 'never-log',
+          },
           choices: [
             {
               finish_reason: 'stop',
@@ -294,6 +318,44 @@ describe('selected question learning', () => {
     expect((await enqueue(scan)).revision).toBe(scan.revision);
     expect(store.db.prepare('SELECT * FROM scan_jobs').all()).toHaveLength(1);
     expect(await runNextJob(store)).toBe(true);
+    expect(audits()).toHaveLength(1);
+    const audit = audits()[0];
+    expect(audit).toMatchObject({
+      outcome: 'succeeded',
+      kind: 'question',
+      attempt: 1,
+      requestedModel: 'synthetic-model',
+      returnedModel: 'synthetic-returned-model',
+      provider: 'model.example',
+      upstreamStatus: 200,
+      requestId: 'chatcmpl-synthetic123456',
+      usage: {
+        prompt_tokens: 321,
+        completion_tokens: 123,
+        total_tokens: 444,
+        reasoning_tokens: 40,
+      },
+    });
+    for (const phase of [
+      'readOriginalMs',
+      'cropMs',
+      'httpMs',
+      'parseValidationMs',
+      'queueMs',
+      'readyWaitMs',
+      'attemptMs',
+    ])
+      expect(audit[phase]).toBeGreaterThanOrEqual(0);
+    const serialized = JSON.stringify(audit);
+    for (const forbidden of [
+      'never-log',
+      'synthetic-key',
+      '物体',
+      'referenceAnswer',
+      'image_url',
+      'family-a',
+    ])
+      expect(serialized).not.toContain(forbidden);
     scan = await get(scan);
     expect(scan.questions[0]).toMatchObject({
       subject: '物理',
@@ -406,6 +468,151 @@ describe('selected question learning', () => {
     expect(model).not.toHaveBeenCalled();
     scan = await get(scan);
     expect(scan.questions[0].tutoring?.error).toContain('限额');
+    expect(audits().find((a) => a.failureCode === 'LOCAL_QUOTA')).toMatchObject(
+      { outcome: 'failed' },
+    );
+    expect(
+      audits().find((a) => a.failureCode === 'LOCAL_QUOTA').httpMs,
+    ).toBeUndefined();
+  });
+
+  it.each([
+    [400, 'UPSTREAM_REQUEST', 'failed'],
+    [401, 'UPSTREAM_AUTH', 'failed'],
+    [403, 'UPSTREAM_AUTH', 'failed'],
+    [402, 'UPSTREAM_QUOTA', 'failed'],
+    [429, 'UPSTREAM_RATE_LIMIT', 'retry_queued'],
+    [500, 'UPSTREAM_SERVER', 'retry_queued'],
+    [503, 'UPSTREAM_SERVER', 'retry_queued'],
+    [408, 'MODEL_TIMEOUT', 'retry_queued'],
+  ])(
+    'classifies provider HTTP %s without leaking its response or retrying permanent failures',
+    async (status, code, outcome) => {
+      await enqueue(await mark(await review(await upload())));
+      vi.mocked(fetch).mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            error: {
+              message: 'private prompt or credential',
+              code: 'provider_specific',
+            },
+          }),
+          {
+            status: Number(status),
+            headers: { 'x-request-id': 'req_safe-synthetic-1234' },
+          },
+        ),
+      );
+      await runNextJob(store);
+      expect(fetch).toHaveBeenCalledTimes(1);
+      expect(audits()[0]).toMatchObject({
+        failureCode: code,
+        outcome,
+        upstreamStatus: status,
+        requestId: 'req_safe-synthetic-1234',
+      });
+      expect(
+        store.db.prepare('SELECT status FROM scan_jobs').get()?.status,
+      ).toBe(outcome === 'retry_queued' ? 'queued' : 'failed');
+      expect(JSON.stringify(audits())).not.toContain('private prompt');
+      if (outcome === 'failed') {
+        expect(await runNextJob(store)).toBe(false);
+        expect(fetch).toHaveBeenCalledTimes(1);
+      }
+    },
+  );
+
+  it.each(['timeout', 'quota', 'incomplete', 'schema'])(
+    'handles %s distinctly and keeps the saved question',
+    async (kind) => {
+      const scan = await enqueue(await mark(await review(await upload())));
+      if (kind === 'timeout')
+        vi.mocked(fetch).mockRejectedValue(
+          new DOMException('secret', 'TimeoutError'),
+        );
+      else if (kind === 'quota')
+        vi.mocked(fetch).mockResolvedValue(
+          new Response(
+            '{"error":{"code":"insufficient_quota","message":"secret"}}',
+            { status: 429 },
+          ),
+        );
+      else
+        vi.mocked(fetch).mockResolvedValue(
+          new Response(
+            JSON.stringify({
+              choices: [
+                {
+                  finish_reason: kind === 'incomplete' ? 'length' : 'stop',
+                  message: { content: '{"questions":[{}]}' },
+                },
+              ],
+            }),
+          ),
+        );
+      await runNextJob(store);
+      expect(audits()[0]).toMatchObject({
+        failureCode:
+          kind === 'timeout'
+            ? 'MODEL_TIMEOUT'
+            : kind === 'quota'
+              ? 'UPSTREAM_QUOTA'
+              : 'MODEL_OUTPUT',
+        outcome: kind === 'timeout' ? 'retry_queued' : 'failed',
+      });
+      expect((await get(scan)).questions[0].wrongBook).toBeDefined();
+      expect(JSON.stringify(audits())).not.toContain('secret');
+    },
+  );
+
+  it('caps transient retries at three and saves one audit per attempt', async () => {
+    await enqueue(await review(await upload()));
+    vi.mocked(fetch).mockImplementation(
+      async () => new Response('unavailable', { status: 503 }),
+    );
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      store.db
+        .prepare('UPDATE scan_jobs SET available_at=?')
+        .run(Date.now() - 500);
+      expect(await runNextJob(store)).toBe(true);
+    }
+    expect(fetch).toHaveBeenCalledTimes(3);
+    expect(
+      audits()
+        .sort((a, b) => a.attempt - b.attempt)
+        .map((a) => [a.attempt, a.outcome]),
+    ).toEqual([
+      [1, 'retry_queued'],
+      [2, 'retry_queued'],
+      [3, 'failed'],
+    ]);
+    expect(await runNextJob(store)).toBe(false);
+  });
+
+  it('audits discarded late results and keeps a successful result if audit storage fails', async () => {
+    let scan = await enqueue(await review(await upload()));
+    await runNextJob(store, undefined, async () => {
+      scan = await review(await get(scan));
+      return result();
+    });
+    expect(audits()[0].outcome).toBe('discarded');
+    rmSync(join(directory, 'model-audit'), { recursive: true });
+    writeFileSync(
+      join(directory, 'model-audit'),
+      'synthetic file blocks directory',
+    );
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    scan = await enqueue(await get(scan));
+    const model = vi.fn().mockResolvedValue(result());
+    await runNextJob(store, undefined, model);
+    expect((await get(scan)).questions[0].tutoring?.status).toBe(
+      'needs_review',
+    );
+    expect(model).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledWith(
+      'Model attempt audit unavailable; inference is not repeated.',
+    );
+    warn.mockRestore();
   });
 
   it('keeps independent per-question subjects in one photograph and validates review conflicts', async () => {

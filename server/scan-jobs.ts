@@ -6,7 +6,15 @@ import {
   recognitionEnabled,
   recognizeStructuredQuestions,
   explainQuestion,
+  ModelGatewayError,
 } from './model-gateway';
+import {
+  measurePhase,
+  measureValidation,
+  writeAttemptAudit,
+  type AttemptAudit,
+  type ModelTrace,
+} from './model-audit';
 import { selectedQuestion } from './question-learning';
 import { questionsOf, requireStudent } from './mobile-service';
 import {
@@ -98,6 +106,9 @@ export type ClaimedJob = {
   scanId: string;
   revision: number;
   attempts: number;
+  queuedAt: number;
+  readyAt: number;
+  startedAt: number;
   record: ScanRecord;
   questionId?: string;
 };
@@ -263,6 +274,11 @@ export function claimJob(
       studentId: String(row.student_id),
       revision: next.revision,
       attempts,
+      queuedAt: Number(row.created_at),
+      readyAt: Number(
+        row.status === 'processing' ? row.lease_until : row.available_at,
+      ),
+      startedAt: now,
       record: next,
       questionId,
     };
@@ -346,6 +362,10 @@ export async function runNextJob(
   if (!recognitionEnabled()) return false;
   const job = claimJob(store);
   if (!job) return false;
+  const trace: ModelTrace = {};
+  const started = performance.now();
+  let outcome: AttemptAudit['outcome'] = 'discarded';
+  let failureCode: AttemptAudit['failureCode'];
   try {
     const maximum = Math.max(
       1,
@@ -360,28 +380,69 @@ export async function runNextJob(
       selectedQuestion(job.record, job.questionId);
       const result = await explain(
         job.record,
-        await readScanFile(job.owner, job.scanId),
+        await measurePhase(trace, 'readOriginalMs', () =>
+          readScanFile(job.owner, job.scanId),
+        ),
         job.questionId,
+        trace,
       );
-      finishJob(store, job, undefined, undefined, Date.now(), result);
+      outcome = finishJob(store, job, undefined, undefined, Date.now(), result)
+        ? 'succeeded'
+        : 'discarded';
       return true;
     }
     const result = await recognize(
       job.record,
-      await readScanFile(job.owner, job.scanId),
+      await measurePhase(trace, 'readOriginalMs', () =>
+        readScanFile(job.owner, job.scanId),
+      ),
+      trace,
     );
-    const questions = validateQuestions(
-      result.map((q) => ({ ...q, confirmed: false })),
+    const questions = measureValidation(trace, () =>
+      validateQuestions(result.map((q) => ({ ...q, confirmed: false }))),
     );
     if (!questions.length)
-      throw new HttpError(502, '没有提取到题目，请手动整理或重试');
-    finishJob(store, job, questions);
+      throw new ModelGatewayError(
+        '没有提取到题目，请手动整理或重试',
+        'MODEL_OUTPUT',
+        false,
+      );
+    outcome = finishJob(store, job, questions) ? 'succeeded' : 'discarded';
   } catch (e) {
     const retry =
-      !(e instanceof HttpError) || (e.status >= 500 && e.status !== 503);
-    finishJob(store, job, undefined, {
+      e instanceof ModelGatewayError
+        ? e.retry
+        : !(e instanceof HttpError) || (e.status >= 500 && e.status !== 503);
+    failureCode =
+      e instanceof ModelGatewayError
+        ? e.code
+        : e instanceof HttpError
+          ? e.status === 429
+            ? 'LOCAL_QUOTA'
+            : 'LOCAL_VALIDATION'
+          : 'INTERNAL_ERROR';
+    const applied = finishJob(store, job, undefined, {
       message: e instanceof HttpError ? e.message : '识别连接中断，原件已保存',
       retry,
+    });
+    outcome = applied
+      ? retry && job.attempts < 3
+        ? 'retry_queued'
+        : 'failed'
+      : 'discarded';
+  } finally {
+    await writeAttemptAudit({
+      ...trace,
+      jobId: job.id,
+      attempt: job.attempts,
+      kind: job.questionId ? 'question' : 'page',
+      queuedAt: job.queuedAt,
+      readyAt: job.readyAt,
+      startedAt: job.startedAt,
+      endedAt: Date.now(),
+      attemptMs: performance.now() - started,
+      outcome,
+      failureCode,
     });
   }
   return true;
