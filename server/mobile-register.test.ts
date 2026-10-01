@@ -100,6 +100,7 @@ describe('ordinary mobile family registration', () => {
       enabled: true,
       needsSetup: true,
       registrationEnabled: true,
+      processedPhotoMetadataVersion: 1,
     });
     vi.stubEnv('FAMILY_REGISTRATION_ENABLED', 'false');
     const closed = await mobile('session/register', credentials());
@@ -164,6 +165,7 @@ describe('ordinary mobile family registration', () => {
       enabled: true,
       needsSetup: false,
       registrationEnabled: true,
+      processedPhotoMetadataVersion: 1,
     });
     expect((await mobile('session/login', credentials())).status).toBe(200);
     const site = await web('login', credentials());

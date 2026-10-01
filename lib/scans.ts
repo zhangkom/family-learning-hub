@@ -1,6 +1,7 @@
 import type { ChildId } from './family-state';
 import type { LearningSubject } from './learning';
 import type { Question } from './mobile';
+import type { PhotoProcessing } from './photo-processing';
 export const scanSubjects: LearningSubject[] = [
   '数学',
   '英语',
@@ -30,6 +31,8 @@ export type ScanRecord = {
   studentId?: string;
   structuredQuestions?: Question[];
   uploadFingerprint?: string;
+  sourceKind?: 'processed-photo';
+  processing?: PhotoProcessing;
   subject: string;
   source: string;
   originalName: string;

@@ -58,6 +58,7 @@ describe('first-family setup from Android', () => {
       enabled: true,
       needsSetup: true,
       registrationEnabled: false,
+      processedPhotoMetadataVersion: 1,
     });
     vi.stubEnv('FAMILY_DATA_DIR', '');
     const disabled = await handleMobile(request('setup'), ['setup']);
@@ -108,6 +109,7 @@ describe('first-family setup from Android', () => {
       enabled: true,
       needsSetup: false,
       registrationEnabled: false,
+      processedPhotoMetadataVersion: 1,
     });
     expect((await mobile('session/setup', details('another'))).status).toBe(
       409,

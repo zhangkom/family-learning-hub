@@ -87,6 +87,8 @@ export type Question = {
   explanation?: string;
 };
 export type MobileScan = {
+  sourceKind?: 'processed-photo';
+  processing?: import('./photo-processing').PhotoProcessing;
   id: string;
   studentId: string;
   subject: string;
