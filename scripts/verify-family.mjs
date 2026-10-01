@@ -22,7 +22,7 @@ mkdirSync('work', { recursive: true });
 mkdirSync('outputs/family-qa', { recursive: true });
 const dataDir = mkdtempSync(resolve('work/family-test-'));
 const setupToken = randomBytes(32).toString('hex');
-const password = randomBytes(18).toString('hex');
+const password = randomBytes(3).toString('hex');
 let serverLog = '';
 const server = spawn(process.execPath, ['dist/standalone/server.js'], {
   windowsHide: true,
@@ -78,12 +78,12 @@ try {
   });
   await page.locator('input[name="setupToken"]').fill(setupToken);
   await page.getByLabel('家庭账号', { exact: true }).fill('family');
-  await page.getByLabel('密码（至少 12 位）', { exact: true }).fill(password);
+  await page.getByLabel('密码（至少 6 位）', { exact: true }).fill(password);
   await page.getByRole('button', { name: '创建家庭账号', exact: true }).click();
   await page.getByRole('heading', { name: '已登录：family' }).waitFor();
   await mobile.goto(`${base}/account`);
   await mobile.getByLabel('家庭账号', { exact: true }).fill('family');
-  await mobile.getByLabel('密码（至少 12 位）', { exact: true }).fill(password);
+  await mobile.getByLabel('密码（至少 6 位）', { exact: true }).fill(password);
   await mobile.getByRole('button', { name: '登录', exact: true }).click();
   await mobile.getByRole('heading', { name: '已登录：family' }).waitFor();
   console.log('PASS private activation and login on two devices');

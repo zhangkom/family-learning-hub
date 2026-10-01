@@ -34,6 +34,7 @@ beforeEach(() => {
   vi.stubEnv('FAMILY_SETUP_TOKEN', setupToken);
   vi.stubEnv('FAMILY_PUBLIC_ORIGIN', site);
   vi.stubEnv('FAMILY_MOBILE_ORIGINS', 'https://localhost');
+  vi.stubEnv('FAMILY_REGISTRATION_ENABLED', 'false');
 });
 afterEach(() => {
   store.close();
@@ -53,13 +54,18 @@ describe('first-family setup from Android', () => {
     expect(status.headers.get('access-control-allow-origin')).toBe(
       'https://localhost',
     );
-    expect(await status.json()).toEqual({ enabled: true, needsSetup: true });
+    expect(await status.json()).toEqual({
+      enabled: true,
+      needsSetup: true,
+      registrationEnabled: false,
+    });
     vi.stubEnv('FAMILY_DATA_DIR', '');
     const disabled = await handleMobile(request('setup'), ['setup']);
     expect(disabled.status).toBe(200);
     expect(await disabled.json()).toEqual({
       enabled: false,
       needsSetup: false,
+      registrationEnabled: false,
     });
   });
   it('adopts legacy data and issues usable hashed Bearer credentials without a Cookie', async () => {
@@ -101,6 +107,7 @@ describe('first-family setup from Android', () => {
     expect(await (await mobile('setup')).json()).toEqual({
       enabled: true,
       needsSetup: false,
+      registrationEnabled: false,
     });
     expect((await mobile('session/setup', details('another'))).status).toBe(
       409,

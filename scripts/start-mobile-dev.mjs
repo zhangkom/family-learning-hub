@@ -53,6 +53,8 @@ const server = spawn(process.execPath, [resolve(runtime, 'server.js')], {
     FAMILY_SETUP_TOKEN: setupToken,
     FAMILY_AI_API_KEY: '',
     FAMILY_RECOGNITION_ENABLED: 'false',
+    FAMILY_REGISTRATION_ENABLED: 'true',
+    FAMILY_TRUST_PROXY: 'false',
     OPENAI_API_KEY: '',
     FAMILY_MOBILE_ORIGINS: 'https://localhost,http://127.0.0.1:3178',
   },
@@ -110,6 +112,7 @@ try {
     syntheticOnly: true,
     aiEnabled: false,
     needsSetup,
+    registrationEnabled: true,
     ...(needsSetup ? { setupToken } : {}),
   };
   const path = resolve('work/mobile-dev-connection.json');
