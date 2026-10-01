@@ -54,25 +54,45 @@ export function savePhotoDelivery(delivery: PhotoDelivery, storage: Storage = lo
   storage.setItem(key(r.owner, r.studentId, r.id), JSON.stringify(r));
 }
 
-export function listPhotoDeliveries(owner: string, studentId: string, storage: Storage = localStorage): PhotoDeliveryRecord[] {
+export type PhotoDeliveryIssue = { id: string; key: string; message: string };
+export function listPhotoDeliveries(owner: string, studentId: string, storage: Storage = localStorage): { records: PhotoDeliveryRecord[]; issues: PhotoDeliveryIssue[] } {
   if (!owner.trim() || !studentId.trim()) throw new Error('请先选择账号和学生');
   const results: PhotoDeliveryRecord[] = [];
+  const issues: PhotoDeliveryIssue[] = [];
   for (let i = 0; i < storage.length; i++) {
     const k = storage.key(i);
     if (!k?.startsWith(prefix)) continue;
     let scope: unknown;
     try { scope = JSON.parse(k.slice(prefix.length)); } catch { continue; }
     if (!Array.isArray(scope) || scope[0] !== owner || scope[1] !== studentId) continue;
-    const r = JSON.parse(storage.getItem(k) || 'null') as PhotoDeliveryRecord;
-    if (!r) throw new Error('本机待提交记录损坏，请从原片重新处理');
-    validateDeliveryRecord(r, owner, studentId);
-    if (r.id !== scope[2]) throw new Error('本机待提交记录编号不匹配');
-    results.push(r);
+    try {
+      const r = JSON.parse(storage.getItem(k) || 'null') as PhotoDeliveryRecord;
+      if (!r) throw new Error('missing');
+      validateDeliveryRecord(r, owner, studentId);
+      if (r.id !== scope[2]) throw new Error('mismatch');
+      results.push(r);
+    } catch {
+      issues.push({ id: typeof scope[2] === 'string' && scope[2] ? scope[2] : '未知编号', key: k,
+        message: '这份本机待提交记录无法恢复，请从本机原片重新处理。原片没有被删除。' });
+    }
   }
-  return results.sort((a, b) => b.confirmedAt - a.confirmedAt);
+  return { records: results.sort((a, b) => b.confirmedAt - a.confirmedAt), issues };
 }
 
 /** Host calls only after a verified server acknowledgement or an explicit discard. Keeps all native originals. */
 export function removePhotoDelivery(owner: string, studentId: string, id: string, storage: Storage = localStorage) {
   storage.removeItem(key(owner, studentId, id));
+}
+
+/** Explicit removal of exactly one damaged reference. Scope is checked from the actual storage key, never guessed from corrupt JSON. */
+export function removeDamagedPhotoDelivery(owner: string, studentId: string, storageKey: string, storage: Storage = localStorage) {
+  if (!storageKey.startsWith(prefix)) throw new Error('待提交记录地址无效');
+  const scope = JSON.parse(storageKey.slice(prefix.length));
+  if (!Array.isArray(scope) || scope[0] !== owner || scope[1] !== studentId) throw new Error('待提交记录归属不匹配');
+  let healthy = false;
+  try { const record = JSON.parse(storage.getItem(storageKey) || 'null') as PhotoDeliveryRecord;
+    validateDeliveryRecord(record, owner, studentId); healthy = record.id === scope[2];
+  } catch { /* This action removes damaged references only; native originals are untouched. */ }
+  if (healthy) throw new Error('这份记录已恢复正常，请刷新后查看');
+  storage.removeItem(storageKey);
 }

@@ -1,5 +1,7 @@
 import type { Login, Question, Scan, Student, User, WrongBookItem } from './types';
 import type { CandidateReply } from './candidates';
+import type { PhotoDelivery } from './photo-processing/delivery';
+import { verifyProcessedReceipt } from './photo-processing/receipt';
 
 export class ApiError extends Error {
   constructor(
@@ -32,8 +34,12 @@ export class FamilyApi {
     readonly base: string,
     readonly token = '',
   ) {}
-  async request<T>(path: string, method = 'GET', body?: unknown): Promise<T> {
+  async request<T>(path: string, method = 'GET', body?: unknown, signal?: AbortSignal): Promise<T> {
     const form = body instanceof FormData;
+    const controller = new AbortController();
+    const forwardAbort = () => controller.abort(signal?.reason);
+    if (signal?.aborted) forwardAbort(); else signal?.addEventListener('abort', forwardAbort, { once: true });
+    const timer = setTimeout(() => controller.abort(new DOMException('请求超时', 'TimeoutError')), form ? 120000 : 20000);
     const options: RequestInit = {
       method,
       credentials: 'omit',
@@ -45,8 +51,9 @@ export class FamilyApi {
           ? { 'Content-Type': 'application/json' }
           : {}),
       },
-      signal: AbortSignal.timeout(form ? 120000 : 20000),
+      signal: controller.signal,
     };
+    try {
     if (body !== undefined) {
       if (method === 'GET' || method === 'HEAD')
         throw new Error('读取请求不能携带提交内容');
@@ -66,6 +73,7 @@ export class FamilyApi {
         response.status,
       );
     return data as T;
+    } finally { clearTimeout(timer); signal?.removeEventListener('abort', forwardAbort); }
   }
   login(username: string, password: string) {
     return this.request<Login>('/session/login', 'POST', {
@@ -74,7 +82,7 @@ export class FamilyApi {
     });
   }
   setupStatus() {
-    return this.request<{ enabled: boolean; needsSetup: boolean; registrationEnabled?: boolean }>('/setup');
+    return this.request<{ enabled: boolean; needsSetup: boolean; registrationEnabled?: boolean; processedPhotoMetadataVersion?: number }>('/setup');
   }
   register(username: string, password: string) {
     return this.request<Login>('/session/register', 'POST', { username, password });
@@ -128,6 +136,26 @@ export class FamilyApi {
     form.set('clientRequestId', draft.id);
     form.set('file', draft.file, draft.name);
     return this.request<{ scan: Scan }>('/scans', 'POST', form);
+  }
+  async uploadProcessed(delivery: PhotoDelivery, signal?: AbortSignal) {
+    const { upload, record } = delivery;
+    if (record.policy !== 'processed-only' || record.id !== upload.processing.outputId || record.studentId !== upload.processing.studentId)
+      throw new Error('处理图待提交记录不匹配');
+    signal?.throwIfAborted();
+    const capability = await this.request<{ processedPhotoMetadataVersion?: number }>('/setup', 'GET', undefined, signal);
+    signal?.throwIfAborted();
+    if (capability.processedPhotoMetadataVersion !== 1)
+      throw new Error('服务器需要升级服务以接收照片处理信息，尚未发送照片；待提交照片已保留');
+    const form = new FormData();
+    form.set('studentId', record.studentId);
+    form.set('source', '手机拍照与导入');
+    form.set('clientRequestId', upload.processing.outputId);
+    form.set('sourceKind', 'processed-photo');
+    form.set('processing', JSON.stringify(upload.processing));
+    form.set('file', upload.file, upload.name);
+    const result = await this.request<{ scan: Scan }>('/scans', 'POST', form, signal);
+    verifyProcessedReceipt(result.scan, delivery);
+    return result;
   }
   recognize(scan: Scan) {
     return this.request<{ scan: Scan }>(

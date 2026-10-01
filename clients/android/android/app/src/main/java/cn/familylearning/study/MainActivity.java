@@ -9,6 +9,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(SessionVaultPlugin.class);
         registerPlugin(AppUpdaterPlugin.class);
         registerPlugin(AppSettingsPlugin.class);
+        registerPlugin(PhotoProcessingPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }

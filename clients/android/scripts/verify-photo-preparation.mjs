@@ -105,6 +105,14 @@ try {
   assert.equal(await page.getByAltText('处理后的题目照片').count(), 0);
   assert.equal(await page.evaluate(() => window.photoFixture.log.confirms.length), 0);
   checks.push('处理途中取消，迟到结果不交付，原片仍可发现');
+  await configure({ handoffFailure: true }); await button('继续处理').click(); await makePreview();
+  const beforeHandoff = await page.evaluate(() => Object.keys(localStorage).filter(k => k.startsWith('family-photo-delivery-v1:')).length);
+  await button('确认使用处理图').click(); await page.getByRole('alert').filter({ hasText: '宿主接手未完成' }).waitFor();
+  assert.equal(await button('确认使用处理图').isEnabled(), true);
+  assert.equal(await page.evaluate(() => Object.keys(localStorage).filter(k => k.startsWith('family-photo-delivery-v1:')).length), beforeHandoff + 1);
+  await configure({}); await button('确认使用处理图').click(); await page.waitForFunction(() => window.photoFixture.log.confirms.length === 1);
+  assert.equal(await page.evaluate(() => Object.keys(localStorage).filter(k => k.startsWith('family-photo-delivery-v1:')).length), beforeHandoff + 1);
+  checks.push('异步宿主回调失败保留待提交、恢复确认按钮；同一结果重试不重复入队');
   assert.deepEqual(errors, []); assert.deepEqual(unexpected, []);
   await writeFile(path.join(out, 'browser-result.json'), JSON.stringify({ syntheticOnly: true, nativeRuntimeTested: false, checks, layouts, errors, unexpected }, null, 2));
   console.log(JSON.stringify({ checks, layouts, errors, unexpected }, null, 2));

@@ -105,15 +105,15 @@ describe('original export and processed-only recovery', () => {
     expect(vi.mocked(fetch).mock.calls[0][0]).toContain(`/private/${outputId}.jpg`);
     savePhotoDelivery(delivery, local); savePhotoDelivery(delivery, local);
     expect(local.length).toBe(1);
-    expect(listPhotoDeliveries('owner', 'other', local)).toEqual([]);
-    expect(listPhotoDeliveries('other', original.studentId, local)).toEqual([]);
-    const [record] = listPhotoDeliveries('owner', original.studentId, local);
+    expect(listPhotoDeliveries('owner', 'other', local).records).toEqual([]);
+    expect(listPhotoDeliveries('other', original.studentId, local).records).toEqual([]);
+    const [record] = listPhotoDeliveries('owner', original.studentId, local).records;
     await expect(recoverPhotoDelivery(record, 'other', original.studentId)).rejects.toThrow('归属');
     await expect(recoverPhotoDelivery(record, 'owner', original.studentId)).resolves.toMatchObject({ upload: { sourceKind: 'processed-photo' } });
     vi.stubGlobal('fetch', vi.fn(async () => new Response(new Uint8Array(4))));
     await expect(recoverPhotoDelivery(record, 'owner', original.studentId)).rejects.toThrow('校验失败');
     removePhotoDelivery('owner', original.studentId, record.id, local);
-    expect(listPhotoDeliveries('owner', original.studentId, local)).toEqual([]);
+    expect(listPhotoDeliveries('owner', original.studentId, local).records).toEqual([]);
     expect(mocks.plugin.deleteOriginal).not.toHaveBeenCalled();
   });
   it('rejects mismatched source before reading and surfaces storage-full failures', async () => {

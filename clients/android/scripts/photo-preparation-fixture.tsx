@@ -6,7 +6,7 @@ import { OriginalPhotoLibrary, type LibraryServices } from '../src/photo-process
 import { fullPage, type OriginalPhoto, type PreparedPhoto } from '../src/photo-processing';
 import { savePhotoDelivery } from '../src/photo-processing/delivery';
 const identity = [1,0,0,0,1,0,0,0,1] as const;
-let delay = 0, confirmDelay = 0, failure = false, ordinal = 2;
+let delay = 0, confirmDelay = 0, failure = false, handoffFailure = false, ordinal = 2;
 const log: { prepares: unknown[]; confirms: unknown[]; cancels: number; resumes: string[]; lists: unknown[] } = { prepares: [], confirms: [], cancels: 0, resumes: [], lists: [] };
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 function original(studentId: string): OriginalPhoto {
@@ -49,13 +49,14 @@ function Fixture() {
   const [scope, setScope] = useState({ owner: '账号甲', studentId: '学生甲' }), [mode, setMode] = useState('prepare');
   currentStudent = scope.studentId;
   Object.assign(window, { photoFixture: {
-    log, configure: (value: { delay?: number; confirmDelay?: number; failure?: boolean }) => { delay = value.delay || 0; confirmDelay = value.confirmDelay || 0; failure = value.failure || false; },
+    log, configure: (value: { delay?: number; confirmDelay?: number; failure?: boolean; handoffFailure?: boolean }) => { delay = value.delay || 0; confirmDelay = value.confirmDelay || 0; failure = value.failure || false; handoffFailure = value.handoffFailure || false; },
     switchScope: (owner: string, studentId: string) => setScope({ owner, studentId }), library: () => setMode('library'),
   } });
   return <main style={{ padding: '12px' }}><p style={{fontSize:12,color:'#4b6054'}}>浏览器合成验收 · 未连接相机或服务器</p>
     {mode === 'library' ? <OriginalPhotoLibrary {...scope} studentLabel={scope.studentId} services={library} onResume={photo => { log.resumes.push(photo.studentId); setMode('prepare'); }} /> :
       <PhotoPreparation {...scope} studentLabel={scope.studentId} original={original(scope.studentId)} services={services}
-        onConfirm={delivery => { log.confirms.push({ owner: delivery.record.owner, studentId: delivery.record.studentId }); }} onCancel={() => { log.cancels++; setMode('library'); }} />}
+        onConfirm={async delivery => { if (handoffFailure) { await sleep(20); throw new Error('合成测试：宿主接手未完成'); }
+          log.confirms.push({ owner: delivery.record.owner, studentId: delivery.record.studentId }); }} onCancel={() => { log.cancels++; setMode('library'); }} />}
   </main>;
 }
 createRoot(document.getElementById('root')!).render(<Fixture />);

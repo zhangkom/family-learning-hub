@@ -150,7 +150,7 @@ public class PhotoProcessingPlugin extends Plugin {
                 JSObject quality=quality(analysis,rendered.bitmap.getWidth(),rendered.bitmap.getHeight());
                 if("light".equals(enhancement)) brighten(rendered.bitmap,analysis);
                 encode(rendered.bitmap,partial,jpegQuality);
-                if(partial.length()>MAX_UPLOAD_BYTES) throw new IllegalArgumentException("处理图片仍超过 8 MB，请缩小选区或调整输出尺寸");
+                if(partial.length()>MAX_UPLOAD_BYTES) throw new IllegalArgumentException("处理图片仍超过 8 MB，原片已保留。请在保留完整题目的前提下重新选区，或取消后重新拍照、选图");
                 JSObject result=new JSObject();
                 result.put("schemaVersion",1);result.put("algorithmVersion","android-photo-v1");
                 result.put("originalId",src.getString("originalId"));result.put("outputId",outputId);

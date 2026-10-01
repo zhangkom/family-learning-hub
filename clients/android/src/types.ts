@@ -1,3 +1,5 @@
+import type { PreparedPhoto } from './photo-processing';
+export type PhotoProcessingMetadata = Omit<PreparedPhoto, 'uri'>;
 export type User = { id: string; username: string };
 export type Student = {
   id: string;
@@ -55,6 +57,8 @@ export type Question = {
   explanation?: string;
 };
 export type Scan = {
+  sourceKind?: 'processed-photo' | 'original';
+  processing?: PhotoProcessingMetadata;
   id: string;
   studentId: string;
   subject: string;
