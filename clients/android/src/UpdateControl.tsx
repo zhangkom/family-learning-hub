@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
 import { Capacitor } from '@capacitor/core';
 import { App as NativeApp } from '@capacitor/app';
 import { appName, appVersionCode } from './release';
-import { AppUpdater, checkRelease, type Release } from './updates';
+import { AppUpdater, checkRelease, eligibleDelta, type Release, type UpdatePhase } from './updates';
 
 function useUpdates() {
   const [release, setRelease] = useState<Release | null>(null);
@@ -11,6 +11,8 @@ function useUpdates() {
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
   const [progress, setProgress] = useState<number | null>(null);
+  const [phase, setPhase] = useState<UpdatePhase>('full');
+  const [transferNotice, setTransferNotice] = useState('');
   const [ready, setReady] = useState(false);
   const [permission, setPermission] = useState(false);
   const busy = useRef(false), lastCheck = useRef(0), current = useRef<Release | null>(null);
@@ -27,7 +29,7 @@ function useUpdates() {
     try {
       const next = await checkRelease();
       if (!mounted.current) return;
-      if (current.current?.sha256 !== next.sha256) { setReady(false); setPermission(false); }
+      if (current.current?.sha256 !== next.sha256) { setReady(false); setPermission(false); setTransferNotice(''); }
       current.current = next;
       setRelease(next);
       setNotice(next.versionCode > appVersionCode ? '' : '已是最新版本');
@@ -55,8 +57,12 @@ function useUpdates() {
   }, [check]);
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) return;
-    const listener = AppUpdater.addListener('downloadProgress', ({ percent }) => {
-      if (mounted.current) setProgress(Math.max(0, Math.min(100, Math.floor(percent))));
+    const listener = AppUpdater.addListener('downloadProgress', ({ percent, phase: nextPhase }) => {
+      if (mounted.current) {
+        setProgress(Math.max(0, Math.min(100, Math.floor(percent))));
+        if (nextPhase) setPhase(nextPhase);
+        if (nextPhase === 'fallback') setTransferNotice('增量更新未能完成，已自动改用完整安装包。');
+      }
     });
     return () => { void listener.then((h) => h.remove()); };
   }, []);
@@ -69,7 +75,11 @@ function useUpdates() {
     try {
       if (!ready) {
         setProgress(0);
-        await AppUpdater.download(release);
+        setPhase(eligibleDelta(release, appVersionCode) ? 'delta' : 'full');
+        setTransferNotice('');
+        const result = await AppUpdater.download(release);
+        setTransferNotice(result?.fallback ? '增量更新未能完成，已使用完整安装包。'
+          : result?.mode === 'delta' ? '增量更新已合成并校验完成。' : '完整安装包已校验完成。');
         setReady(true);
       }
       setProgress(null);
@@ -87,7 +97,7 @@ function useUpdates() {
     try { await AppUpdater.openInstallSettings(); }
     catch { setError(`无法打开安装设置，请在系统设置中允许“${appName}”安装未知应用。`); }
   }
-  return { release, available, expanded, setExpanded, checking, notice, error, progress, ready,
+  return { release, available, expanded, setExpanded, checking, notice, error, progress, ready, phase, transferNotice,
     permission, check, install, settings };
 }
 const Updates = createContext<ReturnType<typeof useUpdates> | null>(null);
@@ -101,8 +111,10 @@ export function UpdateDot() {
 }
 export function UpdateControl() {
   const update = useContext(Updates)!;
-  const { release, available, expanded, setExpanded, checking, notice, error, progress, ready, permission } = update;
+  const { release, available, expanded, setExpanded, checking, notice, error, progress, ready, permission, phase, transferNotice } = update;
   const downloading = progress !== null;
+  const delta = release && eligibleDelta(release, appVersionCode);
+  const phaseText = { delta: '正在下载增量包', full: '正在下载完整包', prepare: '正在合成新版', verify: '正在校验安装包', fallback: '正在切换完整包' }[phase];
   return <section className="app-update" aria-label="应用更新">
     <div className="update-actions">
       {available && <button type="button" className="update-badge" onClick={() => setExpanded(!expanded)} aria-expanded={expanded}>● 发现新版本 {release!.version}</button>}
@@ -114,8 +126,9 @@ export function UpdateControl() {
       {available && <>
         <strong>{appName} {release!.version} · {(release!.bytes / 1_000_000).toFixed(2)} MB</strong>
         <p>{release!.notes}</p>
+        {delta && <p>预计增量下载 {(delta.bytes / 1_000_000).toFixed(2)} MB，减少约 {Math.round((1 - delta.bytes / release!.bytes) * 100)}% 下载量；不适用时自动下载完整包。</p>}
         <p className="hint">覆盖升级会保留登录和学习资料。请先保存正在编辑的内容。</p>
-        {downloading ? <output><progress value={progress} max="100" /><span>下载并校验中 {progress}%</span></output>
+        {downloading ? <output aria-live="polite"><progress value={progress} max="100" /><span>{phaseText}{phase === 'delta' || phase === 'full' ? ` ${progress}%` : '…'}</span></output>
           : Capacitor.isNativePlatform()
             ? <div className="button-row">
                 {permission && <button type="button" onClick={() => void update.settings()}>允许安装更新</button>}
@@ -124,6 +137,7 @@ export function UpdateControl() {
             : <a href={release!.downloadUrl} target="_blank" rel="noopener noreferrer">下载 APK，在安卓设备安装</a>}
       </>}
       {notice && <output>{notice}</output>}
+      {transferNotice && <output className="hint">{transferNotice}</output>}
       {error && <p role="alert">{error}</p>}
       <button type="button" className="update-check" onClick={() => setExpanded(false)}>收起</button>
     </div>}

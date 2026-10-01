@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from 'react';
-import { Camera, ChevronRight, FileImage, Home, ImagePlus, Layers, LogOut, Plus, RefreshCw, UserRound } from 'lucide-react';
+import { Camera, ChevronRight, FileImage, ImagePlus, LogOut, Plus, RefreshCw, UserRound } from 'lucide-react';
+import { BottomNavigation, type HomePage } from './BottomNavigation';
 import { BrandMark } from './Brand';
 import { PermissionInfo } from './PermissionInfo';
 import { UpdateDot } from './UpdateControl';
@@ -8,8 +9,9 @@ import { statusNames, type Scan, type Student } from './types';
 import type { Draft } from './drafts';
 import { FeatureCatalog } from './FeatureCatalog';
 import { FeatureDialog } from './FeatureDialog';
+import { AccountSettings, type AccountChange } from './AccountSettings';
 
-export type HomePage = 'home' | 'library' | 'me';
+export type { HomePage } from './BottomNavigation';
 
 type Props = {
   username: string; students: Student[]; selected: string; records: Scan[]; localDrafts: Draft[];
@@ -18,6 +20,7 @@ type Props = {
   onSelect: (id: string) => void; onCapture: (source: 'camera' | 'gallery') => void;
   onRefresh: () => void; onOpenScan: (scan: Scan) => void; onLogout: () => void;
   onAddStudent: (name: string, grade: string) => Promise<boolean>;
+  onUpdateAccount: (kind: AccountChange, value: string, currentPassword: string) => Promise<string>;
   renderDraft: (draft: Draft) => ReactNode; children: ReactNode;
 };
 
@@ -25,6 +28,7 @@ export function HomeView(props: Props) {
   const { username, students, selected, records, localDrafts, busy, uploading, refreshing, error, notice } = props;
   const tab = props.page;
   const [feature, setFeature] = useState('');
+  const [accountChange, setAccountChange] = useState<AccountChange | null>(null);
   const [adding, setAdding] = useState(false), [name, setName] = useState(''), [grade, setGrade] = useState('');
   const student = students.find((s) => s.id === selected);
   const pending = localDrafts.filter((d) => d.studentId === selected);
@@ -121,15 +125,13 @@ export function HomeView(props: Props) {
           </form>}
         </section>
         <PermissionInfo />
+        <section className="profile-card"><h2>账号设置</h2><div className="button-row"><button disabled={busy || !!uploading} onClick={() => setAccountChange('username')}>修改用户名</button><button disabled={busy || !!uploading} onClick={() => setAccountChange('password')}>修改密码</button></div></section>
         <section className="profile-card profile-storage"><h2>资料与功能</h2><p>确认上传的原图与校对结果保存在家庭服务器，按孩子、日期和科目关联。</p><p className="hint">当前可拍照、选图、识别和校对。文档导入、错因分析和举一反三正在准备中。</p></section>
         {props.children}
       </div>}
     </main>
-    <nav className="bottom-nav" aria-label="主要页面">
-      <button aria-current={tab === 'home' ? 'page' : undefined} onClick={() => navigate('home')}><Home size={21} /><span>首页</span></button>
-      <button aria-current={tab === 'library' ? 'page' : undefined} onClick={() => navigate('library')}><Layers size={21} /><span>题目</span>{pending.length > 0 && <span className="nav-dot" aria-label="有照片待上传" />}</button>
-      <button aria-current={tab === 'me' ? 'page' : undefined} onClick={() => navigate('me')}><UserRound size={21} /><span>我的</span><UpdateDot /></button>
-    </nav>
+    <BottomNavigation page={tab} onNavigate={navigate} pending={pending.length > 0} />
+    {accountChange && <AccountSettings kind={accountChange} username={username} onClose={() => setAccountChange(null)} onSave={props.onUpdateAccount} />}
     {feature && <FeatureDialog feature={feature} onClose={() => setFeature('')} onContinue={() => {
       setFeature(''); navigate('home');
       if (!student) addStudent();

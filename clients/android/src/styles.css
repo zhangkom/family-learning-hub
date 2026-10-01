@@ -1964,6 +1964,27 @@ summary:focus-visible {
     min-width: 44px;
   }
 }
+/* Guest root pages share the same navigation and content hierarchy as signed-in pages. */
+.guest-secondary { padding-top: 20px; }
+.guest-intro-card { background: white; border: 1px solid #e1e8f2; border-radius: 24px; padding: 28px 24px; }
+.guest-intro-icon { display: inline-flex; padding: 16px; background: #eef3ff; color: #315edc; border-radius: 20px; }
+.guest-intro-card h2, .guest-profile h1 { font-size: 23px; line-height: 1.45; margin: 20px 0 10px; }
+.guest-intro-card p, .guest-profile p { color: #58667d; font-size: 14px; line-height: 1.75; }
+.guest-benefits { display: flex; flex-wrap: wrap; gap: 8px; margin: 20px 0 24px; }
+.guest-benefits span { padding: 6px 9px; border-radius: 8px; background: #f3f6fb; font-size: 12px; color: #506078; }
+.guest-intro-card .button-row button, .guest-profile .button-row button { min-height: 46px; }
+.guest-private-hint { margin: 18px 4px; line-height: 1.7; }
+.account-dialog { border: 0; border-radius: 24px; padding: 24px; width: min(420px, calc(100% - 32px)); max-height: calc(100dvh - 48px); overflow: auto; color: #162747; }
+.account-dialog::backdrop { background: #13274b80; }
+.account-dialog .section-line { margin-bottom: 20px; }
+.account-dialog h2 { font-size: 22px; }
+.account-dialog form label { margin-top: 18px; }
+.account-dialog .hint { line-height: 1.7; margin: 10px 0; }
+.account-dialog .button-row, .account-dialog .full { margin-top: 20px; }
+.account-show-password { margin-top: 12px; min-height: 44px; }
+.profile-page > .profile-card.guest-profile:first-child { display: block; }
+.guest-profile h1 { margin-top: 16px; }
+.guest-profile .button-row { margin-top: 18px; }
 @media (max-width: 380px) {
   .topbar {
     padding-left: 16px;

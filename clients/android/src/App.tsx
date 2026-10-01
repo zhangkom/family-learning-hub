@@ -15,6 +15,7 @@ import { HomeView, type HomePage } from './HomeView';
 import { captureFailure } from './permissions';
 import { AuthForm, type AuthMode } from './AuthForm';
 import { GuestHome } from './GuestHome';
+import { pageNames } from './BottomNavigation';
 
 function message(error: unknown) {
   return error instanceof Error ? error.message : '操作未完成，请重试';
@@ -41,11 +42,15 @@ export function App() {
   const [restoreError, setRestoreError] = useState(''),
     [restoreAttempt, setRestoreAttempt] = useState(0);
   const [authPage, setAuthPage] = useState<{ mode: AuthMode; feature?: string } | null>(null);
+  const [guestPage, setGuestPage] = useState<HomePage>('home');
+  const liveAuth = useRef(auth);
+  liveAuth.current = auth;
   useEffect(() => {
     const expired = (event: Event) => {
       const source = (event as CustomEvent<{ base: string; token: string }>)
         .detail;
-      if (!auth || source.base !== auth.base || source.token !== auth.token)
+      const active = liveAuth.current;
+      if (!active || source.base !== active.base || source.token !== active.token)
         return;
       void session.clear().catch(() => {});
       setAuth(null);
@@ -54,7 +59,7 @@ export function App() {
     };
     window.addEventListener(sessionExpiredEvent, expired);
     return () => window.removeEventListener(sessionExpiredEvent, expired);
-  }, [auth]);
+  }, []);
   useEffect(() => {
     let alive = true;
     setLoading(true);
@@ -104,11 +109,12 @@ export function App() {
       </main>
     );
   if (!auth) {
-    if (!authPage) return <GuestHome onAuth={(mode, feature) => setAuthPage({ mode, feature })} />;
+    if (!authPage) return <GuestHome page={guestPage} onNavigate={setGuestPage} onAuth={(mode, feature) => setAuthPage({ mode, feature })} />;
     return (
       <AuthForm
         initialMode={authPage.mode}
         feature={authPage.feature}
+        backLabel={`返回${pageNames[guestPage]}`}
         onBack={() => { setAuthPage(null); setError(''); }}
         initialError={error}
         onLogin={async (next) => {
@@ -126,6 +132,13 @@ export function App() {
     <Home
       key={`${auth.base}|${auth.user.id}`}
       auth={auth}
+      initialPage={guestPage}
+      onUpdateAuth={async (next) => {
+        liveAuth.current = next;
+        setAuth(next);
+        try { await session.save(JSON.stringify({ base: next.base, token: next.token })); return ''; }
+        catch { return '修改已生效。本次登录仍可使用，但未能保存登录状态，下次打开请用新信息登录。'; }
+      }}
       onLogout={async () => {
         await session.clear();
         setAuth(null);
@@ -137,9 +150,13 @@ export function App() {
 
 function Home({
   auth,
+  initialPage,
+  onUpdateAuth,
   onLogout,
 }: {
   auth: Auth;
+  initialPage: HomePage;
+  onUpdateAuth: (next: Auth) => Promise<string>;
   onLogout: () => Promise<void>;
 }) {
   const api = useMemo(
@@ -147,7 +164,7 @@ function Home({
     [auth.base, auth.token],
   );
   const owner = `${auth.base}|${auth.user.id}`;
-  const [homePage, setHomePage] = useState<HomePage>('home');
+  const [homePage, setHomePage] = useState<HomePage>(initialPage);
   const [students, setStudents] = useState<Student[]>([]),
     [selected, setSelected] = useState(readSetting(selectionKey(owner)));
   const [records, setRecords] = useState<Scan[]>([]),
@@ -365,6 +382,11 @@ function Home({
     );
   return <>
     <HomeView username={auth.user.username} students={students} selected={selected} records={records}
+      onUpdateAccount={async (kind, value, currentPassword) => {
+        const next = kind === 'username' ? await api.changeUsername(value, currentPassword) : await api.changePassword(value, currentPassword);
+        if (next.user.id !== auth.user.id) throw new Error('账号信息不匹配，请重新登录。');
+        return onUpdateAuth({ base: auth.base, token: next.token, user: next.user });
+      }}
       page={homePage} onNavigate={setHomePage}
       localDrafts={localDrafts} busy={busy} uploading={uploading} refreshing={refreshing}
       recognition={recognition} error={error} notice={notice}

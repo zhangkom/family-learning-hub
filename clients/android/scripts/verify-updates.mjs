@@ -72,6 +72,13 @@ try {
           window.updateListeners['AppUpdater:downloadProgress']?.({ percent: 45 });
           await new Promise((resolve) => setTimeout(resolve, 150));
           if (window.failDownload) throw new Error('安装包校验未通过，请重新下载');
+          if (window.simulateDelta) {
+            if (window.simulateDelta === 'fallback') window.updateListeners['AppUpdater:downloadProgress']?.({ percent: 0, phase: 'fallback' });
+            else window.updateListeners['AppUpdater:downloadProgress']?.({ percent: 100, phase: 'prepare' });
+            await new Promise((resolve) => setTimeout(resolve, 150));
+            return { mode: window.simulateDelta === 'fallback' ? 'full' : 'delta', fallback: window.simulateDelta === 'fallback' };
+          }
+          return { mode: 'full', fallback: false };
         }
         if (method === 'install') return { permissionRequired: !window.updatePermission };
         if (method === 'openInstallSettings') window.updatePermission = true;
@@ -95,8 +102,23 @@ try {
   assert.equal(await page.evaluate(() => window.downloadArguments.sha256), next.sha256);
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
   await page.screenshot({ path: 'test-results/update-native-simulation.png', fullPage: true });
+  next.deltas = [{ format: 'zai-copy-v1', fromVersionCode: androidVersionCode, baseBytes: 6700000,
+    baseSha256: 'a'.repeat(64), bytes: 150000, sha256: 'c'.repeat(64),
+    downloadUrl: `${website}downloads/android/family-learning-${androidVersionCode}-to-${next.versionCode}-${'c'.repeat(16)}.zaidelta.gz` }];
+  for (const outcome of ['success', 'fallback']) {
+    await page.reload();
+    await page.getByLabel('版本与更新', { exact: true }).click();
+    await page.getByRole('button', { name: /发现新版本/ }).click();
+    await page.getByText(/预计增量下载 0.15 MB/).waitFor();
+    assert.deepEqual(await page.evaluate(() => window.updateCalls), []);
+    await page.evaluate((value) => { window.simulateDelta = value; window.updatePermission = true; }, outcome);
+    await page.getByRole('button', { name: '下载并安装', exact: true }).click();
+    await page.getByText(outcome === 'success' ? '增量更新已合成并校验完成。' : '增量更新未能完成，已使用完整安装包。', { exact: true }).waitFor();
+    assert.deepEqual(await page.evaluate(() => window.updateCalls), ['download', 'install']);
+    assert.deepEqual(await page.evaluate(() => window.downloadArguments.deltas), next.deltas);
+  }
   assert.deepEqual(errors, []);
   writeFileSync('test-results/update-verification.json', JSON.stringify({ version, checkedAt: new Date().toISOString(), requests, mockedOnly: true, nativeDeviceTested: false,
-    passed: ['automatic badge', 'manual check', 'same/older version no downgrade', 'offline retry', 'immutable download URL', 'no credentials', '390px layout', 'simulated download failure stops install', 'simulated permission and install retry without redownload'] }, null, 2));
+    passed: ['automatic badge', 'manual check', 'same/older version no downgrade', 'offline retry', 'immutable download URL', 'no credentials', '390px layout', 'simulated download failure stops install', 'simulated permission and install retry without redownload', 'compatible delta size shown without auto download', 'simulated delta success and full fallback'] }, null, 2));
   console.log('Update browser flow and simulated native bridge passed. No production calls or actual installation.');
 } finally { await browser.close(); }

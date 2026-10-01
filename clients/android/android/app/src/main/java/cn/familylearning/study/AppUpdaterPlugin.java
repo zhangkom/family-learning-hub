@@ -25,6 +25,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 import javax.net.ssl.HttpsURLConnection;
+import org.json.JSONArray;
+import org.json.JSONObject;
 
 /** Explicit, user-requested updates for this app only. Never accesses family credentials. */
 @CapacitorPlugin(name = "AppUpdater")
@@ -44,6 +46,7 @@ public class AppUpdaterPlugin extends Plugin {
         if (!busy.compareAndSet(false, true)) { call.reject("更新正在进行，请稍候"); return; }
         executor.execute(() -> {
             File part = new File(apkFile().getParentFile(), "update.part");
+            File patch = new File(apkFile().getParentFile(), "update.delta");
             verifiedHash = null;
             try {
                 String address = call.getString("downloadUrl", "");
@@ -64,6 +67,73 @@ public class AppUpdaterPlugin extends Plugin {
                 File directory = apkFile().getParentFile();
                 if (!directory.isDirectory() && !directory.mkdirs()) throw new Exception("无法创建更新文件，请检查剩余空间");
                 if (directory.getUsableSpace() < bytes * 2 + 16L * 1024 * 1024) throw new Exception("剩余空间不足，请清理后重试");
+                boolean usedDelta = false, fallback = false;
+                JSONArray deltas = call.getArray("deltas");
+                JSONObject delta = findDelta(deltas, installed, code, bytes);
+                if (delta != null) {
+                    try {
+                        File base = new File(getContext().getApplicationInfo().sourceDir);
+                        if (base.length() != delta.getLong("baseBytes") ||
+                            !DeltaApplier.sha256(base).equalsIgnoreCase(delta.getString("baseSha256")))
+                            throw new Exception("base mismatch");
+                        transfer(new URL(delta.getString("downloadUrl")), patch, delta.getLong("bytes"), delta.getString("sha256"), "delta");
+                        progress(100, "prepare");
+                        DeltaApplier.apply(base, patch, part, delta.getLong("baseBytes"), delta.getString("baseSha256"), bytes, sha256);
+                        verifyPackage(part, installed, code, version);
+                        usedDelta = true;
+                    } catch (Exception ignored) {
+                        if (Thread.currentThread().isInterrupted()) throw new Exception("更新已中断，请重试");
+                        fallback = true;
+                        progress(0, "fallback");
+                    } finally { if (patch.exists()) patch.delete(); }
+                }
+                if (!usedDelta) transfer(url, part, bytes, sha256, "full");
+                progress(100, "verify");
+                verifyPackage(part, installed, code, version);
+                if (apkFile().exists() && !apkFile().delete()) throw new Exception("无法替换旧更新文件，请重试");
+                if (!part.renameTo(apkFile())) throw new Exception("无法保存更新文件，请重试");
+                verifiedHash = sha256; verifiedBytes = bytes; verifiedCode = code; verifiedVersion = version;
+                JSObject result = new JSObject(); result.put("mode", usedDelta ? "delta" : "full"); result.put("fallback", fallback);
+                call.resolve(result);
+            } catch (Exception e) {
+                call.reject(e instanceof java.io.IOException ? "下载失败，请检查网络和剩余空间后重试" : safeMessage(e));
+            } finally {
+                if (part.exists()) part.delete();
+                if (patch.exists()) patch.delete();
+                busy.set(false);
+            }
+        });
+    }
+
+    private JSONObject findDelta(JSONArray deltas, PackageInfo installed, int code, long bytes) {
+        if (deltas == null || deltas.length() > 4 || versionCode(installed) < 7 ||
+            (getContext().getApplicationInfo().splitSourceDirs != null && getContext().getApplicationInfo().splitSourceDirs.length > 0)) return null;
+        for (int i = 0; i < deltas.length(); i++) {
+            try {
+                JSONObject delta = deltas.getJSONObject(i);
+                long from = delta.getLong("fromVersionCode"), size = delta.getLong("bytes"), baseBytes = delta.getLong("baseBytes");
+                String hash = delta.getString("sha256");
+                URL url = new URL(delta.getString("downloadUrl"));
+                if (!delta.getString("format").equals("zai-copy-v1") || from != versionCode(installed) ||
+                    from >= code || size < 1 || size > bytes * 0.8 || bytes - size < 65536 ||
+                    baseBytes < 1 || baseBytes > DeltaApplier.MAX_BYTES || !hash.matches("[a-fA-F0-9]{64}") ||
+                    !delta.getString("baseSha256").matches("[a-fA-F0-9]{64}") ||
+                    !url.getProtocol().equals("https") || !url.getHost().equals("123.207.232.151") ||
+                    (url.getPort() != -1 && url.getPort() != 443) || url.getUserInfo() != null || url.getQuery() != null || url.getRef() != null ||
+                    !url.getPath().equals("/family-learning/downloads/android/family-learning-" + from + "-to-" + code + "-" + hash.substring(0, 16).toLowerCase(java.util.Locale.ROOT) + ".zaidelta.gz")) continue;
+                return delta;
+            } catch (Exception ignored) { /* Optional metadata must not block a verified full update. */ }
+        }
+        return null;
+    }
+
+    private void progress(int percent, String phase) {
+        JSObject progress = new JSObject(); progress.put("percent", percent); progress.put("phase", phase);
+        notifyListeners("downloadProgress", progress);
+    }
+
+    private void transfer(URL url, File part, long bytes, String sha256, String phase) throws Exception {
+        try {
                 connection = (HttpsURLConnection) url.openConnection();
                 connection.setInstanceFollowRedirects(false);
                 connection.setConnectTimeout(15000);
@@ -88,8 +158,7 @@ public class AppUpdaterPlugin extends Plugin {
                         digest.update(buffer, 0, count);
                         int percent = (int) (total * 100 / bytes);
                         if (percent != lastPercent) {
-                            JSObject progress = new JSObject(); progress.put("percent", percent);
-                            notifyListeners("downloadProgress", progress);
+                            progress(percent, phase);
                             lastPercent = percent;
                         }
                     }
@@ -97,19 +166,9 @@ public class AppUpdaterPlugin extends Plugin {
                 }
                 if (total != bytes || !hex(digest.digest()).equalsIgnoreCase(sha256))
                     throw new Exception("安装包校验未通过，请重新下载");
-                verifyPackage(part, installed, code, version);
-                if (apkFile().exists() && !apkFile().delete()) throw new Exception("无法替换旧更新文件，请重试");
-                if (!part.renameTo(apkFile())) throw new Exception("无法保存更新文件，请重试");
-                verifiedHash = sha256; verifiedBytes = bytes; verifiedCode = code; verifiedVersion = version;
-                call.resolve();
-            } catch (Exception e) {
-                call.reject(e instanceof java.io.IOException ? "下载失败，请检查网络和剩余空间后重试" : safeMessage(e));
-            } finally {
+        } finally {
                 if (connection != null) { connection.disconnect(); connection = null; }
-                if (part.exists()) part.delete();
-                busy.set(false);
-            }
-        });
+        }
     }
 
     @PluginMethod

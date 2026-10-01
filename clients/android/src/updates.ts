@@ -8,7 +8,30 @@ export type Release = {
   bytes: number;
   sha256: string;
   notes: string;
+  deltas?: Delta[];
 };
+export type Delta = {
+  format: 'zai-copy-v1'; fromVersionCode: number; baseBytes: number; baseSha256: string;
+  downloadUrl: string; bytes: number; sha256: string;
+};
+export type UpdatePhase = 'full' | 'delta' | 'prepare' | 'verify' | 'fallback';
+
+function parseDeltas(value: unknown, targetCode: number, targetBytes: number): Delta[] {
+  if (!Array.isArray(value) || value.length > 4) return [];
+  return value.flatMap((item: Partial<Delta> | null) => {
+    if (!item || item.format !== 'zai-copy-v1' || !Number.isSafeInteger(item.fromVersionCode) ||
+      item.fromVersionCode! < 7 || item.fromVersionCode! >= targetCode ||
+      !Number.isSafeInteger(item.baseBytes) || item.baseBytes! < 1 || item.baseBytes! > 256 * 1024 * 1024 ||
+      !Number.isSafeInteger(item.bytes) || item.bytes! < 1 || item.bytes! > targetBytes * 0.8 || targetBytes - item.bytes! < 65536 ||
+      typeof item.sha256 !== 'string' || !/^[a-f\d]{64}$/i.test(item.sha256) ||
+      typeof item.baseSha256 !== 'string' || !/^[a-f\d]{64}$/i.test(item.baseSha256) ||
+      item.downloadUrl !== `${familyWebsite}downloads/android/family-learning-${item.fromVersionCode}-to-${targetCode}-${item.sha256.slice(0, 16).toLowerCase()}.zaidelta.gz`) return [];
+    return [{ ...item, sha256: item.sha256.toLowerCase(), baseSha256: item.baseSha256.toLowerCase() } as Delta];
+  });
+}
+export function eligibleDelta(release: Release, installedCode: number) {
+  return release.deltas?.find((delta) => delta.fromVersionCode === installedCode);
+}
 
 // The manifest is public. Never send a family token or cookies to this endpoint.
 export function parseRelease(value: unknown): Release {
@@ -26,6 +49,7 @@ export function parseRelease(value: unknown): Release {
     throw new Error('更新地址无效，请稍后重试');
   return { version: data.version, versionCode: data.versionCode!, downloadUrl: url.href,
     bytes: data.bytes!, sha256: data.sha256.toLowerCase(),
+    deltas: parseDeltas(data.deltas, data.versionCode!, data.bytes!),
     notes: typeof data.changelog === 'string' ? data.changelog.slice(0, 2000)
       : typeof data.notes === 'string' ? data.notes.slice(0, 2000) : '改进家庭学习体验。' };
 }
@@ -40,8 +64,8 @@ export async function checkRelease(): Promise<Release> {
 }
 
 export const AppUpdater = registerPlugin<{
-  download(release: Release): Promise<void>;
+  download(release: Release): Promise<{ mode: 'full' | 'delta'; fallback: boolean }>;
   install(): Promise<{ permissionRequired: boolean }>;
   openInstallSettings(): Promise<void>;
-  addListener(name: 'downloadProgress', listener: (event: { percent: number }) => void): Promise<PluginListenerHandle>;
+  addListener(name: 'downloadProgress', listener: (event: { percent: number; phase?: UpdatePhase }) => void): Promise<PluginListenerHandle>;
 }>('AppUpdater');

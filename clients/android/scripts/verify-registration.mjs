@@ -78,6 +78,24 @@ try {
     await page.getByRole('button', { name: '先逛逛', exact: true }).click();
   }
   assert.deepEqual(normal.counts(), { registerCalls: 0, statusCalls: 0, loginCalls: 0, privateCalls: 0 });
+  const nav = page.getByRole('navigation', { name: '主要页面' });
+  for (const name of ['题目', '我的']) {
+    await nav.getByRole('button', { name, exact: true }).click();
+    assert.equal(await nav.getByRole('button').count(), 3);
+    assert.equal(await nav.locator('[aria-current="page"]').textContent(), name);
+    assert.equal(await page.locator('.auth-page').count(), 0);
+    const label = name === '题目' ? '登录查看题目' : '登录';
+    await page.getByRole('main').getByRole('button', { name: label, exact: true }).click();
+    assert.equal(await page.getByRole('navigation', { name: '主要页面' }).count(), 0);
+    await page.getByRole('button', { name: `返回${name}`, exact: true }).click();
+    assert.equal(await nav.locator('[aria-current="page"]').textContent(), name);
+    const size = await page.evaluate(() => ({ width: innerWidth, scrollWidth: document.documentElement.scrollWidth,
+      navBottom: document.querySelector('.bottom-nav').getBoundingClientRect().bottom, height: innerHeight }));
+    assert.ok(size.width >= size.scrollWidth && size.navBottom <= size.height);
+    await page.screenshot({ path: `test-results/guest-${name === '题目' ? 'library' : 'me'}-360.png`, fullPage: true });
+  }
+  assert.equal(normal.counts().privateCalls, 0);
+  await nav.getByRole('button', { name: '首页', exact: true }).click();
   await registerForm(page);
   assert.equal(await page.locator('form input').count(), 2);
   assert.equal(await page.getByLabel('确认密码', { exact: true }).count(), 0);
@@ -93,11 +111,25 @@ try {
   await page.getByRole('button', { name: '添加第一名学生', exact: true }).waitFor();
   assert.equal(normal.counts().registerCalls, 1);
   assert.equal(normal.counts().loginCalls, 0);
+  for (const name of ['题目', '我的', '首页']) {
+    await nav.getByRole('button', { name, exact: true }).click();
+    assert.equal(await nav.getByRole('button').count(), 3);
+    assert.equal(await nav.locator('[aria-current="page"]').textContent(), name);
+  }
   assert.equal((await page.evaluate(() => JSON.stringify(localStorage))).includes('123456'), false);
   await page.getByRole('region', { name: '学习工具' }).getByRole('button', { name: /错题本/ }).click();
   await page.getByRole('dialog', { name: '错题本' }).waitFor();
   await page.getByRole('button', { name: '返回首页', exact: true }).click();
   const duplicate = await scenario({ duplicate: true });
+  const fromLibrary = await scenario();
+  await fromLibrary.page.getByRole('navigation', { name: '主要页面' }).getByRole('button', { name: '题目', exact: true }).click();
+  await fromLibrary.page.getByRole('button', { name: '登录查看题目', exact: true }).click();
+  await fromLibrary.page.getByLabel('账号', { exact: true }).fill('family2026');
+  await fromLibrary.page.getByLabel('密码', { exact: true }).fill('123456');
+  await fromLibrary.page.getByRole('button', { name: '登录', exact: true }).click();
+  await fromLibrary.page.getByRole('heading', { name: '题目资料', exact: true }).waitFor();
+  assert.equal(await fromLibrary.page.locator('.bottom-nav [aria-current="page"]').textContent(), '题目');
+  await fromLibrary.page.close();
   await registerForm(duplicate.page);
   await duplicate.page.getByRole('button', { name: '注册', exact: true }).click();
   await duplicate.page.getByRole('alert').getByText('账号已存在，请登录或换一个账号', { exact: true }).waitFor();

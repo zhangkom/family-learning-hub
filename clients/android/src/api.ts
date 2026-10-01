@@ -88,6 +88,12 @@ export class FamilyApi {
   me() {
     return this.request<{ user: User }>('/session');
   }
+  changeUsername(username: string, currentPassword: string) {
+    return this.request<Login>('/account/username', 'POST', { username, currentPassword });
+  }
+  changePassword(password: string, currentPassword: string) {
+    return this.request<Login>('/account/password', 'POST', { password, currentPassword });
+  }
   logout() {
     return this.request('/session/logout', 'POST', {});
   }

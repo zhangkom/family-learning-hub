@@ -10,10 +10,10 @@ import type { Auth } from './restore-session';
 
 export type AuthMode = 'login' | 'register';
 const upcoming = new Set(['错题本', '分步辅导', '举一反三', '学习报告']);
-type Props = { initialMode: AuthMode; feature?: string; initialError: string;
+type Props = { initialMode: AuthMode; feature?: string; initialError: string; backLabel?: string;
   onBack: () => void; onLogin: (auth: Auth) => Promise<void>; children: ReactNode };
 
-export function AuthForm({ initialMode, feature, initialError, onBack, onLogin, children }: Props) {
+export function AuthForm({ initialMode, feature, initialError, backLabel = '返回首页', onBack, onLogin, children }: Props) {
   const [mode, setMode] = useState<AuthMode>(initialMode);
   const [server, setServer] = useState(() => {
     if (configuredServer) return configuredServer;
@@ -51,7 +51,7 @@ export function AuthForm({ initialMode, feature, initialError, onBack, onLogin, 
   const registering = mode === 'register';
   return <main className="auth-page">
     <header className="auth-header">
-      <button type="button" className="auth-back" disabled={busy} onClick={onBack}><ArrowLeft size={19} />返回首页</button>
+      <button type="button" className="auth-back" disabled={busy} onClick={onBack}><ArrowLeft size={19} />{backLabel}</button>
       <div className="brand"><BrandMark size={32} /><span>{appName}</span></div>
     </header>
     <section className="auth-card">
