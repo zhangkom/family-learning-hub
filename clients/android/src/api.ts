@@ -1,4 +1,4 @@
-import type { Login, Question, Scan, Student, User } from './types';
+import type { Login, Question, Scan, Student, User, WrongBookItem } from './types';
 
 export class ApiError extends Error {
   constructor(
@@ -123,7 +123,6 @@ export class FamilyApi {
   }) {
     const form = new FormData();
     form.set('studentId', draft.studentId);
-    form.set('subject', '数学');
     form.set('source', draft.source);
     form.set('clientRequestId', draft.id);
     form.set('file', draft.file, draft.name);
@@ -142,6 +141,17 @@ export class FamilyApi {
       'PUT',
       { revision: scan.revision, questions },
     );
+  }
+  wrongBook(studentId: string) {
+    return this.request<{ items: WrongBookItem[] }>(`/wrong-book?studentId=${encodeURIComponent(studentId)}`);
+  }
+  saveWrongQuestion(scan: Scan, questionId: string, saved = true) {
+    return this.request<{ scan: Scan }>(`/scans/${encodeURIComponent(scan.id)}/questions/${encodeURIComponent(questionId)}/wrong-book`,
+      'POST', { revision: scan.revision, saved });
+  }
+  explain(scan: Scan, questionId: string) {
+    return this.request<{ scan: Scan }>(`/scans/${encodeURIComponent(scan.id)}/questions/${encodeURIComponent(questionId)}/explain`,
+      'POST', { revision: scan.revision });
   }
   async image(id: string, signal?: AbortSignal) {
     const response = await fetch(

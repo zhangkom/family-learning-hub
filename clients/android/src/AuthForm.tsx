@@ -9,7 +9,7 @@ import { appName, configuredServer } from './release';
 import type { Auth } from './restore-session';
 
 export type AuthMode = 'login' | 'register';
-const upcoming = new Set(['错题本', '分步辅导', '举一反三', '学习报告']);
+const upcoming = new Set(['分步辅导', '举一反三', '学习报告']);
 type Props = { initialMode: AuthMode; feature?: string; initialError: string; backLabel?: string;
   onBack: () => void; onLogin: (auth: Auth) => Promise<void>; children: ReactNode };
 

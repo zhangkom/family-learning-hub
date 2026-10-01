@@ -47,8 +47,8 @@ try {
   await page.getByRole('button', { name: /合成测试照片/ }).click();
   await page.locator('.paper-surface img').waitFor();
   assert.equal(await page.getByRole('button', { name: '识别这张照片' }).isDisabled(), true);
-  await page.getByText('识别服务暂不可用，仍可补题、手动框选并保存孩子的作答过程。', { exact: true }).waitFor();
   await page.getByRole('button', { name: '补题', exact: true }).click();
+  await page.locator('.manual-review > summary').click();
   await page.getByLabel('完整题干').fill('2 + 3 = ?');
   assert.equal(await page.getByRole('button', { name: '保存校对', exact: true }).isEnabled(), true);
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);

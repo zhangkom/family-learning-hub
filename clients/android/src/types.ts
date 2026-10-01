@@ -25,6 +25,22 @@ export type AnswerStep = {
 };
 export type Question = {
   id: string;
+  subject?: Subject;
+  wrongBook?: { savedAt: string };
+  tutoring?: {
+    status: 'queued' | 'processing' | 'needs_review' | 'failed' | 'stale';
+    error?: string;
+    result?: {
+      transcribedPrompt: string;
+      referenceAnswer: string;
+      explanation: string;
+      answerEvidence: Array<{ text: string; author: 'student' | 'teacher' | 'unknown' }>;
+      errorHypotheses: Array<{ text: string; evidenceIndexes: number[] }>;
+      uncertainties: string[];
+      generatedAt: string;
+      needsReview: true;
+    };
+  };
   number: string;
   prompt: string;
   diagram: string;
@@ -54,6 +70,9 @@ export type Scan = {
   error?: string;
 };
 export type Login = { token: string; user: User; expiresAt: number | string };
+export const subjects = ['数学', '英语', '地理', '物理', '化学', '生物'] as const;
+export type Subject = (typeof subjects)[number];
+export type WrongBookItem = { scanId: string; studentId: string; subject: string; source: string; question: Question };
 export const statusNames: Record<Scan['status'], string> = {
   queued: '等待识别',
   processing: '正在识别',

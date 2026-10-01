@@ -43,3 +43,5 @@ next-env.d.ts
 /uploads/
 /private-learning-data/
 *.student-scan.*
+
+/test-results/

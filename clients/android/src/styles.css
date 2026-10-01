@@ -2638,3 +2638,48 @@ summary:focus-visible {
     padding: 20px;
   }
 }
+/* A photo is scrollable until the user explicitly enters frame-edit mode. */
+.paper-panel { position: static; }
+.paper-scroll { max-height: 46dvh; overscroll-behavior: contain; }
+.region-overlay.browse { touch-action: pan-x pan-y pinch-zoom; }
+.region-overlay.new, .region-overlay.append { cursor: crosshair; }
+.region-number { font-size: 14px; }
+.resize-handle { pointer-events: none; }
+.resize-target { fill: transparent; cursor: nwse-resize; pointer-events: all; }
+.framing-toolbar { display: flex; flex-wrap: wrap; gap: 6px; }
+.framing-toolbar button { min-height: 44px; font-size: 13px; padding: 8px 10px; }
+.paper-panel .hint { line-height: 1.55; }
+.photo-zoom { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 12px; color: #56627a; }
+.photo-zoom > span { margin-right: auto; }
+.photo-zoom button { min-width: 44px; min-height: 44px; padding: 8px; justify-content: center; }
+.photo-zoom output { min-width: 38px; text-align: center; }
+.question-actions { border: 1px solid #dce4f2; border-radius: 12px; background: white; padding: 14px; margin-top: 10px; }
+.question-actions .section-line { margin: 0 0 10px; font-size: 14px; }
+.question-actions label { font-size: 13px; }
+.question-actions select { width: 100%; min-height: 44px; font-size: 16px; }
+.question-save-actions { display: flex; gap: 8px; margin-top: 12px; }
+.question-save-actions button { min-height: 46px; font-size: 13px; justify-content: center; }
+.question-save-actions .primary { flex: 1; }
+.saved-tag { color: #14765c; font-size: 12px; }
+.extra-regions { margin-top: 14px; font-size: 13px; }
+.extra-regions .paper-toolbar { padding-top: 12px; flex-wrap: wrap; }
+.manual-review > summary { padding: 15px 0; color: #395075; font-weight: 600; }
+.tutoring-result { border: 1px solid #dce4f2; padding: 18px; background: #fff; border-radius: 16px; margin-bottom: 20px; }
+.tutoring-result h2 { font-size: 18px; margin: 0 0 14px; }
+.tutoring-result h3 { font-size: 15px; margin: 22px 0 10px; }
+.tutoring-result p, .tutoring-result li { font-size: 14px; line-height: 1.75; overflow-wrap: anywhere; }
+.analysis-text { white-space: pre-wrap; }
+.evidence-author { font-size: 12px; color: #526584; }
+.stale-analysis { color: #5f6c82; }
+.library-modes { display: flex; gap: 8px; margin: 18px 0; }
+.library-modes button { flex: 1; justify-content: center; }
+.wrong-question-card { display: flex; flex-direction: column; align-items: stretch; gap: 10px; text-align: left; width: 100%; padding: 18px; border-radius: 16px; margin: 12px 0; }
+.wrong-question-card > div { display: flex; align-items: center; gap: 10px; }
+.wrong-question-card strong { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; white-space: pre-wrap; line-height: 1.6; }
+.wrong-question-card > span, .wrong-question-card small { color: #5b6980; font-size: 12px; }
+@media (max-width: 700px) {
+  .paper-scroll { max-height: 40dvh; }
+  .review-header h1 { font-size: 18px; }
+  .review-header small { font-size: 12px; }
+  .review-page .review-status { flex-wrap: wrap; }
+}

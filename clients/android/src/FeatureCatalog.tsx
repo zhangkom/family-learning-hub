@@ -6,7 +6,7 @@ const features = [
     description: '按错题回看与复习',
     icon: BookOpen,
     tone: 'blue',
-    planned: true,
+    planned: false,
   },
   {
     name: '分步辅导',

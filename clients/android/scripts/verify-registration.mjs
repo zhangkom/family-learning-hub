@@ -118,8 +118,9 @@ try {
   }
   assert.equal((await page.evaluate(() => JSON.stringify(localStorage))).includes('123456'), false);
   await page.getByRole('region', { name: '学习工具' }).getByRole('button', { name: /错题本/ }).click();
-  await page.getByRole('dialog', { name: '错题本' }).waitFor();
-  await page.getByRole('button', { name: '返回首页', exact: true }).click();
+  await page.getByRole('heading', { name: '题目资料', exact: true }).waitFor();
+  await page.getByText('先添加一个学生，再开始收题。', { exact: true }).waitFor();
+  await nav.getByRole('button', { name: '首页', exact: true }).click();
   const duplicate = await scenario({ duplicate: true });
   const fromLibrary = await scenario();
   await fromLibrary.page.getByRole('navigation', { name: '主要页面' }).getByRole('button', { name: '题目', exact: true }).click();

@@ -4,6 +4,7 @@ import { App as NativeApp } from '@capacitor/app';
 import { ArrowLeft, Check, Plus, Save, RefreshCw, Trash2 } from 'lucide-react';
 import { ApiError, FamilyApi } from './api';
 import { RegionEditor } from './RegionEditor';
+import { TutoringResult } from './TutoringResult';
 import { reviewDrafts } from './drafts';
 import {
   emptyQuestion,
@@ -11,7 +12,7 @@ import {
   removeQuestion,
   removeRegion,
 } from './regions';
-import { statusNames, type Question, type Region, type Scan } from './types';
+import { subjects, statusNames, type Subject, type Question, type Region, type Scan } from './types';
 
 type Props = {
   api: FamilyApi;
@@ -19,6 +20,7 @@ type Props = {
   scan: Scan;
   studentName: string;
   recognitionEnabled: boolean;
+  selectedQuestionId?: string;
   onBack: () => void;
   onUpdate: (scan: Scan) => void;
 };
@@ -28,6 +30,7 @@ export function Review({
   scan: initial,
   studentName,
   recognitionEnabled,
+  selectedQuestionId,
   onBack,
   onUpdate,
 }: Props) {
@@ -35,9 +38,10 @@ export function Review({
   const draftRevision = useRef(initial.revision);
   const editing = useRef(false),
     latestRevision = useRef(initial.revision);
+  const mutation = useRef(false);
   const [scan, setScan] = useState(initial),
     [questions, setQuestions] = useState(initial.questions || []);
-  const [selected, setSelected] = useState(initial.questions?.[0]?.id || ''),
+  const [selected, setSelected] = useState(selectedQuestionId || initial.questions?.[0]?.id || ''),
     [region, setRegion] = useState('');
   const [image, setImage] = useState(''),
     [dirty, setDirty] = useState(false),
@@ -48,6 +52,9 @@ export function Review({
   const [draftReady, setDraftReady] = useState(false),
     [conflict, setConflict] = useState(false);
   const question = questions.find((q) => q.id === selected);
+  const hasPendingAnalysis = questions.some((q) => ['queued', 'processing'].includes(q.tutoring?.status || ''));
+  const analyzing = ['queued', 'processing'].includes(question?.tutoring?.status || '');
+  const validQuestion = !!question?.subject && question.regions.some((r) => r.kind === 'stem');
   const backAction = useRef<() => void>(() => {});
   backAction.current = () => {
     if (busy || !draftReady) return;
@@ -67,7 +74,7 @@ export function Review({
         draftRevision.current = draft.revision;
         editing.current = true;
         setQuestions(draft.questions);
-        setSelected(draft.questions[0]?.id || '');
+        setSelected(draft.questions.some((q) => q.id === selectedQuestionId) ? selectedQuestionId! : draft.questions[0]?.id || '');
         setDirty(true);
         if (draft.revision !== initial.revision) {
           setConflict(true);
@@ -85,7 +92,7 @@ export function Review({
     return () => {
       alive = false;
     };
-  }, [draftId, initial.revision]);
+  }, [draftId, initial.revision, selectedQuestionId]);
   useEffect(() => {
     const abort = new AbortController();
     let url = '';
@@ -105,15 +112,17 @@ export function Review({
     };
   }, [api, initial.id]);
   useEffect(() => {
-    if (!draftReady || dirty || !['queued', 'processing'].includes(scan.status))
+    if (!draftReady || dirty || (!hasPendingAnalysis && !['queued', 'processing'].includes(scan.status)))
       return;
     let alive = true;
     const timer = setInterval(() => {
+      if (mutation.current) return;
       void api
         .scan(scan.id)
         .then(({ scan: next }) => {
           if (
             !alive ||
+            mutation.current ||
             editing.current ||
             next.revision < latestRevision.current
           )
@@ -137,8 +146,20 @@ export function Review({
       alive = false;
       clearInterval(timer);
     };
-  }, [api, draftReady, dirty, scan.id, scan.status, onUpdate]);
+  }, [api, draftReady, dirty, scan.id, scan.status, hasPendingAnalysis, onUpdate]);
   function change(all: Question[]) {
+    all = all.map((q) => {
+      const old = questions.find((item) => item.id === q.id);
+      const input = (item: Question) => JSON.stringify([item.subject, item.prompt, item.diagram, item.regions,
+        item.answerSteps, item.parentQuestionId, item.sharedRegionIds]);
+      const sharedChanged = (q.sharedRegionIds || []).some((id) => {
+        const before = questions.flatMap((item) => item.regions).find((r) => r.id === id);
+        const after = all.flatMap((item) => item.regions).find((r) => r.id === id);
+        return JSON.stringify(before) !== JSON.stringify(after);
+      });
+      return old?.tutoring && (input(old) !== input(q) || sharedChanged)
+        ? { ...q, tutoring: { ...old.tutoring, status: 'stale' as const } } : q;
+    });
     editing.current = true;
     setQuestions(all);
     setDirty(true);
@@ -172,18 +193,12 @@ export function Review({
     );
   }
   async function save() {
+    mutation.current = true;
     setBusy(true);
     setError('');
     try {
       const { scan: next } = await api.review(scan, questions);
-      await reviewDrafts.remove(draftId);
-      draftRevision.current = next.revision;
-      latestRevision.current = next.revision;
-      editing.current = false;
-      setScan(next);
-      setQuestions(next.questions);
-      setDirty(false);
-      onUpdate(next);
+      await accept(next);
       setNotice('已保存题目框和手写步骤');
     } catch (e) {
       if (e instanceof ApiError && e.status === 409) {
@@ -193,6 +208,54 @@ export function Review({
         );
       } else setError((e as Error).message);
     } finally {
+      mutation.current = false;
+      setBusy(false);
+    }
+  }
+  async function accept(next: Scan) {
+    draftRevision.current = next.revision;
+    latestRevision.current = next.revision;
+    editing.current = false;
+    setScan(next);
+    setQuestions(next.questions);
+    setDirty(false);
+    onUpdate(next);
+    await reviewDrafts.remove(draftId).catch(() => {
+      setNotice('服务器已保存，本机旧草稿未能清理，重进时请加载服务器内容。');
+    });
+  }
+  async function collect(andExplain: boolean) {
+    if (!question || !validQuestion || busy || conflict) return;
+    const questionId = question.id;
+    let saved = !!question.wrongBook;
+    mutation.current = true;
+    setBusy(true);
+    setError('');
+    setNotice(andExplain ? '正在保存题目并提交分析…' : '正在保存错题…');
+    try {
+      let next = scan;
+      if (dirty) {
+        next = (await api.review(scan, questions)).scan;
+        await accept(next);
+      }
+      if (!next.questions.find((q) => q.id === questionId)?.wrongBook) {
+        next = (await api.saveWrongQuestion(next, questionId)).scan;
+        saved = true;
+        await accept(next);
+      }
+      if (andExplain) {
+        next = (await api.explain(next, questionId)).scan;
+        await accept(next);
+        setNotice('已存入错题本，AI 正在分析这道题。可以返回，稍后再看。');
+      } else setNotice('已存入当前学生的错题本');
+    } catch (e) {
+      setNotice(saved ? '错题已保存，仍可重新提交分析。' : '本机题框草稿已保留。');
+      if (e instanceof ApiError && e.status === 409) {
+        setConflict(true);
+        setError('资料已有新版本，请先加载服务器内容，核对后再操作。');
+      } else setError((saved && andExplain ? '分析未提交成功：' : '') + (e as Error).message);
+    } finally {
+      mutation.current = false;
       setBusy(false);
     }
   }
@@ -260,8 +323,8 @@ export function Review({
           <ArrowLeft />
         </button>
         <div>
-          <small>{studentName} · 数学</small>
-          <h1>把题目和步骤核对清楚</h1>
+          <small>{studentName} · {question?.subject || '框题后选科目'}</small>
+          <h1>框出题目，再选科目</h1>
         </div>
         <button
           className="primary save-button"
@@ -288,13 +351,7 @@ export function Review({
           {scan.status === 'failed' ? '重试识别' : '识别这张照片'}
         </button>
       </div>
-      <p className="hint">
-        {recognitionEnabled
-          ? questions.length > 0
-            ? '已有题目会保留，识别不会覆盖校对。可以直接修改题干、框线和手写步骤。'
-            : '识别结果需要核对；不确定的题框请手动补齐，原图始终保留。'
-          : '识别服务暂不可用，仍可补题、手动框选并保存孩子的作答过程。'}
-      </p>
+      <p className="hint">直接框住要收录的一道题，保留题干、配图和孩子的手写过程。每道题分别选科，原图始终保留。</p>
       {error && (
         <p role="alert" className="error">
           {error}
@@ -378,13 +435,40 @@ export function Review({
             setRegion(r);
           }}
           onChange={replaceRegion}
+          onCreate={(r) => {
+            const q = emptyQuestion(String(questions.length + 1));
+            q.regions = [r];
+            change([...questions, q]);
+            setSelected(q.id);
+            setRegion(r.id);
+          }}
           onAdd={(r) => {
             if (question) {
               update(question.id, { regions: [...question.regions, r] });
               setRegion(r.id);
             }
           }}
-        />
+        >
+          {question && <section className="question-actions" aria-label="所选题目与科目">
+            <div className="section-line"><strong>已选第 {question.number || questions.indexOf(question) + 1} 题</strong>
+              {question.wrongBook && <span className="saved-tag">已存错题本</span>}</div>
+            <label>这道题的科目
+              <select value={question.subject || ''} onChange={(e) => update(question.id, { subject: (e.target.value || undefined) as Subject | undefined })}>
+                <option value="">请选择科目</option>
+                {subjects.map((subject) => <option key={subject}>{subject}</option>)}
+              </select>
+            </label>
+            {!validQuestion && <p className="hint">{question.regions.some((r) => r.kind === 'stem') ? '选好科目，就能保存和分析这道题。' : '请先为这道题补充题干框。'}</p>}
+            <div className="question-save-actions">
+              <button className="primary" disabled={!validQuestion || busy || conflict || hasPendingAnalysis || !recognitionEnabled}
+                onClick={() => void collect(true)}>{busy ? '正在保存…' : analyzing ? '正在分析…' : question.tutoring ? '重新分析这道题' : '保存并分析这道题'}</button>
+              <button disabled={!validQuestion || busy || conflict || hasPendingAnalysis} onClick={() => void collect(false)}>只存错题本</button>
+            </div>
+            {!recognitionEnabled && <p className="hint">AI 分析暂不可用，可以先存错题本。</p>}
+            {hasPendingAnalysis && !analyzing && <p className="hint">这张照片的另一道题正在分析，完成后可继续保存和分析。</p>}
+            <p className="hint">不用先手抄题干。AI 结果需要核对；没有作答证据时，不判断孩子的错因。</p>
+          </section>}
+        </RegionEditor>
         <section className="transcript-panel">
           <nav className="question-tabs" aria-label="选择题目">
             {questions.map((q, i) => (
@@ -408,10 +492,12 @@ export function Review({
             <div className="empty">
               <ScanEmpty />
               <h2>先找到照片里的每一道题</h2>
-              <p>可以等待自动识别，也可以点“补题”，在原图上框选。</p>
+              <p>点照片上方的“框选一道题”，直接拖框即可。</p>
             </div>
           ) : (
             <>
+              <TutoringResult question={question} />
+              <details className="manual-review"><summary>补充题干和我的作答（选填）</summary>
               <div className="field-row">
                 <label>
                   题号
@@ -765,6 +851,7 @@ export function Review({
               <p className="hint">
                 每个步骤需关联原图区域并完成校对；未完成时，可以先保存草稿。
               </p>
+              </details>
             </>
           )}
         </section>

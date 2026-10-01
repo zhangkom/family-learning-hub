@@ -1,7 +1,7 @@
 {
   "name": "family-learning-android",
-  "version": "0.2.5",
-  "androidVersionCode": 7,
+  "version": "0.2.6",
+  "androidVersionCode": 8,
   "private": true,
   "type": "module",
   "engines": {

@@ -192,6 +192,7 @@ try {
   assert.equal(await page.getByLabel('当前学生').inputValue(), 'dabao');
   await page.screenshot({ path: `${output}/desktop-home.png`, fullPage: true });
   await page.getByRole('button', { name: /分配律练习/ }).click();
+  await page.locator('.manual-review > summary').click();
   await page.getByLabel('步骤1转写').waitFor();
   await page.getByLabel('步骤1转写').fill('2x + 3 = 10（待核对）');
   await page.getByRole('button', { name: '保存校对' }).click();
@@ -200,16 +201,18 @@ try {
     records[0].questions[0].answerSteps[0].text,
     '2x + 3 = 10（待核对）',
   );
+  await page.locator('.extra-regions > summary').click();
   await page.getByRole('button', { name: '补一个框', exact: true }).click();
-  const surface = await page.locator('.region-overlay').boundingBox();
+  await page.locator('.paper-scroll').scrollIntoViewIfNeeded();
+  const surface = await page.locator('.paper-scroll').boundingBox();
   await page.mouse.move(
     surface.x + surface.width * 0.15,
-    surface.y + surface.height * 0.5,
+    surface.y + surface.height * 0.20,
   );
   await page.mouse.down();
   await page.mouse.move(
     surface.x + surface.width * 0.75,
-    surface.y + surface.height * 0.57,
+    surface.y + surface.height * 0.65,
     { steps: 6 },
   );
   await page.mouse.up();
@@ -225,6 +228,7 @@ try {
   await page.getByLabel('完整题干').fill('保留的冲突草稿');
   await page.getByRole('button', { name: '保存校对' }).click();
   await page.getByRole('button', { name: '加载服务器版本' }).waitFor();
+  await page.locator('.manual-review').evaluate((el) => { el.open = true; });
   assert.equal(
     await page.getByLabel('完整题干').inputValue(),
     '保留的冲突草稿',
@@ -239,6 +243,7 @@ try {
   await page.getByRole('button', { name: '返回资料列表' }).click();
   await page.getByRole('button', { name: /分配律练习/ }).click();
   await page.getByRole('button', { name: '加载服务器版本' }).waitFor();
+  await page.locator('.manual-review').evaluate((el) => { el.open = true; });
   assert.equal(
     await page.getByLabel('完整题干').inputValue(),
     '冲突后继续编辑的草稿',
@@ -296,6 +301,7 @@ try {
     false,
   );
   await page.getByRole('button', { name: /分配律练习/ }).click();
+  await page.locator('.manual-review > summary').click();
   await page.getByLabel('步骤1转写').waitFor();
   await page.screenshot({
     path: `${output}/mobile-review.png`,

@@ -165,6 +165,8 @@ function Home({
   );
   const owner = `${auth.base}|${auth.user.id}`;
   const [homePage, setHomePage] = useState<HomePage>(initialPage);
+  const [libraryMode, setLibraryMode] = useState<'photos' | 'wrong'>('photos');
+  const [openQuestion, setOpenQuestion] = useState('');
   const [students, setStudents] = useState<Student[]>([]),
     [selected, setSelected] = useState(readSetting(selectionKey(owner)));
   const [records, setRecords] = useState<Scan[]>([]),
@@ -241,7 +243,7 @@ function Home({
   }, [selected, owner, refresh]);
   useEffect(() => {
     if (
-      !records.some((r) => ['queued', 'processing'].includes(r.status)) ||
+      !records.some((r) => ['queued', 'processing'].includes(r.status) || r.questions.some((q) => ['queued', 'processing'].includes(q.tutoring?.status || ''))) ||
       openScan
     )
       return;
@@ -268,6 +270,7 @@ function Home({
       await refreshDrafts();
       setNotice('照片已保存为本机草稿，确认清晰完整后上传');
       setHomePage('library');
+      setLibraryMode('photos');
       window.scrollTo({ top: 0 });
     },
     [owner, refreshDrafts],
@@ -349,7 +352,7 @@ function Home({
       await refreshDrafts();
       if (activeStudent.current === draft.studentId) {
         setRecords((list) => [scan, ...list.filter((r) => r.id !== scan.id)]);
-        setNotice('原图已保存。打开资料后可开始识别或手动校对。');
+        setNotice('原图已保存。打开照片，框选题目后再选择科目。');
       }
     } catch (e) {
       setError(`上传未完成，草稿已保留：${message(e)}`);
@@ -373,6 +376,7 @@ function Home({
           students.find((s) => s.id === openScan.studentId)?.name || '当前学生'
         }
         recognitionEnabled={recognition}
+        selectedQuestionId={openQuestion}
         onBack={() => {
           setOpenScan(null);
           void refresh();
@@ -388,10 +392,11 @@ function Home({
         return onUpdateAuth({ base: auth.base, token: next.token, user: next.user });
       }}
       page={homePage} onNavigate={setHomePage}
+      libraryMode={libraryMode} onLibraryMode={setLibraryMode}
       localDrafts={localDrafts} busy={busy} uploading={uploading} refreshing={refreshing}
       recognition={recognition} error={error} notice={notice}
       onSelect={setSelected} onCapture={(source) => void capture(source)} onRefresh={() => void refresh()}
-      onOpenScan={setOpenScan}
+      onOpenScan={(scan, questionId) => { setOpenQuestion(questionId || ''); setOpenScan(scan); }}
       onLogout={() => void (async () => {
         try { setBusy(true); await api.logout(); await onLogout(); }
         catch (e) { setError(`退出未完成：${message(e)}`); }

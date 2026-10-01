@@ -17,8 +17,9 @@ type Props = {
   username: string; students: Student[]; selected: string; records: Scan[]; localDrafts: Draft[];
   busy: boolean; uploading: string; refreshing: boolean; recognition: boolean; error: string; notice: string;
   page: HomePage; onNavigate: (page: HomePage) => void;
+  libraryMode: 'photos' | 'wrong'; onLibraryMode: (mode: 'photos' | 'wrong') => void;
   onSelect: (id: string) => void; onCapture: (source: 'camera' | 'gallery') => void;
-  onRefresh: () => void; onOpenScan: (scan: Scan) => void; onLogout: () => void;
+  onRefresh: () => void; onOpenScan: (scan: Scan, questionId?: string) => void; onLogout: () => void;
   onAddStudent: (name: string, grade: string) => Promise<boolean>;
   onUpdateAccount: (kind: AccountChange, value: string, currentPassword: string) => Promise<string>;
   renderDraft: (draft: Draft) => ReactNode; children: ReactNode;
@@ -33,6 +34,8 @@ export function HomeView(props: Props) {
   const student = students.find((s) => s.id === selected);
   const pending = localDrafts.filter((d) => d.studentId === selected);
   const reviewCount = records.filter((r) => r.status === 'needs_review').length;
+  const wrongQuestions = records.flatMap((scan) => scan.questions.filter((q) => q.wrongBook).map((question) => ({ scan, question })))
+    .sort((a, b) => (b.question.wrongBook?.savedAt || '').localeCompare(a.question.wrongBook?.savedAt || ''));
   function navigate(next: typeof tab) { props.onNavigate(next); window.scrollTo({ top: 0 }); }
   function addStudent() { navigate('me'); setAdding(true); }
   function scanCard(scan: Scan, compact = false) {
@@ -61,7 +64,7 @@ export function HomeView(props: Props) {
             {students.map((s) => <option key={s.id} value={s.id}>{s.name}{s.grade ? ` · ${s.grade}` : ''}</option>)}
           </select> : <button type="button" onClick={addStudent}>添加学生档案</button>}
         </div>
-        <span className="subject-tag">数学</span>
+        <span className="subject-tag">框题后选科目</span>
       </section>}
       {error && <p role="alert" className="error">{error}</p>}
       {notice && <output className="notice">{notice}</output>}
@@ -78,7 +81,10 @@ export function HomeView(props: Props) {
             </button>
           </div>
         </section>
-        <FeatureCatalog compact onSelect={setFeature} />
+        <FeatureCatalog compact onSelect={(name) => {
+          if (name === '错题本') { props.onLibraryMode('wrong'); navigate('library'); }
+          else setFeature(name);
+        }} />
         {!student ? <section className="home-empty"><h2>先建一个孩子的学习档案</h2><p>一家多个孩子，资料分别保存。</p><button className="primary" onClick={addStudent}><Plus size={17} />添加第一名学生</button></section>
           : <>
             <section className="home-summary" aria-label="待处理事项">
@@ -100,11 +106,25 @@ export function HomeView(props: Props) {
         </div>
         {student ? <>
           <div className="library-capture-actions"><button className="primary" disabled={busy} onClick={() => props.onCapture('camera')}><Camera size={18} />拍照收题</button><button disabled={busy} onClick={() => props.onCapture('gallery')}><ImagePlus size={18} />相册选图</button></div>
+          <nav className="library-modes" aria-label="题目分类">
+            <button className={props.libraryMode === 'photos' ? 'selected' : ''} onClick={() => props.onLibraryMode('photos')}>全部照片 · {records.length}</button>
+            <button className={props.libraryMode === 'wrong' ? 'selected' : ''} onClick={() => props.onLibraryMode('wrong')}>错题本 · {wrongQuestions.length}</button>
+          </nav>
+          {props.libraryMode === 'wrong' ? <section className="wrong-book" aria-label="错题本">
+            <p className="hint">{student.name}的错题，按收录时间排列。点击一道题可看原图、科目和 AI 分析。</p>
+            {wrongQuestions.length ? wrongQuestions.map(({ scan, question }) => <button className="wrong-question-card" key={`${scan.id}/${question.id}`} onClick={() => props.onOpenScan(scan, question.id)}>
+              <div><span className="subject-tag">{question.subject || '待选科目'}</span><small>第 {question.number || '—'} 题</small></div>
+              <strong>{question.prompt || question.tutoring?.result?.transcribedPrompt || '已框选题目，查看原图'}</strong>
+              <span>{question.tutoring?.status === 'needs_review' ? 'AI 分析待核对' : question.tutoring?.status === 'failed' ? '分析未完成 · 可重试' : question.tutoring?.status === 'stale' ? '题目已修改 · 需重新分析' : question.tutoring ? '正在分析' : '已保存 · 可开始分析'}</span>
+              <small>{new Date(question.wrongBook!.savedAt).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' })}</small>
+            </button>) : <div className="empty-records"><FileImage size={30} /><p>还没有收录错题。打开一张照片，框题、选科后就能保存。</p><button onClick={() => props.onLibraryMode('photos')}>去照片里框题</button></div>}
+          </section> : <>
           {pending.length > 0 && <section className="draft-section"><div className="section-line"><h2>待上传照片 · {pending.length}</h2><span className="hint">仅保存在本机</span></div><div className="draft-grid">{pending.map(props.renderDraft)}</div></section>}
           <section className="records-section"><div className="section-line"><h2>已保存资料 · {records.length}</h2></div>
             {records.length ? <div className="record-grid">{records.map((scan) => scanCard(scan))}</div> : <div className="empty-records"><FileImage size={30} /><p>{refreshing ? '正在读取资料…' : '还没有上传资料。可以拍照或从相册选图。'}</p></div>}
             {!props.recognition && <p className="hint">识别服务暂不可用，仍可手动分题并保存作答过程。</p>}
           </section>
+          </>}
         </> : <div className="empty"><p>先添加一个学生，再开始收题。</p><button className="primary" onClick={addStudent}>添加学生</button></div>}
       </>}
 
@@ -126,7 +146,7 @@ export function HomeView(props: Props) {
         </section>
         <PermissionInfo />
         <section className="profile-card"><h2>账号设置</h2><div className="button-row"><button disabled={busy || !!uploading} onClick={() => setAccountChange('username')}>修改用户名</button><button disabled={busy || !!uploading} onClick={() => setAccountChange('password')}>修改密码</button></div></section>
-        <section className="profile-card profile-storage"><h2>资料与功能</h2><p>确认上传的原图与校对结果保存在家庭服务器，按孩子、日期和科目关联。</p><p className="hint">当前可拍照、选图、识别和校对。文档导入、错因分析和举一反三正在准备中。</p></section>
+        <section className="profile-card profile-storage"><h2>资料与功能</h2><p>确认上传的原图与校对结果保存在家庭服务器，按孩子、日期和科目关联。</p><p className="hint">框题选科后可存错题本并请求 AI 讲解，分析结果需核对。文档导入与举一反三正在准备中。</p></section>
         {props.children}
       </div>}
     </main>
