@@ -67,7 +67,7 @@ try {
   page.on('pageerror', (e) => errors.push(e.message));
   await page.goto(base + '/account');
   await page.getByLabel('家庭账号', { exact: true }).fill('webtest');
-  await page.getByLabel('密码（至少 12 位）', { exact: true }).fill(password);
+  await page.getByLabel('密码（至少 6 位）', { exact: true }).fill(password);
   await page.getByRole('button', { name: '登录', exact: true }).click();
   await page.getByRole('heading', { name: '已登录：webtest' }).waitFor();
   await page.goto(base + '/students');

@@ -6,10 +6,12 @@ import {
   timingSafeEqual,
 } from 'node:crypto';
 import { Buffer } from 'node:buffer';
+import { isIP } from 'node:net';
 import { getFamilyStore, type FamilyStore } from './family-store';
 import { validateFamily } from '../lib/family-state';
 import { mergeFamily } from '../lib/family-state';
 import { scanWrongRecords } from './scan-files';
+import { MIN_PASSWORD_LENGTH, MAX_PASSWORD_LENGTH } from '../lib/account';
 
 const derive = (password: string, salt: string) =>
   new Promise<Buffer>((resolve, reject) => {
@@ -140,9 +142,13 @@ export async function verifyPassword(password: string, encoded: string) {
     hash?.length === 128 && timingSafeEqual(actual, Buffer.from(hash, 'hex'))
   );
 }
-function passwordField(value: unknown) {
-  if (typeof value !== 'string' || value.length < 12 || value.length > 128)
-    throw new HttpError(400, '密码请使用 12 至 128 个字符');
+export function passwordField(value: unknown) {
+  if (
+    typeof value !== 'string' ||
+    value.length < MIN_PASSWORD_LENGTH ||
+    value.length > MAX_PASSWORD_LENGTH
+  )
+    throw new HttpError(400, '密码请使用 6 至 128 个字符');
   return value;
 }
 function issueSession(user: FamilyUser, store: FamilyStore) {
@@ -160,7 +166,7 @@ export const familyNeedsSetup = (store: FamilyStore) =>
 async function credentials(
   request: Request,
   store: FamilyStore,
-  action: 'setup' | 'login',
+  action: 'setup' | 'login' | 'register',
 ) {
   if (!store.allow(`auth:${action}`, 30, 15 * 60000))
     throw new HttpError(429, '尝试次数过多，请 15 分钟后再试');
@@ -173,6 +179,84 @@ async function credentials(
   if (!store.allow(`user:${username}`, 8, 15 * 60000))
     throw new HttpError(429, '该账号尝试次数过多，请 15 分钟后再试');
   return { body, username, password };
+}
+
+export const registrationEnabled = () =>
+  process.env.FAMILY_REGISTRATION_ENABLED === 'true';
+
+export class RegistrationError extends HttpError {
+  constructor(
+    status: number,
+    message: string,
+    public code: string,
+  ) {
+    super(status, message);
+  }
+}
+
+function registrationAddress(request: Request) {
+  // Enable only behind a proxy that overwrites X-Real-IP (our loopback Nginx).
+  // Never accept client-supplied X-Forwarded-For as a rate-limit identity.
+  const value =
+    process.env.FAMILY_TRUST_PROXY === 'true'
+      ? request.headers.get('x-real-ip')?.trim() || ''
+      : '';
+  const version = isIP(value);
+  if (!version) return 'untrusted';
+  return version === 6 ? new URL(`http://[${value}]`).hostname : value;
+}
+
+// Ordinary registration never adopts the legacy owner or its student profiles.
+// The caller enforces origin policy and supplies its own session response.
+export async function registerFamily(
+  request: Request,
+  store: FamilyStore,
+  complete: (user: FamilyUser, deviceName: string) => Response,
+) {
+  if (!registrationEnabled())
+    throw new RegistrationError(
+      503,
+      '注册暂未开放，请稍后再试',
+      'REGISTRATION_DISABLED',
+    );
+  if (
+    !store.allow(
+      `register:ip:${digest(registrationAddress(request))}`,
+      5,
+      15 * 60000,
+    )
+  )
+    throw new HttpError(429, '注册尝试过于频繁，请 15 分钟后再试');
+  const { body, username, password } = await credentials(
+    request,
+    store,
+    'register',
+  );
+  if (
+    body.deviceName !== undefined &&
+    (typeof body.deviceName !== 'string' || body.deviceName.length > 100)
+  )
+    throw new HttpError(400, '设备名称格式不正确');
+  const deviceName =
+    typeof body.deviceName === 'string' && body.deviceName
+      ? body.deviceName
+      : '手机或平板';
+  const hashed = await hashPassword(password);
+  return store.transaction(() => {
+    if (
+      store.db.prepare('SELECT id FROM accounts WHERE username=?').get(username)
+    )
+      throw new RegistrationError(
+        409,
+        '账号已存在，请登录或换一个账号',
+        'USERNAME_TAKEN',
+      );
+    const id = randomUUID();
+    store.db
+      .prepare('INSERT INTO accounts VALUES (?,?,?,?)')
+      .run(id, username, hashed, Date.now());
+    return complete({ id, username }, deviceName);
+  });
 }
 
 // The caller checks its own origin policy. Both web and mobile share one setup

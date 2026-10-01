@@ -4,18 +4,19 @@
 
 ## 身份与错误
 
-除登录、首次开通状态/提交和 OPTIONS 外都必须 `Authorization: Bearer <token>`；本 API 忽略网页 Cookie，不设置 Cookie。token 有效期 7 天，数据库只保存哈希，退出撤销当前设备，修改家庭密码撤销全部网页和移动会话。首次家庭可在 APK 或网页 `/account` 使用私下提供的启用码开通，不开放无启用码注册或多家庭注册。
+除登录、普通注册、首次开通状态/提交和 OPTIONS 外都必须 `Authorization: Bearer <token>`；本 API 忽略网页 Cookie，不设置 Cookie。token 有效期 7 天，数据库只保存哈希，退出撤销当前设备，修改家庭密码撤销全部网页和移动会话。普通注册使用账号和密码创建全新独立家庭，不填写启用码；旧启用码开通接口保留原有历史家庭认领规则，客户端不能内置或代填启用码。
 
 无 Origin 的原生请求可用；浏览器 Origin 必须精确匹配服务端 `FAMILY_MOBILE_ORIGINS`（逗号分隔）或站点自身 `FAMILY_PUBLIC_ORIGIN`。双方联调配置为 `https://localhost,http://127.0.0.1:3178`。不允许通配符，不发送 Allow-Credentials，客户端使用 `credentials: 'omit'`。网页自己的 Cookie API 仍执行原有同源检查。
 
-错误统一 `{error: string, code: string}`，可展示 error。常用状态：400 `INVALID_INPUT`、401 `UNAUTHENTICATED`、403 `ORIGIN_DENIED`、404 `NOT_FOUND`、409 `REVISION_CONFLICT` / `IDEMPOTENCY_CONFLICT`、413 `TOO_LARGE`、429 `RATE_LIMITED`、503 `UNAVAILABLE`。409 时重新 GET，保留本机草稿供用户比较，不自动覆盖。
+错误统一 `{error: string, code: string}`，可展示 error。常用状态：400 `INVALID_INPUT`、401 `UNAUTHENTICATED`、403 `ORIGIN_DENIED`、404 `NOT_FOUND`、409 `REVISION_CONFLICT` / `IDEMPOTENCY_CONFLICT` / `USERNAME_TAKEN`、413 `TOO_LARGE`、429 `RATE_LIMITED`、503 `UNAVAILABLE` / `REGISTRATION_DISABLED`。资料版本冲突时重新 GET，保留本机草稿供用户比较，不自动覆盖；注册重名时留在表单，允许修改账号或转登录，不视为注册成功。
 
 ## 接口
 
 | 方法与路径 | 输入 | 成功响应 |
 | --- | --- | --- |
-| GET `/setup` | 无，匿名可读 | 200 `{enabled,needsSetup}`；只返回两个布尔值，存储未配置时均为 false |
+| GET `/setup` | 无，匿名可读 | 200 `{enabled,needsSetup,registrationEnabled}`；只返回三个布尔值，存储未配置时均为 false |
 | POST `/session/setup` | `{username,password,setupToken}` | 200 `{token,user:{id,username},expiresAt}`；与登录相同，不设置 Cookie |
+| POST `/session/register` | `{username,password,deviceName?}` | 200 `{token,user:{id,username},expiresAt}`；创建独立家庭并直接登录，无 Cookie、无启用码 |
 | POST `/session/login` | `{username,password,deviceName?}` | 200 `{token,user:{id,username},expiresAt}` |
 | GET `/session` | 无 | 200 `{user:{id,username},expiresAt}`；过期为 401 |
 | POST `/session/logout` | `{}` | 200 `{ok:true}` |
@@ -32,7 +33,13 @@
 
 上传支持 JPEG/PNG/WebP/PDF，单文件最多 8 MiB，家庭原件总量最多 500 MiB。subject 使用中文学科名，首批为 `数学`；source 1–200 字。clientRequestId 使用 UUID，客户端同一次上传重试必须复用；同标识改变学生、文件或元数据会返回 409。上传本身不调用模型，初始状态 `needs_review`，questions 为空；随后显式提交 recognize。PDF 暂存及手动整理可用，识别受模型能力限制。
 
-首次开通与网页登录共用启用码检查、密码散列、旧资料归属及事务中的首家庭限制；不开放多家庭注册。账号去除首尾空格并转小写，格式为 3–32 位英文字母、数字、下划线或短横线；密码为 12–128 字符。错误启用码 403，输入无效 400，家庭已开通 409，限流 429；客户端展示响应 error。GET `/setup` 不暴露启用码、用户名、账号数量或账号资料。开通成功的 token 直接用于 Bearer 登录；若其他设备抢先开通，刷新状态后转登录。
+所有注册、首次开通、网页/移动登录及网页改密使用 6–128 字符密码，允许 6 位数字，原有长密码继续有效。账号去除首尾空格并转小写，格式为 3–32 位英文字母、数字、下划线或短横线。设备名可选，最多 100 字符。密码使用现有 scrypt 加盐散列，不保存明文。
+
+普通注册不受 `needsSetup` 或已有家庭数限制；只有服务端 `FAMILY_REGISTRATION_ENABLED=true` 时开放。成功后 `students` 为空，App 应引导添加孩子；owner 为新账号自己的 ID，从不写 `legacy_owners`，不自动导入旧大小宝记录或原件。账号和会话在同一事务提交，存储会话失败则回滚新账号，并发重名只有一个成功。重名返回 409 `USERNAME_TAKEN`，文案“账号已存在，请登录或换一个账号”；注册关闭返回 503 `REGISTRATION_DISABLED`。
+
+普通注册每个来源地址最多 5 次/15 分钟，全部来源合计最多 30 次/15 分钟；账号与现有登录共享 8 次/15 分钟的尝试限制，成功登录/签发会话清除该账号的尝试计数。只有 `FAMILY_TRUST_PROXY=true` 时采信 `X-Real-IP`，必须保证应用只监听回环且 Nginx 覆盖该头；不使用客户端 `X-Forwarded-For`。未启用信任或地址无效时使用统一来源桶；地址摘要用于限流存储，不记录原始 IP。关闭注册或拒绝恶意 Origin 时不创建账号或限流记录。
+
+旧 `/session/setup` 与网页首次开通继续共用启用码校验、旧资料归属及事务中的首账号限制。错误启用码 403，输入无效 400，已有任何账号后旧开通返回 409，限流 429。普通注册若先创建了账号，不会因此给它旧资料归属，也不额外开放历史资料认领；需另行维护确认，本轮不修改历史归属。GET `/setup` 不暴露启用码、用户名、账号数量或账号资料。`needsSetup` 只描述旧首次开通状态，普通注册界面必须使用 `registrationEnabled`。
 
 ## 资料与题目
 
@@ -82,11 +89,13 @@ recognize 返回的 scan 可能已包含比请求 revision 更新的 queued 状�
 
 ## 本轮边界与验收
 
-首轮交付账号/学生、资料与原件、矩形与步骤校对、持久识别队列、家长查看及旧大小宝兼容。邀请多家庭、证据诊断、分步 tutor、独立变式及 mastery/周报在后续阶段，不因保存资料而宣称已完成。
+首轮交付账号/学生、资料与原件、矩形与步骤校对、持久识别队列、家长查看及旧大小宝兼容；本次增加普通多家庭注册。家庭邀请、证据诊断、分步 tutor、独立变式及 mastery/周报在后续阶段，不因保存资料或展示入口而宣称已完成。
 
 ## 本机启动与存储升级
 
 源码工作区使用 Node 24：先执行 `npm run build:self-hosted`，再执行 `node scripts/start-mobile-dev.mjs`。默认只监听 `127.0.0.1:3285`，复制运行包到独立测试目录，创建随机密码的合成家庭，并输出 `work/mobile-dev-connection.json` 的位置。该文件仅供本机联调读取，不能输出密码或提交 Git。开发 CORS 已包含客户端的 3178 端口；AI 密钥强制清空，不向模型发送资料。结束联调后根据连接文件的 pid 确认对应进程再停止。`node scripts/verify-mobile-web.mjs` 在另一独立测试端口 3286 验证家长网页，并在 `outputs/mobile-backend/` 留下合成截图。
+
+隔离测试启动器显式设置 `FAMILY_REGISTRATION_ENABLED=true`、`FAMILY_TRUST_PROXY=false`。`FAMILY_MOBILE_TEST_NEEDS_SETUP=true` 可跳过旧家庭开通，供新注册从空数据开始联调；测试数据和所有账号均为合成内容，不使用生产库、启用码或模型密钥。
 
 构建包新增 `worker/worker.mjs`。部署时使用 `deploy/family-learning-worker.service` 模板，实际配置仍放工程 `config/systemd/` 并由系统入口链接；先预建由服务用户持有的 worker 日志，再启用 worker。它与网页共用同一私有 SQLite 与原件目录，每个进程持有自己的 SQLite 连接，使用事务和租约领取任务。此模板尚未安装到生产，联调不代表发布。
 

@@ -15,6 +15,7 @@ import {
   type FamilyUser,
 } from '@/lib/family-client';
 import { WorkbenchHeader } from '@/app/components/workbench-header';
+import { MIN_PASSWORD_LENGTH, MAX_PASSWORD_LENGTH } from '@/lib/account';
 
 const field = 'mt-1 min-h-11 w-full rounded-lg border bg-background px-3';
 const button =
@@ -184,20 +185,20 @@ export default function AccountPage() {
                     name="currentPassword"
                     type="password"
                     autoComplete="current-password"
-                    minLength={12}
-                    maxLength={128}
+                    minLength={MIN_PASSWORD_LENGTH}
+                    maxLength={MAX_PASSWORD_LENGTH}
                     required
                   />
                 </label>
                 <label className="block text-sm">
-                  新密码（至少 12 位）
+                  新密码（至少 6 位）
                   <input
                     className={field}
                     name="password"
                     type="password"
                     autoComplete="new-password"
-                    minLength={12}
-                    maxLength={128}
+                    minLength={MIN_PASSWORD_LENGTH}
+                    maxLength={MAX_PASSWORD_LENGTH}
                     required
                   />
                 </label>
@@ -246,7 +247,7 @@ export default function AccountPage() {
                 />
               </label>
               <label className="block text-sm">
-                密码（至少 12 位）
+                密码（至少 6 位）
                 <input
                   className={field}
                   name="password"
@@ -254,8 +255,8 @@ export default function AccountPage() {
                   autoComplete={
                     needsSetup ? 'new-password' : 'current-password'
                   }
-                  minLength={12}
-                  maxLength={128}
+                  minLength={MIN_PASSWORD_LENGTH}
+                  maxLength={MAX_PASSWORD_LENGTH}
                   required
                 />
               </label>

@@ -4,6 +4,10 @@ import {
   currentUser,
   familyNeedsSetup,
   setupFirstFamily,
+  registerFamily,
+  registrationEnabled,
+  RegistrationError,
+  passwordField,
   HttpError,
   json,
   readJson,
@@ -93,20 +97,18 @@ async function login(request: Request, store: FamilyStore) {
     typeof body.username === 'string' ? body.username.trim().toLowerCase() : '';
   if (
     !/^[a-z0-9_-]{3,32}$/.test(username) ||
-    typeof body.password !== 'string' ||
-    body.password.length < 12 ||
-    body.password.length > 128 ||
     (body.deviceName !== undefined &&
       (typeof body.deviceName !== 'string' || body.deviceName.length > 100))
   )
     throw new HttpError(400, '账号或密码格式不正确');
+  const password = passwordField(body.password);
   if (!store.allow(`user:${username}`, 8, 15 * 60000))
     throw new HttpError(429, '该账号尝试次数过多，请 15 分钟后再试');
   const row = store.db
     .prepare('SELECT id,username,password FROM accounts WHERE username=?')
     .get(username);
   const valid = await verifyPassword(
-    body.password,
+    password,
     row ? String(row.password) : `${'0'.repeat(32)}:${'0'.repeat(128)}`,
   );
   if (!row || !valid) throw new HttpError(401, '账号或密码不正确');
@@ -253,14 +255,27 @@ async function handle(
       !injected &&
       !process.env.FAMILY_DATA_DIR
     )
-      return json({ enabled: false, needsSetup: false }, 200, headers);
+      return json(
+        { enabled: false, needsSetup: false, registrationEnabled: false },
+        200,
+        headers,
+      );
     if (!injected && !process.env.FAMILY_DATA_DIR)
       throw new HttpError(503, '私人学习空间尚未配置');
     const store = injected || getFamilyStore();
     let response: Response;
     if (!web && parts.join('/') === 'setup') {
       if (request.method !== 'GET') throw new HttpError(405, '请求方式不支持');
-      response = json({ enabled: true, needsSetup: familyNeedsSetup(store) });
+      response = json({
+        enabled: true,
+        needsSetup: familyNeedsSetup(store),
+        registrationEnabled: registrationEnabled(),
+      });
+    } else if (!web && parts.join('/') === 'session/register') {
+      if (request.method !== 'POST') throw new HttpError(405, '请求方式不支持');
+      response = await registerFamily(request, store, (user, deviceName) =>
+        issueMobileSession(user, store, deviceName),
+      );
     } else if (!web && parts.join('/') === 'session/setup') {
       if (request.method !== 'POST') throw new HttpError(405, '请求方式不支持');
       response = await setupFirstFamily(request, store, (user) =>
@@ -300,7 +315,7 @@ async function handle(
         {
           error: e.message,
           code:
-            e instanceof MobileError
+            e instanceof MobileError || e instanceof RegistrationError
               ? e.code
               : codes[e.status] || 'REQUEST_FAILED',
         },
