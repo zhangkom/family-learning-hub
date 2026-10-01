@@ -154,6 +154,61 @@ function issueSession(user: FamilyUser, store: FamilyStore) {
   return json({ user }, 200, { 'Set-Cookie': cookie(token) });
 }
 
+export const familyNeedsSetup = (store: FamilyStore) =>
+  !store.db.prepare('SELECT id FROM accounts LIMIT 1').get();
+
+async function credentials(
+  request: Request,
+  store: FamilyStore,
+  action: 'setup' | 'login',
+) {
+  if (!store.allow(`auth:${action}`, 30, 15 * 60000))
+    throw new HttpError(429, '尝试次数过多，请 15 分钟后再试');
+  const body = await readJson(request, 8192);
+  const username =
+    typeof body.username === 'string' ? body.username.trim().toLowerCase() : '';
+  if (!/^[a-z0-9_-]{3,32}$/.test(username))
+    throw new HttpError(400, '账号使用 3 至 32 位字母、数字、下划线或短横线');
+  const password = passwordField(body.password);
+  if (!store.allow(`user:${username}`, 8, 15 * 60000))
+    throw new HttpError(429, '该账号尝试次数过多，请 15 分钟后再试');
+  return { body, username, password };
+}
+
+// The caller checks its own origin policy. Both web and mobile share one setup
+// limit, password derivation, legacy adoption rule and atomic first-account gate.
+export async function setupFirstFamily(
+  request: Request,
+  store: FamilyStore,
+  complete: (user: FamilyUser) => Response,
+) {
+  const { body, username, password } = await credentials(
+    request,
+    store,
+    'setup',
+  );
+  const setupToken = process.env.FAMILY_SETUP_TOKEN || '';
+  if (
+    setupToken.length < 32 ||
+    typeof body.setupToken !== 'string' ||
+    !equal(body.setupToken, setupToken)
+  )
+    throw new HttpError(403, '家庭启用码不正确');
+  const hashed = await hashPassword(password);
+  return store.transaction(() => {
+    if (!familyNeedsSetup(store))
+      throw new HttpError(409, '家庭账号已创建，请直接登录');
+    const id = randomUUID();
+    store.db
+      .prepare('INSERT INTO accounts VALUES (?,?,?,?)')
+      .run(id, username, hashed, Date.now());
+    store.db
+      .prepare('INSERT INTO legacy_owners VALUES (?,?)')
+      .run(id, 'family');
+    return complete({ id, username });
+  });
+}
+
 export async function handleFamily(
   request: Request,
   action: FamilyAction,
@@ -171,7 +226,7 @@ export async function handleFamily(
       return json({
         enabled: true,
         user,
-        needsSetup: !store.db.prepare('SELECT id FROM accounts LIMIT 1').get(),
+        needsSetup: familyNeedsSetup(store),
       });
     if (action === 'logout') {
       store.db
@@ -179,45 +234,14 @@ export async function handleFamily(
         .run(digest(sessionToken(request)));
       return json({ ok: true }, 200, { 'Set-Cookie': cookie('', 0) });
     }
-    if (action === 'setup' || action === 'login') {
-      if (!store.allow(`auth:${action}`, 30, 15 * 60000))
-        throw new HttpError(429, '尝试次数过多，请 15 分钟后再试');
-      const body = await readJson(request, 8192);
-      const username =
-        typeof body.username === 'string'
-          ? body.username.trim().toLowerCase()
-          : '';
-      if (!/^[a-z0-9_-]{3,32}$/.test(username))
-        throw new HttpError(
-          400,
-          '账号使用 3 至 32 位字母、数字、下划线或短横线',
-        );
-      const password = passwordField(body.password);
-      if (!store.allow(`user:${username}`, 8, 15 * 60000))
-        throw new HttpError(429, '该账号尝试次数过多，请 15 分钟后再试');
-      if (action === 'setup') {
-        const setupToken = process.env.FAMILY_SETUP_TOKEN || '';
-        if (
-          setupToken.length < 32 ||
-          typeof body.setupToken !== 'string' ||
-          !equal(body.setupToken, setupToken)
-        )
-          throw new HttpError(403, '家庭启用码不正确');
-        const hashed = await hashPassword(password);
-        const account = store.transaction(() => {
-          if (store.db.prepare('SELECT id FROM accounts LIMIT 1').get())
-            throw new HttpError(409, '家庭账号已创建，请直接登录');
-          const id = randomUUID();
-          store.db
-            .prepare('INSERT INTO accounts VALUES (?,?,?,?)')
-            .run(id, username, hashed, Date.now());
-          store.db
-            .prepare('INSERT INTO legacy_owners VALUES (?,?)')
-            .run(id, 'family');
-          return { id, username };
-        });
-        return issueSession(account, store);
-      }
+    if (action === 'setup') {
+      if (request.method !== 'POST') throw new HttpError(405, '请求方式不支持');
+      return await setupFirstFamily(request, store, (account) =>
+        issueSession(account, store),
+      );
+    }
+    if (action === 'login') {
+      const { username, password } = await credentials(request, store, 'login');
       const row = store.db
         .prepare('SELECT id,username,password FROM accounts WHERE username=?')
         .get(username);

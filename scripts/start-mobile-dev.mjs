@@ -34,6 +34,7 @@ const origin = `http://127.0.0.1:${port}`,
   base = origin + '/family-learning';
 const password = randomBytes(24).toString('hex'),
   setupToken = randomBytes(32).toString('hex');
+const needsSetup = process.env.FAMILY_MOBILE_TEST_NEEDS_SETUP === 'true';
 const server = spawn(process.execPath, [resolve(runtime, 'server.js')], {
   windowsHide: true,
   detached: true,
@@ -72,26 +73,32 @@ try {
     await new Promise((done) => setTimeout(done, 200));
   }
   if (!ready) throw new Error('Test server did not become ready');
-  const setup = await fetch(base + '/api/family/setup', {
-    method: 'POST',
-    headers: { Origin: origin, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username: 'mobiletest', password, setupToken }),
-  });
-  if (!setup.ok) throw new Error('Synthetic account setup failed');
-  const login = await fetch(base + '/api/mobile/v1/session/login', {
-    method: 'POST',
-    headers: {
-      Origin: 'http://127.0.0.1:3178',
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ username: 'mobiletest', password }),
-  });
-  if (
-    !login.ok ||
-    login.headers.get('access-control-allow-origin') !== 'http://127.0.0.1:3178'
-  )
-    throw new Error('Mobile route or development CORS check failed');
-  await login.json();
+  const availability = await fetch(base + '/api/mobile/v1/setup');
+  if (!availability.ok || !(await availability.json()).needsSetup)
+    throw new Error('Synthetic setup status is not available');
+  if (!needsSetup) {
+    const setup = await fetch(base + '/api/family/setup', {
+      method: 'POST',
+      headers: { Origin: origin, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: 'mobiletest', password, setupToken }),
+    });
+    if (!setup.ok) throw new Error('Synthetic account setup failed');
+    const login = await fetch(base + '/api/mobile/v1/session/login', {
+      method: 'POST',
+      headers: {
+        Origin: 'http://127.0.0.1:3178',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ username: 'mobiletest', password }),
+    });
+    if (
+      !login.ok ||
+      login.headers.get('access-control-allow-origin') !==
+        'http://127.0.0.1:3178'
+    )
+      throw new Error('Mobile route or development CORS check failed');
+    await login.json();
+  }
   const metadata = {
     origin,
     base,
@@ -102,6 +109,8 @@ try {
     pid: server.pid,
     syntheticOnly: true,
     aiEnabled: false,
+    needsSetup,
+    ...(needsSetup ? { setupToken } : {}),
   };
   const path = resolve('work/mobile-dev-connection.json');
   writeFileSync(path, JSON.stringify(metadata, null, 2), { mode: 0o600 });

@@ -2,6 +2,8 @@ import { createHash, randomBytes } from 'node:crypto';
 import { Buffer } from 'node:buffer';
 import {
   currentUser,
+  familyNeedsSetup,
+  setupFirstFamily,
   HttpError,
   json,
   readJson,
@@ -108,24 +110,31 @@ async function login(request: Request, store: FamilyStore) {
     row ? String(row.password) : `${'0'.repeat(32)}:${'0'.repeat(128)}`,
   );
   if (!row || !valid) throw new HttpError(401, '账号或密码不正确');
+  return issueMobileSession(
+    { id: String(row.id), username: String(row.username) },
+    store,
+    String(body.deviceName || '手机或平板'),
+  );
+}
+function issueMobileSession(
+  user: FamilyUser,
+  store: FamilyStore,
+  deviceName = '手机或平板',
+) {
   const token = Buffer.from(randomBytes(32)).toString('hex'),
     expires = Date.now() + 7 * 86400000;
   store.db
     .prepare('DELETE FROM mobile_sessions WHERE expires<=?')
     .run(Date.now());
-  store.db.prepare('DELETE FROM limits WHERE key=?').run(`user:${username}`);
+  store.db
+    .prepare('DELETE FROM limits WHERE key=?')
+    .run(`user:${user.username}`);
   store.db
     .prepare('INSERT INTO mobile_sessions VALUES (?,?,?,?,?)')
-    .run(
-      hash(token),
-      row.id,
-      expires,
-      String(body.deviceName || '手机或平板'),
-      Date.now(),
-    );
+    .run(hash(token), user.id, expires, deviceName, Date.now());
   return json({
     token,
-    user: { id: row.id, username: row.username },
+    user,
     expiresAt: new Date(expires).toISOString(),
   });
 }
@@ -237,11 +246,27 @@ async function handle(
         status: 204,
         headers: { ...headers, 'Cache-Control': 'no-store' },
       });
+    if (
+      !web &&
+      parts.join('/') === 'setup' &&
+      request.method === 'GET' &&
+      !injected &&
+      !process.env.FAMILY_DATA_DIR
+    )
+      return json({ enabled: false, needsSetup: false }, 200, headers);
     if (!injected && !process.env.FAMILY_DATA_DIR)
       throw new HttpError(503, '私人学习空间尚未配置');
     const store = injected || getFamilyStore();
     let response: Response;
-    if (
+    if (!web && parts.join('/') === 'setup') {
+      if (request.method !== 'GET') throw new HttpError(405, '请求方式不支持');
+      response = json({ enabled: true, needsSetup: familyNeedsSetup(store) });
+    } else if (!web && parts.join('/') === 'session/setup') {
+      if (request.method !== 'POST') throw new HttpError(405, '请求方式不支持');
+      response = await setupFirstFamily(request, store, (user) =>
+        issueMobileSession(user, store),
+      );
+    } else if (
       !web &&
       parts.join('/') === 'session/login' &&
       request.method === 'POST'
