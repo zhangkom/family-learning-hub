@@ -37,5 +37,5 @@
 ## 拍题资料归档约定
 
 - 用户要求拍题图片及文档始终保存在腾讯云同一工程内：正式原件在 `data/`，处理副本在 `temp/`，备份在 `backups/`。原件不得放入 APK 公开下载目录或临时清理范围。
-- 保持 `data/<sha256(scanOwner)>/scans/<scanId>/original` 的稳定位置；通过家庭归属、`studentId`、`createdAt`、`subject`、`source` 关联分类，不因科目、知识点或错因修订移动原件。通用标签及错题/难题分类属于后续开发，不能表述成已实现。
+- 保持 `data/<sha256(scanOwner)>/scans/<scanId>/original` 的稳定位置；通过家庭归属、`studentId`、`createdAt`、`subject`、`source` 关联分类，不因科目、知识点或错因修订移动原件。0.2.6 已支持逐题选科、错题收录及待核对 AI 讲解；通用标签和难题分类仍属于后续开发。
 - 上传时间保存为 UTC，日期分类向用户展示时按 `Asia/Shanghai` 解释。历史记录缺少 `studentId`/`child` 时需人工核对；代码的 `dabao` 兼容回退不是归属证据。详细结构和核实范围见 `docs/工程目录.md`。
