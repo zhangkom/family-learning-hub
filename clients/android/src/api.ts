@@ -73,7 +73,10 @@ export class FamilyApi {
     });
   }
   setupStatus() {
-    return this.request<{ enabled: boolean; needsSetup: boolean }>('/setup');
+    return this.request<{ enabled: boolean; needsSetup: boolean; registrationEnabled?: boolean }>('/setup');
+  }
+  register(username: string, password: string) {
+    return this.request<Login>('/session/register', 'POST', { username, password });
   }
   setup(username: string, password: string, setupToken: string) {
     return this.request<Login>('/session/setup', 'POST', {

@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Camera, ChevronRight, FileImage, Home, ImagePlus, Layers, LogOut, Plus, RefreshCw, UserRound } from 'lucide-react';
 import { BrandMark } from './Brand';
 import { PermissionInfo } from './PermissionInfo';
@@ -6,11 +6,15 @@ import { UpdateDot } from './UpdateControl';
 import { appName, appVersion } from './release';
 import { statusNames, type Scan, type Student } from './types';
 import type { Draft } from './drafts';
+import { FeatureCatalog } from './FeatureCatalog';
+import { FeatureDialog } from './FeatureDialog';
+
+export type HomePage = 'home' | 'library' | 'me';
 
 type Props = {
   username: string; students: Student[]; selected: string; records: Scan[]; localDrafts: Draft[];
   busy: boolean; uploading: string; refreshing: boolean; recognition: boolean; error: string; notice: string;
-  photoSaved: number;
+  page: HomePage; onNavigate: (page: HomePage) => void;
   onSelect: (id: string) => void; onCapture: (source: 'camera' | 'gallery') => void;
   onRefresh: () => void; onOpenScan: (scan: Scan) => void; onLogout: () => void;
   onAddStudent: (name: string, grade: string) => Promise<boolean>;
@@ -19,15 +23,13 @@ type Props = {
 
 export function HomeView(props: Props) {
   const { username, students, selected, records, localDrafts, busy, uploading, refreshing, error, notice } = props;
-  const [tab, setTab] = useState<'home' | 'library' | 'me'>('home');
+  const tab = props.page;
+  const [feature, setFeature] = useState('');
   const [adding, setAdding] = useState(false), [name, setName] = useState(''), [grade, setGrade] = useState('');
-  useEffect(() => {
-    if (props.photoSaved > 0) { setTab('library'); window.scrollTo({ top: 0 }); }
-  }, [props.photoSaved]);
   const student = students.find((s) => s.id === selected);
   const pending = localDrafts.filter((d) => d.studentId === selected);
   const reviewCount = records.filter((r) => r.status === 'needs_review').length;
-  function navigate(next: typeof tab) { setTab(next); window.scrollTo({ top: 0 }); }
+  function navigate(next: typeof tab) { props.onNavigate(next); window.scrollTo({ top: 0 }); }
   function addStudent() { navigate('me'); setAdding(true); }
   function scanCard(scan: Scan, compact = false) {
     return <button className={`record-card ${compact ? 'home-record-card' : ''}`} key={scan.id} onClick={() => props.onOpenScan(scan)}>
@@ -72,6 +74,7 @@ export function HomeView(props: Props) {
             </button>
           </div>
         </section>
+        <FeatureCatalog compact onSelect={setFeature} />
         {!student ? <section className="home-empty"><h2>先建一个孩子的学习档案</h2><p>一家多个孩子，资料分别保存。</p><button className="primary" onClick={addStudent}><Plus size={17} />添加第一名学生</button></section>
           : <>
             <section className="home-summary" aria-label="待处理事项">
@@ -81,7 +84,7 @@ export function HomeView(props: Props) {
             </section>
             <section className="home-recent">
               <div className="section-line"><h2>最近资料</h2><button className="section-link" onClick={() => navigate('library')}>查看全部 <ChevronRight size={14} /></button></div>
-              {records.length ? <div className="home-record-list">{records.slice(0, 2).map((scan) => scanCard(scan, true))}</div>
+              {records.length ? <div className="home-record-list">{records.slice(0, 1).map((scan) => scanCard(scan, true))}</div>
                 : <div className="home-empty-records"><FileImage size={28} /><div><strong>{refreshing ? '正在读取资料…' : '第一张题目，从这里开始'}</strong><p>拍照后在“题目”中确认上传，再校对识别结果。</p></div></div>}
             </section>
           </>}
@@ -127,5 +130,10 @@ export function HomeView(props: Props) {
       <button aria-current={tab === 'library' ? 'page' : undefined} onClick={() => navigate('library')}><Layers size={21} /><span>题目</span>{pending.length > 0 && <span className="nav-dot" aria-label="有照片待上传" />}</button>
       <button aria-current={tab === 'me' ? 'page' : undefined} onClick={() => navigate('me')}><UserRound size={21} /><span>我的</span><UpdateDot /></button>
     </nav>
+    {feature && <FeatureDialog feature={feature} onClose={() => setFeature('')} onContinue={() => {
+      setFeature(''); navigate('home');
+      if (!student) addStudent();
+      else document.querySelector<HTMLButtonElement>('.capture-primary')?.focus();
+    }} />}
   </div>;
 }

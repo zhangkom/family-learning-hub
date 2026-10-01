@@ -182,12 +182,13 @@ await page.route(`${api}/**`, async (route) => {
 });
 try {
   await page.goto(base);
+  await page.getByRole('navigation', { name: '账户' }).getByRole('button', { name: '登录', exact: true }).click();
   await page.getByLabel('家庭服务地址').fill(api);
-  await page.getByLabel('家庭账号', { exact: true }).fill('测试家庭');
+  await page.getByLabel('账号', { exact: true }).fill('测试家庭');
   await page
     .getByLabel('密码', { exact: true })
     .fill('synthetic-only-password');
-  await page.getByRole('button', { name: '进入家庭学习' }).click();
+  await page.getByRole('button', { name: '登录' }).click();
   assert.equal(await page.getByLabel('当前学生').inputValue(), 'dabao');
   await page.screenshot({ path: `${output}/desktop-home.png`, fullPage: true });
   await page.getByRole('button', { name: /分配律练习/ }).click();

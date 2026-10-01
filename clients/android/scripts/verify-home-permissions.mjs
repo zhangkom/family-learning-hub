@@ -55,18 +55,19 @@ await page.route('**/*', async (route) => {
 try {
   mkdirSync('test-results', { recursive: true });
   await page.goto(client);
+  await page.getByRole('navigation', { name: '账户' }).getByRole('button', { name: '登录', exact: true }).click();
   await page.getByText(`知燃 AI ${version} · 家庭试用版`, { exact: true }).waitFor();
   const noSensitiveRequests = async () => {
     assert.deepEqual(await page.evaluate(() => window.nativeCalls.filter(({ plugin, method }) =>
       plugin === 'Camera' || plugin === 'AppSettings' || ['install', 'openInstallSettings'].includes(method))), []);
   };
   await noSensitiveRequests();
-  await page.getByLabel('家庭账号', { exact: true }).fill('test-family');
+  await page.getByLabel('账号', { exact: true }).fill('test-family');
   await page.getByLabel('密码', { exact: true }).fill('synthetic-password');
-  await page.getByRole('button', { name: '进入家庭学习' }).click();
+  await page.getByRole('button', { name: '登录' }).click();
   await page.locator('.home-record-card').first().waitFor();
   await noSensitiveRequests();
-  assert.equal(await page.locator('.home-record-card').count(), 2);
+  assert.equal(await page.locator('.home-record-card').count(), 1);
   for (const viewport of [{ width: 390, height: 844 }, { width: 360, height: 740 }]) {
     await page.setViewportSize(viewport);
     const measured = await page.evaluate(() => ({ width: innerWidth, height: innerHeight,
@@ -108,6 +109,6 @@ try {
   assert.equal(calls.find(({ method }) => method === 'chooseFromGallery').args.mediaType, 0);
   assert.deepEqual(errors, []);
   writeFileSync('test-results/home-permission-verification.json', JSON.stringify({ version, checkedAt: new Date().toISOString(), syntheticOnly: true, nativeBridgeSimulated: true, nativeDeviceTested: false,
-    geometry, checks: ['no permissions at startup/login', 'camera only after tap', 'denial leaves gallery usable', 'cancel is not an error', 'selected image saves local draft', 'student isolation', 'no automatic install authorization', 'app settings only after tap', 'home capped at two records; complete list on separate tab'] }, null, 2));
+    geometry, checks: ['no permissions at startup/login', 'camera only after tap', 'denial leaves gallery usable', 'cancel is not an error', 'selected image saves local draft', 'student isolation', 'no automatic install authorization', 'app settings only after tap', 'home capped at one record; complete list on separate tab'] }, null, 2));
   console.log('Compact home and permission timing passed using synthetic API/native bridge. Not a physical-device test.');
 } finally { await browser.close(); }

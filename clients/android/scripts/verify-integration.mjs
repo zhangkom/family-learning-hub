@@ -39,10 +39,11 @@ try {
   const png = await fixture.screenshot();
   await fixture.close();
   await page.goto(client);
+  await page.getByRole('navigation', { name: '账户' }).getByRole('button', { name: '登录', exact: true }).click();
   await page.getByLabel('家庭服务地址').fill(config.apiBase);
-  await page.getByLabel('家庭账号', { exact: true }).fill(config.username);
+  await page.getByLabel('账号', { exact: true }).fill(config.username);
   await page.getByLabel('密码', { exact: true }).fill(config.password);
-  await page.getByRole('button', { name: '进入家庭学习' }).click();
+  await page.getByRole('button', { name: '登录' }).click();
   await page.getByRole('navigation', { name: '主要页面' }).getByRole('button', { name: '我的', exact: true }).click();
   const testName = `联调学生-${Date.now().toString().slice(-6)}`;
   await page.getByRole('button', { name: '添加学生' }).click();
@@ -123,7 +124,7 @@ try {
   await page.locator('.home-empty-records').waitFor();
   await page.getByRole('navigation', { name: '主要页面' }).getByRole('button', { name: '我的', exact: true }).click();
   await page.getByRole('button', { name: '退出登录' }).click();
-  await page.getByRole('button', { name: '进入家庭学习' }).waitFor();
+  await page.getByRole('button', { name: '登录' }).waitFor();
   assert.deepEqual(errors, []);
   const result = {
     passed: true,

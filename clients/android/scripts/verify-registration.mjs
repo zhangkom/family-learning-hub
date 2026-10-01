@@ -7,12 +7,11 @@ const client = process.env.PILOT_PREVIEW_URL || 'http://127.0.0.1:3179';
 assert.equal(new URL(client).hostname, '127.0.0.1');
 const api = 'https://123.207.232.151/family-learning/api/mobile/v1';
 const browser = await chromium.launch({ headless: true, channel: process.env.PLAYWRIGHT_CHANNEL || 'chrome' });
-const errors = [];
-const password = 'synthetic-password-2026', code = 'synthetic-private-setup-code';
+const errors = [], geometry = [];
 async function scenario(options = {}) {
   const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
   page.on('pageerror', (error) => errors.push(error.message));
-  let created = false, setupCalls = 0, statusCalls = 0, loginCalls = 0;
+  let registerCalls = 0, statusCalls = 0, loginCalls = 0, privateCalls = 0;
   await page.route('**/*', async (route) => {
     const request = route.request(), url = request.url();
     if (new URL(url).origin === new URL(client).origin) return route.continue();
@@ -22,89 +21,102 @@ async function scenario(options = {}) {
     if (path === '/setup') {
       statusCalls++;
       if (options.statusFailure) return route.abort('failed');
-      return send({ enabled: true, needsSetup: !created });
+      return send({ enabled: true, needsSetup: false, registrationEnabled: !options.closed });
     }
     const login = () => ({ token: 'synthetic-new-family-token', user: { id: 'new-family', username: 'family2026' }, expiresAt: Date.now() + 60000 });
-    if (path === '/session/setup') {
-      setupCalls++;
+    if (path === '/session/register') {
+      registerCalls++;
       assert.equal(request.headers().authorization, undefined);
       assert.equal(request.headers().cookie, undefined);
       assert.equal(request.method(), 'POST');
       const body = request.postDataJSON();
-      assert.equal(body.username, 'family2026');
-      assert.equal(body.password, password);
-      if (options.concurrentCreation) { created = true; return send({ error: '家庭账号已创建，请直接登录', code: 'SETUP_COMPLETE' }, 409); }
-      if (body.setupToken !== code) return send({ error: '家庭启用码不正确', code: 'INVALID_SETUP_TOKEN' }, 403);
-      assert.equal(created, false);
-      created = true;
+      assert.deepEqual(Object.keys(body).sort(), ['password', 'username']);
+      assert.equal(body.password, '123456');
+      if (options.duplicate && registerCalls === 1) return send({ error: '账号已存在，请登录或换一个账号', code: 'USERNAME_TAKEN' }, 409);
       return send(login());
     }
     if (path === '/session/login') { loginCalls++; return send(login()); }
+    privateCalls++;
     assert.equal(request.headers().authorization, 'Bearer synthetic-new-family-token');
-    if (path === '/students') return send({ students: [{ id: 'first-child', name: '测试孩子', createdAt: new Date().toISOString() }] });
+    if (path === '/students') return send({ students: [] });
     if (path === '/scans') return send({ scans: [], recognition: false });
     errors.push(`Unexpected mocked API request ${path}`);
     return route.abort('blockedbyclient');
   });
   await page.goto(client);
-  return { page, counts: () => ({ setupCalls, statusCalls, loginCalls }) };
+  await page.getByRole('navigation', { name: '账户' }).waitFor();
+  return { page, counts: () => ({ registerCalls, statusCalls, loginCalls, privateCalls }) };
 }
-async function fillRegistration(page, token = code, confirmed = password) {
-  await page.getByRole('tab', { name: '首次注册家庭账号' }).click();
-  await page.getByLabel('家庭启用码', { exact: true }).waitFor();
-  await page.getByLabel('家庭启用码', { exact: true }).fill(token);
-  await page.getByLabel('家庭账号', { exact: true }).fill('family2026');
-  await page.getByLabel('密码', { exact: true }).fill(password);
-  await page.getByLabel('确认密码', { exact: true }).fill(confirmed);
+async function registerForm(page) {
+  await page.getByRole('navigation', { name: '账户' }).getByRole('button', { name: '注册', exact: true }).click();
+  await page.getByRole('heading', { name: '注册', exact: true }).waitFor();
+  await page.getByLabel('账号', { exact: true }).fill('family2026');
+  await page.getByLabel('密码', { exact: true }).fill('123456');
 }
 try {
-  const normal = await scenario();
-  await normal.page.getByText('还没有账号？点击“首次注册家庭账号”，由家长设置账号和密码。', { exact: true }).waitFor();
-  await normal.page.getByRole('tab', { name: '首次注册家庭账号' }).click();
   mkdirSync('test-results', { recursive: true });
-  await normal.page.screenshot({ path: 'test-results/registration-empty.png', fullPage: true });
-  await fillRegistration(normal.page, 'wrong-synthetic-code', 'different-synthetic-password');
-  await normal.page.getByRole('button', { name: '注册并进入家庭学习', exact: true }).click();
-  await normal.page.getByText('两次输入的密码不一致，请重新确认。', { exact: true }).waitFor();
-  assert.equal(normal.counts().setupCalls, 0);
-  await normal.page.getByLabel('确认密码', { exact: true }).fill(password);
-  await normal.page.getByRole('button', { name: '注册并进入家庭学习', exact: true }).click();
-  await normal.page.getByText('家庭启用码不正确', { exact: true }).waitFor();
-  await normal.page.getByLabel('家庭启用码', { exact: true }).fill(code);
-  await normal.page.getByRole('button', { name: '注册并进入家庭学习', exact: true }).click();
-  await normal.page.getByLabel('当前学生').waitFor();
-  assert.equal(normal.counts().setupCalls, 2);
-  assert.equal(normal.counts().loginCalls, 0, 'Registration should sign in without an extra login request');
-  const savedSettings = await normal.page.evaluate(() => JSON.stringify(localStorage));
-  for (const secret of [password, code, 'synthetic-new-family-token']) assert.equal(savedSettings.includes(secret), false);
-  assert.equal(await normal.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
-  await normal.page.close();
-
-  const race = await scenario({ concurrentCreation: true });
-  await fillRegistration(race.page);
-  await race.page.getByRole('button', { name: '注册并进入家庭学习', exact: true }).click();
-  await race.page.getByRole('heading', { name: '登录家庭账号', exact: true }).waitFor();
-  await race.page.getByText('家庭账号已创建，请使用已有账号登录。', { exact: true }).waitFor();
-  assert.equal(await race.page.getByLabel('家庭账号', { exact: true }).inputValue(), 'family2026');
-  assert.equal(await race.page.getByLabel('密码', { exact: true }).inputValue(), '');
-  await race.page.getByRole('tab', { name: '首次注册家庭账号' }).click();
-  await race.page.getByText('当前家庭注册入口已关闭。已有家庭成员请使用家长创建的账号登录；新增家庭需由管理员开通。', { exact: true }).waitFor();
-  assert.equal(await race.page.getByRole('button', { name: '注册并进入家庭学习', exact: true }).isDisabled(), true);
-  assert.equal(race.counts().setupCalls, 1);
-  await race.page.close();
-
-  const offline = await scenario({ statusFailure: true });
-  await offline.page.getByRole('tab', { name: '首次注册家庭账号' }).click();
-  await offline.page.getByText('暂时无法检查注册状态，已有账号仍可直接登录。', { exact: true }).waitFor();
-  assert.equal(await offline.page.getByRole('button', { name: '注册并进入家庭学习', exact: true }).isDisabled(), true);
-  await offline.page.getByRole('tab', { name: '已有账号登录' }).click();
-  await offline.page.getByLabel('家庭账号', { exact: true }).fill('family2026');
-  await offline.page.getByLabel('密码', { exact: true }).fill(password);
-  await offline.page.getByRole('button', { name: '进入家庭学习', exact: true }).click();
-  await offline.page.getByLabel('当前学生').waitFor();
-  assert.equal(offline.counts().setupCalls, 0);
-  await offline.page.close();
+  const normal = await scenario(), page = normal.page;
+  assert.equal(await page.locator('input').count(), 0);
+  assert.deepEqual(normal.counts(), { registerCalls: 0, statusCalls: 0, loginCalls: 0, privateCalls: 0 });
+  for (const viewport of [{ width: 390, height: 844 }, { width: 360, height: 740 }]) {
+    await page.setViewportSize(viewport);
+    const measured = await page.evaluate(() => ({ width: innerWidth, height: innerHeight, scrollWidth: document.documentElement.scrollWidth, scrollHeight: document.documentElement.scrollHeight,
+      contentBottom: document.querySelector('.guest-account-hint').getBoundingClientRect().bottom, navTop: document.querySelector('.bottom-nav').getBoundingClientRect().top }));
+    geometry.push(measured);
+    assert.ok(measured.scrollHeight <= measured.height + 1 && measured.scrollWidth <= measured.width, JSON.stringify(measured));
+    assert.ok(measured.contentBottom <= measured.navTop, JSON.stringify(measured));
+    await page.screenshot({ path: `test-results/guest-home-${viewport.width}.png`, fullPage: true });
+  }
+  for (const feature of ['拍照收题', '相册选图', '错题本', '分步辅导', '举一反三', '学习报告']) {
+    const button = ['拍照收题', '相册选图'].includes(feature)
+      ? page.getByRole('button', { name: new RegExp(feature) })
+      : page.getByRole('region', { name: '学习工具' }).getByRole('button', { name: new RegExp(feature) });
+    await button.click();
+    await page.getByRole('heading', { name: '登录', exact: true }).waitFor();
+    assert.ok((await page.locator('.auth-feature-context').textContent()).includes(feature));
+    assert.equal(await page.getByLabel('家庭启用码', { exact: true }).count(), 0);
+    await page.getByRole('button', { name: '先逛逛', exact: true }).click();
+  }
+  assert.deepEqual(normal.counts(), { registerCalls: 0, statusCalls: 0, loginCalls: 0, privateCalls: 0 });
+  await registerForm(page);
+  assert.equal(await page.locator('form input').count(), 2);
+  assert.equal(await page.getByLabel('确认密码', { exact: true }).count(), 0);
+  await page.getByLabel('密码', { exact: true }).fill('12345');
+  await page.getByRole('button', { name: '注册', exact: true }).click();
+  assert.equal(normal.counts().registerCalls, 0);
+  await page.getByLabel('密码', { exact: true }).fill('123456');
+  await page.getByRole('button', { name: '显示密码', exact: true }).click();
+  assert.equal(await page.getByLabel('密码', { exact: true }).getAttribute('type'), 'text');
+  await page.getByRole('button', { name: '隐藏密码', exact: true }).click();
+  await page.screenshot({ path: 'test-results/simple-register.png', fullPage: true });
+  await page.getByRole('button', { name: '注册', exact: true }).click();
+  await page.getByRole('button', { name: '添加第一名学生', exact: true }).waitFor();
+  assert.equal(normal.counts().registerCalls, 1);
+  assert.equal(normal.counts().loginCalls, 0);
+  assert.equal((await page.evaluate(() => JSON.stringify(localStorage))).includes('123456'), false);
+  await page.getByRole('region', { name: '学习工具' }).getByRole('button', { name: /错题本/ }).click();
+  await page.getByRole('dialog', { name: '错题本' }).waitFor();
+  await page.getByRole('button', { name: '返回首页', exact: true }).click();
+  const duplicate = await scenario({ duplicate: true });
+  await registerForm(duplicate.page);
+  await duplicate.page.getByRole('button', { name: '注册', exact: true }).click();
+  await duplicate.page.getByRole('alert').getByText('账号已存在，请登录或换一个账号', { exact: true }).waitFor();
+  assert.equal(await duplicate.page.getByLabel('账号', { exact: true }).inputValue(), 'family2026');
+  await duplicate.page.getByLabel('账号', { exact: true }).fill('another_family');
+  await duplicate.page.getByRole('button', { name: '注册', exact: true }).click();
+  await duplicate.page.getByRole('button', { name: '添加第一名学生', exact: true }).waitFor();
+  for (const options of [{ closed: true }, { statusFailure: true }]) {
+    const unavailable = await scenario(options);
+    await registerForm(unavailable.page);
+    await unavailable.page.getByText(options.closed ? '注册暂未开放，你仍可浏览首页或使用已有账号登录。' : '暂时无法连接注册服务，请稍后重试。', { exact: true }).waitFor();
+    assert.equal(await unavailable.page.getByRole('button', { name: '注册', exact: true }).isDisabled(), true);
+    await unavailable.page.getByRole('tab', { name: '登录', exact: true }).click();
+    await unavailable.page.getByLabel('密码', { exact: true }).fill('existing-long-password');
+    await unavailable.page.getByRole('button', { name: '登录', exact: true }).click();
+    await unavailable.page.getByRole('button', { name: '添加第一名学生', exact: true }).waitFor();
+  }
   assert.deepEqual(errors, []);
-  writeFileSync('test-results/registration-result.json', JSON.stringify({ passed: true, syntheticOnly: true, productionRequests: 0, checkedAt: new Date().toISOString(), checks: ['registration entry', 'password confirmation before request', 'wrong setup code recovery', 'registration directly logs in', 'no credential persistence in browser settings', 'concurrent setup conflict returns to login', 'closed setup cannot submit', 'status failure preserves existing-account login'] }, null, 2));
-  console.log('Registration UI checks passed; all external requests mocked, no production accounts created.');
+  writeFileSync('test-results/registration-verification.json', JSON.stringify({ passed: true, syntheticOnly: true, productionWrites: 0, checkedAt: new Date().toISOString(), geometry,
+    checks: ['guest-first home', 'no account data read while browsing', 'all feature entries auth-gated', 'unimplemented features labelled before signup', 'only username/password registration fields', '5 characters rejected and 6 digits accepted', 'direct login on registration', 'no password stored in settings', 'duplicate-name retry', 'existing login works when registration unavailable'] }, null, 2));
+  console.log('Guest browsing and simple registration passed with mocked API; no production accounts created.');
 } finally { await browser.close(); }

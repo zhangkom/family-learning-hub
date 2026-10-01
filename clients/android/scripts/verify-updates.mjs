@@ -31,6 +31,7 @@ await page.route('**/*', async (route) => {
 });
 try {
   await page.goto(client);
+  await page.getByLabel('版本与更新', { exact: true }).click();
   await page.getByRole('button', { name: /发现新版本 0.3.0/ }).click();
   await page.getByText(next.changelog, { exact: true }).waitFor();
   assert.equal(await page.getByRole('link', { name: '下载 APK，在安卓设备安装' }).getAttribute('href'), next.downloadUrl);
@@ -79,6 +80,7 @@ try {
     };
   });
   await page.reload();
+  await page.getByLabel('版本与更新', { exact: true }).click();
   await page.getByRole('button', { name: /发现新版本/ }).click();
   await page.evaluate(() => { window.failDownload = true; });
   await page.getByRole('button', { name: '下载并安装', exact: true }).click();
