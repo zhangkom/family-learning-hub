@@ -4,16 +4,18 @@
 
 ## 当前交付（2026-10-01）
 
-- 固定版本：[知燃 AI 0.2.4 release / 7287efa](https://123.207.232.151/family-learning/downloads/android/family-learning-0.2.4-release-7287efa.apk)
+- 固定版本：[知燃 AI 0.2.5 release / b355067](https://123.207.232.151/family-learning/downloads/android/family-learning-0.2.5-release-b355067.apk)
 - 最新版本：[latest.apk](https://123.207.232.151/family-learning/downloads/android/latest.apk)
 - 公开元数据：[latest.json](https://123.207.232.151/family-learning/downloads/android/latest.json)
-- APK 源码提交：`7287efa5dc8955efb2992433a2338088ee7102a4`；versionCode 6；大小：6,690,297 字节。
-- SHA-256：`e44876c8ab20ff7b8e6f1282d6c02e040e16ec9ad1d7f42b2d16c077dcb345e8`。
+- APK 源码提交：`b3550670a53fc636dcf8af360f1c81e322b12432`；versionCode 7；大小：6,692,593 字节。
+- SHA-256：`035d8f365d4c04b4a06d19df8aa2112ab8f215c2af231601fc0dcaf77a5c068b`。
 - 0.1.0 固定链接继续保留；新版已内置腾讯服务地址，并使用长期发布签名。
 
-这是家庭试用包，未完成安卓真机拍照验收。后台已于 2026-10-01 18:29 部署普通多家庭注册，0.2.4 注册只需账号及 6–128 位密码，新家庭与历史资料隔离；游客可先浏览功能入口。详见 [普通家庭注册上线记录](普通家庭注册上线记录.md)。0.2.0 至 0.2.3 可直接覆盖升级，无需卸载。0.1.0 调试版升级前应确认本机草稿已上传，再卸载旧版；之后沿用固定发布签名。
+这是家庭试用包，未完成安卓真机拍照验收。后台已于 2026-10-01 18:29 部署普通多家庭注册，0.2.5 注册只需账号及 6–128 位密码，新家庭与历史资料隔离；游客可先浏览功能入口。详见 [普通家庭注册上线记录](普通家庭注册上线记录.md)。0.2.0 至 0.2.4 可直接覆盖升级，无需卸载。0.1.0 调试版升级前应确认本机草稿已上传，再卸载旧版；之后沿用固定发布签名。
 
 0.2.2 新增更新入口与系统安装引导，详见 [安卓更新发布记录](安卓更新发布记录.md)。0.2.3 更名为“知燃 AI”，更新图标、首页和权限说明，详见 [知燃 AI 安卓发布记录](知燃AI安卓发布记录.md)。0.2.0、0.2.1、0.2.2 均可使用原签名覆盖升级。
+
+0.2.5 新增“我的 → 账号设置”，支持修改用户名和密码，并加入后续差异更新能力；本次仍为完整包引导升级，清单无 deltas。详见 [账号设置与 0.2.5 发布记录](账号设置与025发布记录.md) 及 [安卓增量更新](安卓增量更新.md)。
 
 ## 文件与配置位置
 
@@ -39,14 +41,14 @@
 ```sh
 P=/home/ubuntu/codex_project/workspace_own/family-learning-hub
 sudo python3 "$P/runtime/tools/publish-apk.py" \
-  --source "$P/artifacts/android/20261001-7287efa/family-learning-0.2.4-release.apk" \
-  --version 0.2.4 --channel release \
-  --version-code 6 \
-  --changelog '未登录先浏览功能首页，点击后注册或登录；注册仅需账号密码，支持6位密码，无需启用码；展示错题本等功能入口并标明准备中；保持多学生切换与照片校对。' \
-  --commit 7287efa5dc8955efb2992433a2338088ee7102a4 \
-  --sha256 e44876c8ab20ff7b8e6f1282d6c02e040e16ec9ad1d7f42b2d16c077dcb345e8 \
-  --bytes 6690297 \
-  --notes '知燃 AI 家庭试用版；注册只需账号和6至128位密码，新注册家庭与历史资料隔离。错题本、分步辅导、变式练习和学习报告为准备中入口，尚未实现完整功能。沿用原签名可覆盖升级；相机和系统安装尚未完成真机验收，红米安装提示来源仍待确认。'
+  --source "$P/artifacts/android/20261001-b355067/family-learning-0.2.5-release.apk" \
+  --version 0.2.5 --channel release \
+  --version-code 7 \
+  --changelog '我的支持修改用户名和密码，保留孩子与学习资料；游客三主页面保留底栏，登录后返回原页；加入差异更新能力，本次完整包升级后，后续适用版本优先增量。' \
+  --commit b3550670a53fc636dcf8af360f1c81e322b12432 \
+  --sha256 035d8f365d4c04b4a06d19df8aa2112ab8f215c2af231601fc0dcaf77a5c068b \
+  --bytes 6692593 \
+  --notes '知燃 AI 家庭试用版；我的可修改用户名和密码，孩子与学习资料保留。0.2.5是增量能力引导版，当前升级仍为完整APK，后续适用版本优先增量并保留完整包回退。沿用长期签名；尚未完成真机安装与增量升级验收，红米安装提示来源待确认。'
 ```
 
 固定版本文件禁止覆盖为不同内容；重新构建产生不同二进制时应使用新版本或新提交。工具备份配置，更新路由，校验 Nginx 后平滑重载；等待新配置生效，再完整下载固定地址和 latest 地址核对大小/哈希，检查 Range、公开元数据和私有路径拒绝访问。TLS 使用系统信任链，不关闭证书校验。失败会恢复配置和 latest 指向，保留不可变文件供排查。
@@ -55,7 +57,7 @@ sudo python3 "$P/runtime/tools/publish-apk.py" \
 
 公开 `latest.json` 保留 `app,version,channel,commit,publishedAt,fileName,downloadUrl,bytes,sha256,notes`，新增整数 `versionCode` 和简短中文字符串 `changelog`。客户端以 `versionCode` 与本机版本比较；`downloadUrl` 指向固定版本 APK，下载后可核对字节数及 SHA-256。目前没有最低版本字段或强制更新规则。
 
-自 0.2.3 起，新建版本清单的 `app` 展示名称为 `知燃 AI`，当前为 0.2.4 / versionCode 6。已有登记条目仍使用原元数据，历史固定 APK 和版本 JSON 不改名、不改内容；URL 结构、包名及长期签名保持不变。后续也只有收到完成验证的签名 APK 和对应源码归档后才运行发布工具并切换 latest。
+自 0.2.3 起，新建版本清单的 `app` 展示名称为 `知燃 AI`，当前为 0.2.5 / versionCode 7。已有登记条目仍使用原元数据，历史固定 APK 和版本 JSON 不改名、不改内容；URL 结构、包名及长期签名保持不变。后续也只有收到完成验证的签名 APK 和对应源码归档后才运行发布工具并切换 latest。
 
 该地址使用 `Cache-Control: no-store`；安卓 Origin `https://localhost` 可 GET/HEAD/OPTIONS，响应带精确的 `Access-Control-Allow-Origin` 及 `Vary: Origin`。其他来源不获得允许跨来源读取的头，无 Origin 的普通读取保持正常；公开文件仍限已有精确文件名，不开放工程目录。
 
