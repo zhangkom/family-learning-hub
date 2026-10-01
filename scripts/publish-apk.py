@@ -205,7 +205,7 @@ def main():
         assert existing.get('versionCode', args.version_code) == args.version_code
         public = existing
     else:
-        public = dict(app='一起学', version=args.version, channel=args.channel, commit=args.commit,
+        public = dict(app='知燃 AI', version=args.version, channel=args.channel, commit=args.commit,
                       publishedAt=datetime.now(timezone.utc).isoformat(), fileName=name,
                       downloadUrl=URL_ROOT + name, bytes=len(content), sha256=sha(content), notes=args.notes,
                       versionCode=args.version_code, changelog=args.changelog)
