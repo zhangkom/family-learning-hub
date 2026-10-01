@@ -37,12 +37,12 @@
 ```sh
 P=/home/ubuntu/codex_project/workspace_own/family-learning-hub
 sudo python3 "$P/runtime/tools/publish-apk.py" \
-  --source "$P/artifacts/android/20261001-2950f3c/family-learning-0.1.0-debug.apk" \
-  --version 0.1.0 --channel debug \
-  --commit 2950f3c0e0dcf3f2f2e3a43a0ab906c754608184 \
-  --sha256 709b6d0e3f917677ed4a25dca49515802c3696ceacc54d68750103b4a7aa49a6 \
-  --bytes 8279164 \
-  --notes '开发验证包；尚未完成真机拍照验收，腾讯云移动后台尚未启用。'
+  --source "$P/artifacts/android/20261001-11f3bb7/family-learning-0.2.0-release.apk" \
+  --version 0.2.0 --channel release \
+  --commit 11f3bb781d2ed6dd444adcf65fdabb7eba38f995 \
+  --sha256 77926a11a75806b6d547170d7bdc0d5bee140aee51499e6c20599a2bbbe1a893 \
+  --bytes 6677781 \
+  --notes '家庭试用版，内置腾讯服务地址；支持多孩子、照片上传、手动分题与手写校对；识别结果需人工核对，精确区域仍需手动框选；尚未完成安卓真机验收；0.1.0 调试版升级前需确认草稿已上传并卸载旧版，之后沿用固定发布签名。'
 ```
 
 固定版本文件禁止覆盖为不同内容；重新构建产生不同二进制时应使用新版本或新提交。工具备份配置，更新路由，校验 Nginx 后平滑重载；等待新配置生效，再完整下载固定地址和 latest 地址核对大小/哈希，检查 Range、公开元数据和私有路径拒绝访问。TLS 使用系统信任链，不关闭证书校验。失败会恢复配置和 latest 指向，保留不可变文件供排查。
