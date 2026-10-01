@@ -187,3 +187,9 @@ node scripts/verify-photo-host.mjs
 ```
 
 宿主报告 `artifacts/qa/photo-preprocessing-host/host-result.json`，待提交/坏记录截图同目录。`scripts/synthetic-photo-bridge.mjs` 导出纯浏览器函数 `installSyntheticPhotoBridge({api,initialToken,initialUserId})`，可供总线程 `context.addInitScript` 复用；会话、原片和输出全为合成测试存储。默认生成 900×1200 PNG/JPEG，可联调真实后台的全图不旋转链路；桥不执行原生透视算法，不能证明几何、画质或红米表现。
+
+### 第三批后续：相机结果逐项恢复
+
+主接入提交 `161a2cd` 之后补齐 `recoverCamera` 的逐项异常隔离：同一学生的暂存结果中，一张缓存失效/URI无法读取不会中断后面的正常结果。失败项在资料页明确列出原因，可重试，或选择「移除这条相机引用，保留原片」。移除前复核当前 owner/student/结果 ID 与存储 key，只删除该交接引用，任何原片、处理件及其他账号引用都不删除。存储 key 与记录 ID 不符的条目不导入，未知归属不补当前学生。
+
+增量回归 `scripts/verify-photo-recovery.mjs` 使用同一 3294 端口（与宿主回归串行运行），验证坏第一项＋好第二项、失败重试、成功项不重复导入、明确移除仅影响失败引用且其他账号引用与已存原片保留。报告与截图为 `artifacts/qa/photo-preprocessing-host/camera-recovery-result.json`、`camera-partial-recovery.png`。补丁后本独立客户端 89 项单测（7 文件），TS/Vite/oxlint 通过；本补丁不涉及原生 Java。

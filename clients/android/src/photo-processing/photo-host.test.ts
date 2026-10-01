@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { FamilyApi } from '../api';
 import type { Scan } from '../types';
-import { beginCamera, stageCamera, restoredCamera, listCameraResults, cancelCamera, clearUnfinishedCamera } from './camera-handoff';
+import { beginCamera, stageCamera, restoredCamera, listCameraResults, removeCameraResult, cancelCamera, clearUnfinishedCamera } from './camera-handoff';
 import { listPhotoDeliveries, savePhotoDelivery, removeDamagedPhotoDelivery, type PhotoDelivery } from './delivery';
 const uuid = '11111111-1111-1111-1111-111111111111', outputId = '22222222-2222-2222-2222-222222222222';
 const identity = [1,0,0,0,1,0,0,0,1] as const;
@@ -55,6 +55,15 @@ describe('host handoff persistence', () => {
     const current = beginCamera('owner', 'b', 'gallery', local); cancelCamera(old, local);
     expect(JSON.parse(local.getItem('family-learning:pending-camera')!).id).toBe(current.id);
     expect(() => restoredCamera({ pluginId: 'Camera', methodName: 'takePhoto', success: true, data: {} }, local)).toThrow('不匹配');
+  });
+  it('does not import mismatched camera keys or remove another scope reference', () => {
+    const local = storage(), context = beginCamera('owner', 'a', 'camera', local), photo = stageCamera(context, { uri: '/camera/1.jpg' }, local);
+    expect(() => removeCameraResult({ ...photo, studentId: 'b' }, local)).toThrow('归属');
+    const badKey = 'family-learning:camera-result-v1:wrong-id'; local.setItem(badKey, JSON.stringify(photo));
+    expect(listCameraResults('owner', 'a', local).results).toHaveLength(1);
+    expect(listCameraResults('owner', 'a', local).issues).toHaveLength(1);
+    removeCameraResult(photo, local);
+    expect(local.getItem(badKey)).not.toBeNull();
   });
   it('keeps healthy pending photos visible when another scoped record is damaged', () => {
     const local = storage(); savePhotoDelivery(delivery, local);
