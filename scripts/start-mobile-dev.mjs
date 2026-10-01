@@ -35,6 +35,26 @@ const origin = `http://127.0.0.1:${port}`,
 const password = randomBytes(24).toString('hex'),
   setupToken = randomBytes(32).toString('hex');
 const needsSetup = process.env.FAMILY_MOBILE_TEST_NEEDS_SETUP === 'true';
+const questionStub = process.env.FAMILY_MOBILE_TEST_QUESTION_STUB === 'true';
+const environment = {
+  ...process.env,
+  HOST: '127.0.0.1',
+  PORT: String(port),
+  NODE_ENV: 'production',
+  FAMILY_DATA_DIR: resolve(directory, 'data'),
+  FAMILY_PUBLIC_ORIGIN: origin,
+  FAMILY_SETUP_TOKEN: setupToken,
+  FAMILY_AI_API_KEY: questionStub ? 'synthetic-key-not-a-credential' : '',
+  FAMILY_AI_BASE_URL: questionStub ? 'https://synthetic-model.invalid/v1' : '',
+  FAMILY_AI_MODEL: questionStub ? 'synthetic-question-model' : '',
+  FAMILY_AI_PROTOCOL: 'chat-completions',
+  FAMILY_AI_JSON_MODE: 'json_object',
+  FAMILY_RECOGNITION_ENABLED: String(questionStub),
+  FAMILY_REGISTRATION_ENABLED: 'true',
+  FAMILY_TRUST_PROXY: 'false',
+  OPENAI_API_KEY: '',
+  FAMILY_MOBILE_ORIGINS: 'https://localhost,http://127.0.0.1:3178',
+};
 const server = spawn(process.execPath, [resolve(runtime, 'server.js')], {
   windowsHide: true,
   detached: true,
@@ -43,22 +63,9 @@ const server = spawn(process.execPath, [resolve(runtime, 'server.js')], {
     openSync(resolve(directory, 'server.log'), 'a'),
     openSync(resolve(directory, 'server-error.log'), 'a'),
   ],
-  env: {
-    ...process.env,
-    HOST: '127.0.0.1',
-    PORT: String(port),
-    NODE_ENV: 'production',
-    FAMILY_DATA_DIR: resolve(directory, 'data'),
-    FAMILY_PUBLIC_ORIGIN: origin,
-    FAMILY_SETUP_TOKEN: setupToken,
-    FAMILY_AI_API_KEY: '',
-    FAMILY_RECOGNITION_ENABLED: 'false',
-    FAMILY_REGISTRATION_ENABLED: 'true',
-    FAMILY_TRUST_PROXY: 'false',
-    OPENAI_API_KEY: '',
-    FAMILY_MOBILE_ORIGINS: 'https://localhost,http://127.0.0.1:3178',
-  },
+  env: environment,
 });
+let worker;
 try {
   let ready = false;
   for (let i = 0; i < 50; i++) {
@@ -75,6 +82,27 @@ try {
     await new Promise((done) => setTimeout(done, 200));
   }
   if (!ready) throw new Error('Test server did not become ready');
+  if (questionStub) {
+    worker = spawn(
+      process.execPath,
+      [
+        '--import',
+        resolve('scripts/synthetic-question-model.mjs'),
+        resolve(runtime, 'worker/worker.mjs'),
+      ],
+      {
+        windowsHide: true,
+        detached: true,
+        env: environment,
+        stdio: [
+          'ignore',
+          openSync(resolve(directory, 'worker.log'), 'a'),
+          openSync(resolve(directory, 'worker-error.log'), 'a'),
+        ],
+      },
+    );
+    worker.unref();
+  }
   const availability = await fetch(base + '/api/mobile/v1/setup');
   if (!availability.ok || !(await availability.json()).needsSetup)
     throw new Error('Synthetic setup status is not available');
@@ -113,6 +141,8 @@ try {
     aiEnabled: false,
     needsSetup,
     registrationEnabled: true,
+    questionModelStub: questionStub,
+    ...(worker ? { workerPid: worker.pid } : {}),
     ...(needsSetup ? { setupToken } : {}),
   };
   const path = resolve('work/mobile-dev-connection.json');
@@ -125,9 +155,11 @@ try {
       connectionFile: path,
       pid: server.pid,
       syntheticOnly: true,
+      questionModelStub: questionStub,
     }),
   );
 } catch (e) {
   server.kill();
+  worker?.kill();
   throw e;
 }

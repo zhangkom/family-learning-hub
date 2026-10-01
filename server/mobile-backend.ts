@@ -28,7 +28,8 @@ import {
   uploadMobileScan,
 } from './mobile-service';
 import { recognitionEnabled } from './model-gateway';
-import { enqueueRecognition } from './scan-jobs';
+import { enqueueRecognition, enqueueExplanation } from './scan-jobs';
+import { setWrongBook, wrongBookItems } from './question-learning';
 
 const hash = (s: string) => createHash('sha256').update(s).digest('hex');
 const codes: Record<number, string> = {
@@ -156,6 +157,16 @@ async function dispatch(
   user: FamilyUser,
 ) {
   const method = request.method;
+  if (parts.length === 1 && parts[0] === 'wrong-book') {
+    if (method !== 'GET') throw new HttpError(405, '请求方式不支持');
+    return json({
+      items: await wrongBookItems(
+        store,
+        user.id,
+        new URL(request.url).searchParams.get('studentId'),
+      ),
+    });
+  }
   if (parts.length === 1 && parts[0] === 'students') {
     if (method === 'GET') return json({ students: store.students(user.id) });
     if (method !== 'POST') throw new HttpError(405, '请求方式不支持');
@@ -208,6 +219,36 @@ async function dispatch(
     );
   }
   const record = await ownedScan(store, user.id, parts[1]);
+  if (
+    parts.length === 5 &&
+    parts[2] === 'questions' &&
+    ['wrong-book', 'explain'].includes(parts[4])
+  ) {
+    if (method !== 'POST') throw new HttpError(405, '请求方式不支持');
+    if (!store.allow(`question-action:${user.id}`, 60, 60000))
+      throw new HttpError(429, '操作过于频繁，请稍后再试');
+    const body = await readJson(request, 8192);
+    if (parts[4] === 'wrong-book')
+      return json({
+        scan: mobileScan(
+          await setWrongBook(store, user.id, record.id, parts[3], body),
+        ),
+      });
+    return json(
+      {
+        scan: mobileScan(
+          enqueueExplanation(
+            store,
+            user.id,
+            record.id,
+            parts[3],
+            body.revision,
+          ),
+        ),
+      },
+      202,
+    );
+  }
   if (parts.length === 2 && method === 'GET')
     return json({ scan: mobileScan(record) });
   if (parts.length !== 3) throw new HttpError(404, '接口不存在');
