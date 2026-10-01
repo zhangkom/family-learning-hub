@@ -8,6 +8,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { randomBytes } from 'node:crypto';
 
 // Isolated synthetic data only. Deliberately never inherit production AI keys.
@@ -87,7 +88,7 @@ try {
       process.execPath,
       [
         '--import',
-        resolve('scripts/synthetic-question-model.mjs'),
+        pathToFileURL(resolve('scripts/synthetic-question-model.mjs')).href,
         resolve(runtime, 'worker/worker.mjs'),
       ],
       {
