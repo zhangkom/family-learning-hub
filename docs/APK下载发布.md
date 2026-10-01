@@ -4,14 +4,16 @@
 
 ## 当前交付（2026-10-01）
 
-- 固定版本：[0.2.1 release / 55045ec](https://123.207.232.151/family-learning/downloads/android/family-learning-0.2.1-release-55045ec.apk)
+- 固定版本：[0.2.2 release / 5e4e4f9](https://123.207.232.151/family-learning/downloads/android/family-learning-0.2.2-release-5e4e4f9.apk)
 - 最新版本：[latest.apk](https://123.207.232.151/family-learning/downloads/android/latest.apk)
 - 公开元数据：[latest.json](https://123.207.232.151/family-learning/downloads/android/latest.json)
-- APK 源码提交：`55045ecd9a05767e6389c31b5b6755812f043ff7`；versionCode 3；大小：6,679,185 字节。
-- SHA-256：`2656ba94926514028da62c1884b9f7808bd01182617199fe951d3740b55d1337`。
+- APK 源码提交：`5e4e4f9aad803ad09adb0fd7f42078e324c1ec6a`；versionCode 4；大小：6,680,973 字节。
+- SHA-256：`c94642eb723e08d03b5e2dfd1bf70aca14f5209210140eb992cf310e814df34e`。
 - 0.1.0 固定链接继续保留；新版已内置腾讯服务地址，并使用长期发布签名。
 
 这是家庭试用包，未完成安卓真机拍照验收。后台已于 2026-10-01 13:32 上线，见 [移动后台上线记录](移动后台上线记录.md)。0.2.1 可在 App 内使用私下提供的启用码首次注册并直接登录，见 [首次开通修复](移动首次开通修复.md)。0.2.0 可直接覆盖升级，无需卸载。0.1.0 调试版升级前应确认本机草稿已上传，再卸载旧版；之后沿用固定发布签名。
+
+0.2.2 新增更新入口与系统安装引导，详见 [安卓更新发布记录](安卓更新发布记录.md)。
 
 ## 文件与配置位置
 
@@ -37,13 +39,13 @@
 ```sh
 P=/home/ubuntu/codex_project/workspace_own/family-learning-hub
 sudo python3 "$P/runtime/tools/publish-apk.py" \
-  --source "$P/artifacts/android/20261001-55045ec/family-learning-0.2.1-release.apk" \
-  --version 0.2.1 --channel release \
-  --version-code 3 \
-  --changelog '新增 App 内首次开通家庭账号，成功后直接登录；0.2.0 可覆盖升级。' \
-  --commit 55045ecd9a05767e6389c31b5b6755812f043ff7 \
-  --sha256 2656ba94926514028da62c1884b9f7808bd01182617199fe951d3740b55d1337 \
-  --bytes 6679185 \
+  --source "$P/artifacts/android/20261001-5e4e4f9/family-learning-0.2.2-release.apk" \
+  --version 0.2.2 --channel release \
+  --version-code 4 \
+  --changelog '新增版本更新标识、手动检查更新、下载进度与系统安装引导；保留App内首次注册，可从0.2.0/0.2.1覆盖升级。' \
+  --commit 5e4e4f9aad803ad09adb0fd7f42078e324c1ec6a \
+  --sha256 c94642eb723e08d03b5e2dfd1bf70aca14f5209210140eb992cf310e814df34e \
+  --bytes 6680973 \
   --notes '家庭试用版，内置腾讯服务地址；支持多孩子、照片上传、手动分题与手写校对；识别结果需人工核对，精确区域仍需手动框选；尚未完成安卓真机验收；0.1.0 调试版升级前需确认草稿已上传并卸载旧版，之后沿用固定发布签名。'
 ```
 
