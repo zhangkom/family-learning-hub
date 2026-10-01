@@ -70,6 +70,7 @@ beforeEach(async () => {
   vi.stubEnv('FAMILY_SETUP_TOKEN', 's'.repeat(48));
   vi.stubEnv('FAMILY_PUBLIC_ORIGIN', origin);
   vi.stubEnv('FAMILY_AI_API_KEY', '');
+  vi.stubEnv('FAMILY_RECOGNITION_ENABLED', 'false');
   vi.stubEnv('OPENAI_API_KEY', '');
   store = new FamilyStore(':memory:');
   const setup = await handleFamily(
@@ -186,6 +187,7 @@ describe('private scan lifecycle and existing data', () => {
     expect((await call('file', item.id)).status).toBe(200);
   });
   it('uses a configured compatible provider without trusting AI-selected mistakes', async () => {
+    vi.stubEnv('FAMILY_RECOGNITION_ENABLED', 'true');
     vi.stubEnv('FAMILY_AI_API_KEY', 'fake-test-key');
     vi.stubEnv('FAMILY_AI_BASE_URL', 'https://api.deepseek.com');
     vi.stubEnv('FAMILY_AI_MODEL', 'deepseek-flash');

@@ -127,6 +127,7 @@ beforeEach(async () => {
     'https://localhost,http://127.0.0.1:4178',
   );
   vi.stubEnv('FAMILY_AI_API_KEY', '');
+  vi.stubEnv('FAMILY_RECOGNITION_ENABLED', 'false');
   vi.stubEnv('OPENAI_API_KEY', '');
   store = new FamilyStore(join(directory, 'family.sqlite'));
   const setup = await handleFamily(
@@ -449,6 +450,7 @@ describe('scan uploads and revisions', () => {
 });
 describe('durable recognition jobs', () => {
   beforeEach(() => {
+    vi.stubEnv('FAMILY_RECOGNITION_ENABLED', 'true');
     vi.stubEnv('FAMILY_AI_API_KEY', 'fake-key');
     vi.stubEnv('FAMILY_AI_BASE_URL', 'https://api.deepseek.com');
     vi.stubEnv('FAMILY_AI_MODEL', 'deepseek-flash');
@@ -461,6 +463,61 @@ describe('durable recognition jobs', () => {
     expect((await r.json()).scan.status).toBe('queued');
     return scan;
   }
+  it('requires explicit opt-in even with a model key and preserves manual editing', async () => {
+    vi.stubEnv('FAMILY_RECOGNITION_ENABLED', '');
+    const scan = await newScan();
+    const fetcher = vi.fn();
+    vi.stubGlobal('fetch', fetcher);
+    expect(
+      (await call(`scans/${scan.id}/recognize`, 'POST', { revision: 0 }))
+        .status,
+    ).toBe(503);
+    expect(
+      (
+        await call(`scans/${scan.id}/review`, 'PUT', {
+          revision: 0,
+          questions: [question()],
+        })
+      ).status,
+    ).toBe(200);
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(
+      store.db.prepare('SELECT count(*) AS n FROM scan_jobs').get()?.n,
+    ).toBe(0);
+  });
+  it('pauses queued jobs without consuming attempts or quota and resumes when enabled', async () => {
+    const scan = await queue();
+    vi.stubEnv('FAMILY_RECOGNITION_ENABLED', 'false');
+    const recognizer = vi.fn(async () => [question()]);
+    expect(await runNextJob(store, recognizer)).toBe(false);
+    expect(recognizer).not.toHaveBeenCalled();
+    expect(
+      store.db
+        .prepare('SELECT status,attempts FROM scan_jobs WHERE scan_id=?')
+        .get(scan.id),
+    ).toMatchObject({ status: 'queued', attempts: 0 });
+    expect(
+      store.db
+        .prepare('SELECT count(*) AS n FROM limits WHERE key=?')
+        .get(`recognize:${account}`)?.n,
+    ).toBe(0);
+    vi.stubEnv('FAMILY_RECOGNITION_ENABLED', 'true');
+    expect(await runNextJob(store, recognizer)).toBe(true);
+    expect(recognizer).toHaveBeenCalledTimes(1);
+  });
+  it('keeps the per-family daily quota when recognition is enabled', async () => {
+    vi.stubEnv('FAMILY_AI_DAILY_LIMIT', '1');
+    await queue();
+    const second = await queue();
+    const recognizer = vi.fn(async () => [question()]);
+    expect(await runNextJob(store, recognizer)).toBe(true);
+    expect(await runNextJob(store, recognizer)).toBe(true);
+    expect(recognizer).toHaveBeenCalledTimes(1);
+    expect(
+      (await (await call(`scans/${second.id}`)).json()).scan,
+    ).toMatchObject({ status: 'failed' });
+    expect((await call(`scans/${second.id}/file`)).status).toBe(200);
+  });
   it('keeps the human revision when an older web recognition request finishes late', async () => {
     const id = randomUUID();
     await saveScan(

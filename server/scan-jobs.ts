@@ -19,7 +19,7 @@ export function enqueueRecognition(
   if (!Number.isSafeInteger(revision) || Number(revision) < 0)
     throw new HttpError(400, '资料版本无效');
   if (!recognitionEnabled())
-    throw new HttpError(503, 'AI 识题尚未配置，可以先手动整理');
+    throw new HttpError(503, 'AI 识题暂未启用，可以先手动整理');
   const owner = store.scanOwner(account);
   const original = readStoredScan(store, owner, scanId);
   if (!original || original.deletedAt) throw new HttpError(404, '资料不存在');
@@ -232,6 +232,8 @@ export async function runNextJob(
   store: FamilyStore,
   recognize = recognizeStructuredQuestions,
 ) {
+  // Pausing recognition must not consume queued jobs, attempts or daily quota.
+  if (!recognitionEnabled()) return false;
   const job = claimJob(store);
   if (!job) return false;
   try {

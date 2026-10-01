@@ -26,6 +26,7 @@ function configuration() {
   };
 }
 export const recognitionEnabled = () => {
+  if (process.env.FAMILY_RECOGNITION_ENABLED !== 'true') return false;
   const config = configuration();
   return Boolean(
     config.key &&
@@ -43,7 +44,7 @@ async function recognizeModel(
   instructions: string,
 ) {
   if (!recognitionEnabled())
-    throw new HttpError(503, 'AI 识题尚未配置，原件已保存，可先手动整理');
+    throw new HttpError(503, 'AI 识题暂未启用，原件已保存，可先手动整理');
   const config = configuration();
   const url = new URL(config.base);
   if (
