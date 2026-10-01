@@ -1,0 +1,63 @@
+# APK 下载发布
+
+用户要求每次交付 APK 时上传腾讯云并给出可点击下载地址。此规则与工程总目录约定同时执行。
+
+## 当前交付（2026-10-01）
+
+- 固定版本：[0.1.0 debug / 2950f3c](https://123.207.232.151/family-learning/downloads/android/family-learning-0.1.0-debug-2950f3c.apk)
+- 最新版本：[latest.apk](https://123.207.232.151/family-learning/downloads/android/latest.apk)
+- 公开元数据：[latest.json](https://123.207.232.151/family-learning/downloads/android/latest.json)
+- 源码提交：`2950f3c0e0dcf3f2f2e3a43a0ab906c754608184`；大小：8,279,164 字节。
+- SHA-256：`709b6d0e3f917677ed4a25dca49515802c3696ceacc54d68750103b4a7aa49a6`。
+
+这是开发验证包，未完成安卓真机拍照验收。移动端后台尚未部署；下载成功不代表生产登录、上传、识别全流程已经可用。
+
+## 文件与配置位置
+
+工程根目录 `P=/home/ubuntu/codex_project/workspace_own/family-learning-hub`。
+
+| 位置 | 用途 |
+| --- | --- |
+| `P/artifacts/android/<批次>/` | 私有 APK、Git bundle、内部报告及 manifest 归档 |
+| `P/artifacts/public/android/` | 公开 APK 副本及不含内部路径的发布元数据 |
+| `P/config/apk-releases.json` | 私有版本登记，保留旧版固定链接 |
+| `P/config/nginx/family-learning-apk-downloads.conf` | 精确文件名下载路由；其他下载路径返回 404 |
+| `P/config/systemd/var-www-familylearningapk.mount` | 只读挂载单元 |
+| `P/runtime/tools/publish-apk.py` | 服务器发布工具，对应源码 `scripts/publish-apk.py` |
+| `P/backups/releases/apk-publish-<时间>-<随机码>/` | 发布前配置及发布验证记录 |
+| `P/temp/development/apk-publish-latest.json` | 最新发布的内部验证记录 |
+
+`/var/www/familylearningapk` 是公开子目录的只读绑定挂载，不是额外存储副本。`/etc` 中只保留指向工程配置的链接。挂载启用 `ro,nosuid,nodev,noexec`，无需开放私有工程父目录的读取权限。
+
+## 后续发布
+
+先构建、校验签名并计算 APK 的 SHA-256，将包和内部报告上传到新的私有归档批次。以 root 运行工具，必须填写实际版本、完整源码提交、哈希和字节数；示例对应本次已验证文件：
+
+```sh
+P=/home/ubuntu/codex_project/workspace_own/family-learning-hub
+sudo python3 "$P/runtime/tools/publish-apk.py" \
+  --source "$P/artifacts/android/20261001-2950f3c/family-learning-0.1.0-debug.apk" \
+  --version 0.1.0 --channel debug \
+  --commit 2950f3c0e0dcf3f2f2e3a43a0ab906c754608184 \
+  --sha256 709b6d0e3f917677ed4a25dca49515802c3696ceacc54d68750103b4a7aa49a6 \
+  --bytes 8279164 \
+  --notes '开发验证包；尚未完成真机拍照验收，腾讯云移动后台尚未启用。'
+```
+
+固定版本文件禁止覆盖为不同内容；重新构建产生不同二进制时应使用新版本或新提交。工具备份配置，更新路由，校验 Nginx 后平滑重载；等待新配置生效，再完整下载固定地址和 latest 地址核对大小/哈希，检查 Range、公开元数据和私有路径拒绝访问。TLS 使用系统信任链，不关闭证书校验。失败会恢复配置和 latest 指向，保留不可变文件供排查。
+
+发布后还需从服务器之外完整下载复核，并在交付消息中给出地址、版本和实际验收边界。网站发布时必须保留 `config/nginx/family-learning-location.conf` 中的下载 snippet include，不能直接用较旧 Git 模板覆盖。
+
+## 移动后台上线差项
+
+2026-10-01 核实：生产运行版本仍为 `20261001T023232Z-private-sync-f44496e`；服务器源码工作区 HEAD 为 `58b3ee3`。公网移动 session 路径返回 404；`family-learning-worker.service` 尚未安装，`FAMILY_MOBILE_ORIGINS` 尚未配置。整合源码和 APK 已归档、第一阶段移动接口和独立 worker 已完成开发及隔离测试，本轮只发布 APK 下载。
+
+上线前仍须按顺序完成：
+
+1. 安排短暂停写，停止相关写入进程，备份数据库、扫描原件和私有配置，记录哈希；在独立目录验证恢复，关闭真实 AI。
+2. 从已验证整合提交构建 Linux 运行版本，核对正式数据目录、服务用户、worker 单元与日志权限；配置精确移动来源（安卓为 `https://localhost`），不要照搬开发来源。
+3. 单独决定模型任务的启用边界。现有代码会依据 AI 配置启用识别能力，不能仅因已有密钥就启动真实识别 worker；本轮没有增加开关或启用真实模型。
+4. 部署并验证家庭初始化、移动登录、不同家庭隔离、原件上传/读取、人工框选与步骤复核，再用真机验收相机和完整流程。保留已有网页首次家庭设置流程；APK 没有开放注册入口。
+5. 回退同时恢复对应数据库和文件快照，不能只切换旧代码：新版本导入后以 SQLite 中的扫描文档/版本为准，旧 `record.json` 只是兼容投影。回退前另存上线后新增数据，避免丢失。
+
+这些步骤尚未在生产执行；真实模型效果、诊断、变式练习及掌握度报告不属于本次 APK 发布验收。
