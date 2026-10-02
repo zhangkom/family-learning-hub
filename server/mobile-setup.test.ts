@@ -1,3 +1,4 @@
+import { CLOUD_PHOTO_CAPABILITY } from '../lib/cloud-photos';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createHash } from 'node:crypto';
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
@@ -59,6 +60,7 @@ describe('first-family setup from Android', () => {
       needsSetup: true,
       registrationEnabled: false,
       processedPhotoMetadataVersion: 1,
+      cloudPhotos: CLOUD_PHOTO_CAPABILITY,
     });
     vi.stubEnv('FAMILY_DATA_DIR', '');
     const disabled = await handleMobile(request('setup'), ['setup']);
@@ -110,6 +112,7 @@ describe('first-family setup from Android', () => {
       needsSetup: false,
       registrationEnabled: false,
       processedPhotoMetadataVersion: 1,
+      cloudPhotos: CLOUD_PHOTO_CAPABILITY,
     });
     expect((await mobile('session/setup', details('another'))).status).toBe(
       409,

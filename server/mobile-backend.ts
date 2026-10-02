@@ -31,6 +31,8 @@ import { recognitionEnabled } from './model-gateway';
 import { enqueueRecognition, enqueueExplanation } from './scan-jobs';
 import { setWrongBook, wrongBookItems } from './question-learning';
 import { candidateRegions } from './candidate-regions';
+import { CLOUD_PHOTO_CAPABILITY } from '../lib/cloud-photos';
+import { cloudPhotoResponse } from './cloud-photos';
 
 const hash = (s: string) => createHash('sha256').update(s).digest('hex');
 const codes: Record<number, string> = {
@@ -159,6 +161,8 @@ async function dispatch(
   user: FamilyUser,
 ) {
   const method = request.method;
+  if (['cloud-photos', 'cloud-photo-batches'].includes(parts[0]))
+    return cloudPhotoResponse(request, parts, store, user.id);
   if (parts.length === 1 && parts[0] === 'wrong-book') {
     if (method !== 'GET') throw new HttpError(405, '请求方式不支持');
     return json({
@@ -335,6 +339,7 @@ async function handle(
         needsSetup: familyNeedsSetup(store),
         registrationEnabled: registrationEnabled(),
         processedPhotoMetadataVersion: 1,
+        cloudPhotos: CLOUD_PHOTO_CAPABILITY,
       });
     } else if (!web && parts.join('/') === 'session/register') {
       if (request.method !== 'POST') throw new HttpError(405, '请求方式不支持');

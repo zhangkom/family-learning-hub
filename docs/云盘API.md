@@ -35,8 +35,14 @@ CloudPhoto 字段：`id,batchId,studentId,clientRequestId,originalName,mimeType,
 
 家庭云盘上限2GiB，全服务云盘上限8GiB，磁盘保留至少2GiB并为新原件的首次备份留空间。并发接收有限，服务忙或限流时保留同一上传ID退避重试；停止不再启动后续项，已在途请求可能成功，恢复时应幂等核对。
 
+每个 Web 进程同时只接收一个上传；额外上传立即503，不在内存排队。图片验证、缩略图和候选题框共用一个图片子进程名额，子进程关闭后才释放。缩略图最多排队32项、等待30秒，上传验证优先；单图检查12秒超时，上传接收120秒超时。每家庭每小时最多600次上传尝试、60个新批次。
+
 错误沿用 `{error,code}`：400 `INVALID_INPUT`；401 `UNAUTHENTICATED`；404 `NOT_FOUND`；413 `TOO_LARGE`；409 `BATCH_LIMIT_REACHED` / `IDEMPOTENCY_CONFLICT`；429 `RATE_LIMITED`；503 `UPLOAD_BUSY` / `STORAGE_LOW`；507 `STORAGE_QUOTA`。
 
 原件位于工程 `data/<sha256(accountId)>/cloud-photos/<photoId>/original`，独立 immutable record.json 保存回执字段。分类只修改或查询元数据，不移动原件；本版不提供删除/移动。缩略图为可重建内存缓存，不改变原件。新表为附加表，旧后台忽略云盘；回退必须保留 data 与新版云盘备份工具。
+
+备份先取得 SQLite 副本，再按该副本中的云盘回执校验和复制原件、record.json。后续快照对已校验的上一份备份原件使用硬链接节省空间，不与在线原件共享 inode；不支持硬链接时复制。沿用30份快照保留规则。原件缺失或哈希不匹配会使备份失败，不能将不完整快照视为可恢复备份。
+
+正常成功、错误和取消都会清理本次临时上传。进程被强制终止可能遗留 `temp/cloud-photos/<UUID>` 或 `data/<家庭哈希>/cloud-photos/.pending-<UUID>`；运维只可在确认没有相关上传进程后清理这些暂存目录，不能按年龄删除正式 UUID 原件目录。原件目录发布后、数据库提交前的意外退出，可由相同上传ID和相同字节重试恢复回执。
 
 2026-10-02 开发前只读检查：腾讯可用39,156,809,728字节，既有 Nginx `client_max_body_size 9m` 不适合新云盘；正式发布时仅本工程上调为 `33m`，旧 scans 服务端8MiB限制保持不变。云盘采用流式临时文件接收与独立图片子进程，临时文件位于工程 `temp/cloud-photos`，部署时给服务增加该目录的专用可写绑定。此记录不代表将来仍有同样空间；上传及部署分别重查。尚未发布新后台。

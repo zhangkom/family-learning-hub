@@ -1,3 +1,4 @@
+import { CLOUD_PHOTO_CAPABILITY } from '../lib/cloud-photos';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdirSync, mkdtempSync, rmSync, readFileSync } from 'node:fs';
@@ -101,6 +102,7 @@ describe('ordinary mobile family registration', () => {
       needsSetup: true,
       registrationEnabled: true,
       processedPhotoMetadataVersion: 1,
+      cloudPhotos: CLOUD_PHOTO_CAPABILITY,
     });
     vi.stubEnv('FAMILY_REGISTRATION_ENABLED', 'false');
     const closed = await mobile('session/register', credentials());
@@ -166,6 +168,7 @@ describe('ordinary mobile family registration', () => {
       needsSetup: false,
       registrationEnabled: true,
       processedPhotoMetadataVersion: 1,
+      cloudPhotos: CLOUD_PHOTO_CAPABILITY,
     });
     expect((await mobile('session/login', credentials())).status).toBe(200);
     const site = await web('login', credentials());
