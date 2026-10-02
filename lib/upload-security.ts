@@ -29,6 +29,12 @@ export function sanitizeDisplayName(name: string) {
     .slice(0, 120) || '未命名扫描件';
 }
 
+/** Original filenames are display metadata; private storage always uses independent IDs. */
+export function sanitizeOriginalDisplayName(name: string) {
+  return Array.from(name).filter(character => character.charCodeAt(0) > 31 && character.charCodeAt(0) !== 127)
+    .join('').replace(/[\\/]+/g, '-').slice(0, 255) || '未命名图片';
+}
+
 export async function validateScanFile(file: File) {
   if (file.size > MAX_SCAN_BYTES) return { ok: false as const, reason: '文件不能超过 8 MB' };
   if (!(file.type in extensions)) return { ok: false as const, reason: '只支持 JPG、PNG、WebP 或 PDF' };

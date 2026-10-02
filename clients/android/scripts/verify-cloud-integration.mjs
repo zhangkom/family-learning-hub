@@ -5,6 +5,7 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { createServer } from 'vite';
+import { installSyntheticPhotoBridge } from './synthetic-photo-bridge.mjs';
 const config = JSON.parse(await readFile(process.env.FAMILY_DEV_CONNECTION_PATH, 'utf8'));
 assert.equal(config.syntheticOnly, true); assert.equal(config.aiEnabled, false);
 assert.equal(new URL(config.apiBase).hostname, '127.0.0.1');
@@ -72,9 +73,11 @@ try {
   assert.equal(photos.length, 450); assert.equal(new Set(photos.map(photo => photo.id)).size, 450);
   assert.deepEqual([...new Set(photos.map(photo => photo.batchId))].map(id => photos.filter(photo => photo.batchId === id).length).sort((a,b) => b-a), [200, 200, 50]);
   assert.ok(photos.every(photo => photo.studentId === student.id && photo.sha256 === sha256 && photo.size === png.length));
+  assert.deepEqual(photos.map(photo => photo.originalName).sort((a, b) => a.localeCompare(b)), Array.from({ length: 450 }, (_, n) => `原图合成-${n + 1}.png`).sort((a, b) => a.localeCompare(b)));
   const scans = await (await fetch(`${api}/scans?studentId=${student.id}`, { headers })).json(); assert.equal(scans.scans.length, 0);
   await page.locator('.cloud-photo').first().scrollIntoViewIfNeeded(); await page.locator('.cloud-photo').first().locator('img').waitFor();
   const downloaded = page.waitForEvent('download'); await button('下载原图').first().click(); const download = await downloaded;
+  assert.ok(photos.some(photo => photo.originalName === download.suggestedFilename()));
   assert.equal(createHash('sha256').update(await readFile(await download.path())).digest('hex'), sha256);
   const photo = photos[0];
   const thumbnail = await fetch(`${api}/cloud-photos/${photo.id}/thumbnail`, { headers }); assert.equal(thumbnail.status, 200); assert.match(thumbnail.headers.get('content-type'), /image\/jpeg/);
@@ -84,8 +87,34 @@ try {
   await page.setViewportSize({ width: 320, height: 740 }); assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
   await page.screenshot({ path: path.join(out, 'cloud-real-api-320.png') });
   assert.equal(modelCalls, 0); assert.equal(external, 0); assert.deepEqual(errors, []);
+  const nativeContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  await nativeContext.addInitScript(installSyntheticPhotoBridge, { api, initialToken: login.token, initialUserId: login.user.id });
+  const nativePage = await nativeContext.newPage(); nativePage.setDefaultTimeout(30000); nativePage.on('pageerror', e => errors.push(e.message));
+  const nativeReceipts = [];
+  await nativePage.route('**/*', async route => {
+    const request = route.request(), url = new URL(request.url());
+    if (url.href.endsWith('/downloads/android/latest.json')) return route.fulfill({ status: 503, body: '{}' });
+    if (![origin, new URL(api).origin].includes(url.origin)) { external++; return route.abort(); }
+    if (request.url() === api + '/cloud-photos' && request.method() === 'POST') {
+      const response = await route.fetch(); assert.equal(response.status(), 201); nativeReceipts.push((await response.json()).photo); return route.fulfill({ response });
+    }
+    return route.continue();
+  });
+  await nativePage.goto(origin); await nativePage.getByLabel('当前学生').selectOption(student.id);
+  await nativePage.getByRole('button', { name: /^批量上传图片/ }).click();
+  await nativePage.getByRole('button', { name: '按文件夹选范围 / 全选', exact: true }).click();
+  await nativePage.waitForFunction(() => document.querySelectorAll('.cloud-job').length === 2);
+  const names = await nativePage.locator('.cloud-job strong').allTextContents();
+  assert.equal(await nativePage.evaluate(() => JSON.parse(localStorage.getItem('host-test:lastPicker')).folderRange), true);
+  assert.ok(names.every(name => name.startsWith('IMG_') && name.endsWith('.png')));
+  await nativePage.reload(); await nativePage.getByLabel('当前学生').waitFor(); await nativePage.getByRole('button', { name: /^批量上传图片/ }).click();
+  await nativePage.getByRole('button', { name: '开始上传', exact: true }).click();
+  await nativePage.waitForFunction(() => document.querySelectorAll('.cloud-job-completed').length === 2);
+  assert.deepEqual(nativeReceipts.map(photo => photo.originalName).sort((a, b) => a.localeCompare(b)), [...names].sort((a, b) => a.localeCompare(b)));
+  await nativePage.screenshot({ path: path.join(out, 'native-original-names.png') });
+  await nativeContext.close(); assert.equal(external, 0); assert.deepEqual(errors, []);
   const result = { checkedAt: new Date().toISOString(), syntheticOnly: true, realLocalBackend: true, nativeDeviceTested: false, count: photos.length, uploadAttempts: attempts,
-    batchSizes: uniqueBatches.map(batch => batch.expectedCount), originalHashVerified: true, downloadHashVerified: true, durableQueueRecovery: true, lostReceiptRecoveredWithoutDuplicate: true, noScansCreated: true, modelCalls, external, errors };
+    batchSizes: uniqueBatches.map(batch => batch.expectedCount), originalNamesPreserved: true, nativeNamesSurviveRestartAndUpload: true, nativeFolderModeWired: true, nativeFolderDialogTested: false, originalHashVerified: true, downloadHashVerified: true, durableQueueRecovery: true, lostReceiptRecoveredWithoutDuplicate: true, noScansCreated: true, modelCalls, external, errors };
   await writeFile(path.join(out, 'cloud-real-api-result.json'), JSON.stringify(result, null, 2)); console.log(JSON.stringify(result));
 } catch (error) { await page.screenshot({ path: path.join(out, 'cloud-real-api-failure.png') }); console.error((await page.locator('body').innerText()).slice(0, 1800)); throw error; }
 finally { await browser.close(); await server.close(); }

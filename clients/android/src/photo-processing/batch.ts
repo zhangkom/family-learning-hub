@@ -2,8 +2,8 @@ import { photoPlugin } from './native-plugin';
 import { getOriginal, photoProcessingAvailable, validateOriginal, type OriginalPhoto } from './index';
 
 export type PhotoBatchPurpose = 'processed' | 'cloud-original';
-// A native cloud batch stores a picker selection. The upload queue splits it into 200-item server batches.
-const batchLimit = (value: PhotoBatchPurpose) => value === 'cloud-original' ? 2147483647 : 100;
+// Picker selections are metadata. Upload grouping does not cap the number selected.
+const batchLimit = () => 2147483647;
 export type NativePhotoBatch = {
   schemaVersion: 1; batchId: string; studentId: string; purpose: PhotoBatchPurpose;
   state: 'selecting' | 'ready' | 'completed' | 'cancelled'; limit: number; createdAt: number;
@@ -14,12 +14,12 @@ export type OriginalBatchResult = {
   failures: { index: number; originalId: string; message: string }[]; cancelled: boolean;
 };
 export type OriginalBatchOptions = {
-  purpose?: PhotoBatchPurpose; signal?: AbortSignal; onProgress?: (batch: NativePhotoBatch) => void;
+  purpose?: PhotoBatchPurpose; folderRange?: boolean; signal?: AbortSignal; onProgress?: (batch: NativePhotoBatch) => void;
 };
 type Scope = { owner: string; studentId: string };
 type BatchScope = Scope & { batchId: string };
 interface NativeBatches {
-  pickOriginalBatch(input: Scope & { limit: number; purpose: PhotoBatchPurpose }): Promise<NativePhotoBatch>;
+  pickOriginalBatch(input: Scope & { limit: number; purpose: PhotoBatchPurpose; folderRange?: boolean }): Promise<NativePhotoBatch>;
   getOriginalBatch(input: BatchScope): Promise<NativePhotoBatch>;
   listOriginalBatches(input: Scope & { purpose?: PhotoBatchPurpose }): Promise<{ batches: NativePhotoBatch[] }>;
   importBatchItem(input: BatchScope & { index: number }): Promise<{ batch: NativePhotoBatch; original?: OriginalPhoto }>;
@@ -40,7 +40,7 @@ export function validatePhotoBatch(batch: NativePhotoBatch, studentId: string, b
   if (!batch || batch.schemaVersion !== 1 || !uuid.test(batch.batchId) || (batchId !== undefined && batch.batchId !== batchId) ||
     batch.studentId !== studentId || !['processed', 'cloud-original'].includes(batch.purpose) ||
     !['selecting', 'ready', 'completed', 'cancelled'].includes(batch.state) ||
-    !Number.isInteger(batch.limit) || batch.limit < 1 || batch.limit > batchLimit(batch.purpose) || !Number.isFinite(batch.createdAt) || batch.createdAt <= 0 ||
+    !Number.isInteger(batch.limit) || batch.limit < 1 || batch.limit > batchLimit() || !Number.isFinite(batch.createdAt) || batch.createdAt <= 0 ||
     !Array.isArray(batch.items) || batch.items.length > batch.limit ||
     batch.items.some((item, index) => item.index !== index || !uuid.test(item.originalId) || !['pending', 'imported', 'failed'].includes(item.status)) ||
     new Set(batch.items.map(item => item.originalId)).size !== batch.items.length ||
@@ -48,11 +48,11 @@ export function validatePhotoBatch(batch: NativePhotoBatch, studentId: string, b
     throw new Error('照片批次记录或学生归属无效');
   return batch;
 }
-export async function pickOriginalBatch(owner: string, studentId: string, limit = 100, batchPurpose: PhotoBatchPurpose = 'processed') {
+export async function pickOriginalBatch(owner: string, studentId: string, limit = 200, batchPurpose: PhotoBatchPurpose = 'processed', folderRange = false) {
   scope(owner, studentId); purpose(batchPurpose);
-  if (!Number.isInteger(limit) || limit < 1 || limit > batchLimit(batchPurpose)) throw new Error(`每批最多选择 ${batchLimit(batchPurpose)} 张照片`);
-  const batch = validatePhotoBatch(await native.pickOriginalBatch({ owner, studentId, limit, purpose: batchPurpose }), studentId);
-  if (batch.purpose !== batchPurpose || (batchPurpose === 'cloud-original' ? batch.limit < limit : batch.limit !== limit)) throw new Error('相册选择与请求的批次不匹配');
+  if (!Number.isInteger(limit) || limit < 1 || limit > batchLimit()) throw new Error('照片分组参数无效');
+  const batch = validatePhotoBatch(await native.pickOriginalBatch({ owner, studentId, limit, purpose: batchPurpose, ...(folderRange ? { folderRange: true } : {}) }), studentId);
+  if (batch.purpose !== batchPurpose || batch.limit < limit) throw new Error('相册选择与请求的批次不匹配');
   return batch;
 }
 export async function getOriginalBatch(owner: string, studentId: string, batchId: string) {
@@ -124,8 +124,8 @@ export async function resumeOriginalBatch(owner: string, studentId: string, batc
   }
   return result;
 }
-export async function pickOriginals(owner: string, studentId: string, limit = 100, options: OriginalBatchOptions = {}): Promise<OriginalBatchResult> {
+export async function pickOriginals(owner: string, studentId: string, limit = 200, options: OriginalBatchOptions = {}): Promise<OriginalBatchResult> {
   options.signal?.throwIfAborted();
-  const batch = await pickOriginalBatch(owner, studentId, limit, options.purpose);
+  const batch = await pickOriginalBatch(owner, studentId, limit, options.purpose, options.folderRange);
   return resumeOriginalBatch(owner, studentId, batch.batchId, options);
 }

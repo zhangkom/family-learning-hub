@@ -7,7 +7,7 @@ const bridge = vi.hoisted(() => ({ pickOriginals: vi.fn(), readCloudOriginalUplo
 vi.mock('@capacitor/core', () => ({ Capacitor: { getPlatform: () => 'android' } }));
 vi.mock('../photo-processing', () => bridge);
 const scope = { owner: 'family-a', studentId: 'student-a' }, signal = new AbortController().signal;
-const original = { originalId: '11111111-1111-4111-8111-111111111111', studentId: scope.studentId, bytes: 12, mime: 'image/png', sha256: 'a'.repeat(64) } as OriginalPhoto;
+const original = { originalId: '11111111-1111-4111-8111-111111111111', originalName: 'IMG_20261002 作业.PNG', studentId: scope.studentId, bytes: 12, mime: 'image/png', sha256: 'a'.repeat(64) } as OriginalPhoto;
 const api = new FamilyApi('https://123.207.232.151/family-learning/api/mobile/v1', 'synthetic-only');
 const photo = { id: '22222222-2222-4222-8222-222222222222', originalName: '合成.png', mimeType: 'image/png', size: 12, sha256: 'a'.repeat(64) } as CloudPhoto;
 beforeEach(() => { for (const mock of Object.values(bridge)) mock.mockReset(); });
@@ -17,7 +17,15 @@ describe('native cloud adapter contract', () => {
     const result = await createDriveServices(api).pick!(scope, 100, signal);
     expect(bridge.pickOriginals).toHaveBeenCalledWith(scope.owner, scope.studentId, 100, { purpose: 'cloud-original', signal });
     expect(result.items[0].source.kind).toBe('native'); expect(result.items[0].id).toBe(original.originalId); expect(bridge.readCloudOriginalUpload).not.toHaveBeenCalled(); expect(bridge.forgetOriginalBatch).not.toHaveBeenCalled();
+    expect(result.items[0].name).toBe(original.originalName);
     await result.acknowledge!(); expect(bridge.forgetOriginalBatch).toHaveBeenCalledWith(scope.owner, scope.studentId, 'batch-a');
+  });
+  it('uses explicit folder range mode and keeps distinct IDs with the same original filename', async () => {
+    bridge.pickOriginals.mockResolvedValue({ batchId: 'range', originals: [original, { ...original, originalId: '22222222-2222-4222-8222-222222222222' }], failures: [], cancelled: false });
+    const result = await createDriveServices(api).pick!(scope, 200, signal, true);
+    expect(bridge.pickOriginals).toHaveBeenCalledWith(scope.owner, scope.studentId, 200, { purpose: 'cloud-original', folderRange: true, signal });
+    expect(result.items.map(item => item.name)).toEqual([original.originalName, original.originalName]);
+    expect(result.items[0].id).not.toBe(result.items[1].id);
   });
   it('recovers completed batches and preserves stable original IDs', async () => {
     bridge.listOriginalBatches.mockResolvedValue({ batches: [{ batchId: 'complete', studentId: scope.studentId, purpose: 'cloud-original', state: 'completed', createdAt: 1 }] });

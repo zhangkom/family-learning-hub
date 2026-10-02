@@ -11,6 +11,15 @@ import android.app.Activity;
 import android.content.Intent;
 import android.content.ClipData;
 import android.provider.DocumentsContract;
+import android.provider.OpenableColumns;
+import android.database.Cursor;
+import android.app.AlertDialog;
+import android.widget.ArrayAdapter;
+import android.widget.AdapterView;
+import android.widget.LinearLayout;
+import android.widget.Spinner;
+import android.widget.TextView;
+import android.view.View;
 import androidx.activity.result.ActivityResult;
 import androidx.exifinterface.media.ExifInterface;
 import com.getcapacitor.JSArray;
@@ -96,6 +105,8 @@ public class PhotoProcessingPlugin extends Plugin {
                 JSObject meta = new JSObject();
                 meta.put("schemaVersion",1); meta.put("originalId",id); meta.put("createdAt",System.currentTimeMillis());
                 meta.put("studentId",studentId);
+                String originalName=sourceName(input);
+                if(!originalName.isEmpty())meta.put("originalName",originalName);
                 meta.put("sha256",digest(original)); meta.put("bytes",original.length()); meta.put("mime",dimensions.outMimeType);
                 meta.put("width",dimensions.outWidth); meta.put("height",dimensions.outHeight); meta.put("orientation",orientation);
                 meta.put("uprightWidth",orientation>=5?dimensions.outHeight:dimensions.outWidth);
@@ -119,19 +130,96 @@ public class PhotoProcessingPlugin extends Plugin {
         worker.execute(() -> {
             try {
                 String purpose=call.getString("purpose","processed");
-                PhotoBatchStore b=PhotoBatchStore.create(ownerRoot(call),call.getString("studentId"),purpose,integer(call,"limit",100,1,PhotoBatchStore.maxItems(purpose)));
+                File root=ownerRoot(call);String student=call.getString("studentId");PhotoBatchStore.checkStudent(student);
+                // A new explicit picker replaces only an unfinished selection, never imported/pending photos.
+                for(PhotoBatchStore pending:PhotoBatchStore.list(root))if(pending.studentId.equals(student)&&pending.purpose.equals(purpose)&&pending.state.equals("selecting")) {pending.cancel();releaseUnusedGrant(pending.treeUri);}
+                PhotoBatchStore b=PhotoBatchStore.create(root,student,purpose,integer(call,"limit",200,1,PhotoBatchStore.maxItems(purpose)));
                 // Capacitor serializes these non-sensitive identifiers for an activity/process restore.
                 call.getData().put("batchId",b.id);
-                Intent intent=new Intent(Intent.ACTION_OPEN_DOCUMENT);
-                intent.addCategory(Intent.CATEGORY_OPENABLE);intent.setType("image/*");
-                intent.putExtra(Intent.EXTRA_MIME_TYPES,new String[]{"image/jpeg","image/png","image/webp"});
-                intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE,b.limit>1);
+                boolean folder=Boolean.TRUE.equals(call.getBoolean("folderRange"));
+                Intent intent=new Intent(folder?Intent.ACTION_OPEN_DOCUMENT_TREE:Intent.ACTION_OPEN_DOCUMENT);
+                if(!folder) {
+                    intent.addCategory(Intent.CATEGORY_OPENABLE);intent.setType("image/*");
+                    intent.putExtra(Intent.EXTRA_MIME_TYPES,new String[]{"image/jpeg","image/png","image/webp"});
+                    intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE,true);
+                }
                 intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
                 getActivity().runOnUiThread(() -> {
-                    try {startActivityForResult(call,intent,"originalBatchSelected");}
+                    try {startActivityForResult(call,intent,folder?"originalFolderSelected":"originalBatchSelected");}
                     catch(Exception e) {busy.set(false);call.reject("无法打开系统相册，请稍后重试","PHOTO_PICKER");}
                 });
             } catch(Exception e) {busy.set(false);call.reject("无法建立相册批次，请检查选择数量与本机空间","PHOTO_INVALID");}
+        });
+    }
+    @ActivityCallback private void originalFolderSelected(PluginCall call,ActivityResult result) {
+        busy.set(false);if(call==null)return;
+        Uri tree=result.getData()==null?null:result.getData().getData();
+        if(result.getResultCode()!=Activity.RESULT_OK||tree==null) {run(call,()-> {PhotoBatchStore b=batch(call);b.cancel();return batchResult(b);});return;}
+        if(!busy.compareAndSet(false,true)){call.reject("正在处理另一张照片，请稍候","PHOTO_BUSY");return;}
+        worker.execute(()-> {
+            try {
+                PhotoBatchStore b=batch(call);
+                if(b.state.equals("cancelled")){busy.set(false);call.resolve(batchResult(b));return;}
+                if(!"content".equals(tree.getScheme()))throw new IOException("invalid folder");
+                getContext().getContentResolver().takePersistableUriPermission(tree,Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                b.treeUri=tree.toString();b.save();
+                Uri children=DocumentsContract.buildChildDocumentsUriUsingTree(tree,DocumentsContract.getTreeDocumentId(tree));
+                List<PhotoSelection.Entry> found=new ArrayList<>();
+                String[] columns={DocumentsContract.Document.COLUMN_DOCUMENT_ID,DocumentsContract.Document.COLUMN_DISPLAY_NAME,DocumentsContract.Document.COLUMN_MIME_TYPE,DocumentsContract.Document.COLUMN_FLAGS};
+                try(Cursor cursor=getContext().getContentResolver().query(children,columns,null,null,null)) {
+                    if(cursor==null)throw new IOException("folder unavailable");
+                    while(cursor.moveToNext()) {
+                        String mime=cursor.getString(2);int flags=cursor.isNull(3)?0:cursor.getInt(3);
+                        if(!Arrays.asList("image/jpeg","image/png","image/webp").contains(mime)||(flags&DocumentsContract.Document.FLAG_VIRTUAL_DOCUMENT)!=0)continue;
+                        String uri=DocumentsContract.buildDocumentUriUsingTree(tree,cursor.getString(0)).toString();
+                        found.add(new PhotoSelection.Entry(uri,PhotoSelection.name(cursor.getString(1))));
+                    }
+                }
+                List<PhotoSelection.Entry> entries=PhotoSelection.sorted(found);
+                if(entries.isEmpty())throw new IllegalArgumentException("此文件夹中没有 JPEG、PNG 或 WebP 图片，请选择存放照片的文件夹（不包含子文件夹）");
+                getActivity().runOnUiThread(()-> {
+                    try {showFolderRange(call,b,entries);}
+                    catch(Exception e) {finishFolderRange(call,b,entries,-1,-1,"无法显示范围选择，请重新选择文件夹");}
+                });
+            } catch(Exception e) {
+                try {PhotoBatchStore b=batch(call);b.cancel();releaseUnusedGrant(tree.toString());}catch(Exception ignored){}
+                busy.set(false);call.reject(e instanceof IllegalArgumentException?e.getMessage():"无法读取所选文件夹，请选择照片文件夹后重试","PHOTO_FOLDER");
+            }
+        });
+    }
+    private void showFolderRange(PluginCall call,PhotoBatchStore batch,List<PhotoSelection.Entry> entries) {
+        LinearLayout layout=new LinearLayout(getActivity());layout.setOrientation(LinearLayout.VERTICAL);
+        int padding=(int)(20*getContext().getResources().getDisplayMetrics().density);layout.setPadding(padding,padding,padding,padding);
+        TextView help=new TextView(getActivity());help.setText("按文件名升序排列，共 "+entries.size()+" 张。包含起始和结束图片，只选当前文件夹，不包含子文件夹。");layout.addView(help);
+        List<String> labels=new ArrayList<>();for(int n=0;n<entries.size();n++)labels.add((n+1)+". "+entries.get(n).name);
+        ArrayAdapter<String> adapter=new ArrayAdapter<>(getActivity(),android.R.layout.simple_spinner_item,labels);adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        TextView fromLabel=new TextView(getActivity());fromLabel.setText("起始图片");layout.addView(fromLabel);
+        Spinner from=new Spinner(getActivity(),Spinner.MODE_DIALOG);from.setPrompt("选择起始图片");from.setAdapter(adapter);layout.addView(from);
+        TextView toLabel=new TextView(getActivity());toLabel.setText("结束图片");layout.addView(toLabel);
+        Spinner to=new Spinner(getActivity(),Spinner.MODE_DIALOG);to.setPrompt("选择结束图片");to.setAdapter(adapter);to.setSelection(entries.size()-1);layout.addView(to);
+        TextView count=new TextView(getActivity());layout.addView(count);
+        AlertDialog dialog=new AlertDialog.Builder(getActivity()).setTitle("按范围选择图片").setView(layout)
+            .setNegativeButton("取消",(d,w)->finishFolderRange(call,batch,entries,-1,-1,null))
+            .setNeutralButton("全选",null).setPositiveButton("确认范围",null).create();
+        dialog.setOnCancelListener(d->finishFolderRange(call,batch,entries,-1,-1,null));
+        dialog.setOnShowListener(d->{
+            Runnable update=()-> {int first=from.getSelectedItemPosition(),last=to.getSelectedItemPosition();count.setText(last<first?"结束图片不能在起始图片之前":"已选 "+(last-first+1)+" 张");dialog.getButton(AlertDialog.BUTTON_POSITIVE).setEnabled(last>=first);};
+            AdapterView.OnItemSelectedListener change=new AdapterView.OnItemSelectedListener(){public void onItemSelected(AdapterView<?> p,View v,int position,long id){update.run();}public void onNothingSelected(AdapterView<?> p){update.run();}};
+            from.setOnItemSelectedListener(change);to.setOnItemSelectedListener(change);update.run();
+            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(v->{from.setSelection(0);to.setSelection(entries.size()-1);update.run();});
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{int first=from.getSelectedItemPosition(),last=to.getSelectedItemPosition();if(last<first)return;dialog.dismiss();finishFolderRange(call,batch,entries,first,last,null);});
+        });dialog.show();
+    }
+    private void finishFolderRange(PluginCall call,PhotoBatchStore b,List<PhotoSelection.Entry> entries,int first,int last,String failure) {
+        worker.execute(()-> {
+            JSObject response=null;Exception error=null;
+            try {
+                if(first<0) {b.cancel();releaseUnusedGrant(b.treeUri);}else b.select(PhotoSelection.range(entries,first,last));
+                response=batchResult(b);
+            } catch(Exception e) {error=e;}
+            finally {busy.set(false);}
+            if(error!=null)call.reject("范围选择未保存，请从上次选图中恢复或重新选择","PHOTO_FOLDER");
+            else if(failure!=null)call.reject(failure,"PHOTO_FOLDER");else call.resolve(response);
         });
     }
     @ActivityCallback private void originalBatchSelected(PluginCall call,ActivityResult result) {
@@ -186,13 +274,13 @@ public class PhotoProcessingPlugin extends Plugin {
             catch(IllegalArgumentException e) {b.failed(index,e.getMessage());}
             catch(OutOfMemoryError e) {b.failed(index,"手机可用内存不足，可关闭其他应用后单张重试");}
             catch(Exception e) {b.failed(index,"照片未导入，可重试；若来源文件已移动或失去权限，请重新选择");}
-            if(original!=null)releaseUnusedGrant(uri);
+            if(original!=null)releaseUnusedGrant(b.treeUri.isEmpty()?uri:b.treeUri);
             JSObject result=new JSObject();result.put("batch",batchResult(b));if(original!=null)result.put("original",original);return result;
         });
     }
     @PluginMethod public void cancelOriginalBatch(PluginCall call) {
         run(call,()-> {PhotoBatchStore b=batch(call);List<String> uris=new ArrayList<>();for(PhotoBatchStore.Item i:b.items)uris.add(i.uri);
-            b.cancel();for(String uri:uris)releaseUnusedGrant(uri);return batchResult(b);});
+            b.cancel();for(String uri:uris)releaseUnusedGrant(uri);releaseUnusedGrant(b.treeUri);return batchResult(b);});
     }
     @PluginMethod public void forgetOriginalBatch(PluginCall call) {
         run(call,()-> {PhotoBatchStore b=batch(call);
@@ -205,7 +293,10 @@ public class PhotoProcessingPlugin extends Plugin {
             File roots=new File(getContext().getFilesDir(),"photo-originals-v1");File[] owners=roots.listFiles(File::isDirectory);
             if(owners==null)return;
             // An identical source URI may still belong to another pending batch/account.
-            for(File root:owners)for(PhotoBatchStore b:PhotoBatchStore.list(root))for(PhotoBatchStore.Item item:b.items)if(uri.equals(item.uri))return;
+            for(File root:owners)for(PhotoBatchStore b:PhotoBatchStore.list(root)) {
+                if(uri.equals(b.treeUri)&&!b.state.equals("completed")&&!b.state.equals("cancelled"))return;
+                for(PhotoBatchStore.Item item:b.items)if(uri.equals(item.uri)||(!item.uri.isEmpty()&&item.uri.startsWith(uri+"/")))return;
+            }
             getContext().getContentResolver().releasePersistableUriPermission(Uri.parse(uri),Intent.FLAG_GRANT_READ_URI_PERMISSION);
         } catch(Exception ignored) { /* Never delete an original or revoke a shared grant when uncertain. */ }
     }
@@ -460,6 +551,16 @@ public class PhotoProcessingPlugin extends Plugin {
             return new FileInputStream(f);
         }
         throw new IllegalArgumentException("只接受本机照片，请传入相机返回的 uri");
+    }
+    private String sourceName(String input) {
+        Uri uri=Uri.parse(input);
+        if("content".equals(uri.getScheme())) {
+            try(Cursor cursor=getContext().getContentResolver().query(uri,new String[]{OpenableColumns.DISPLAY_NAME},null,null,null)) {
+                if(cursor!=null&&cursor.moveToFirst())return PhotoSelection.name(cursor.getString(0));
+            }catch(Exception ignored){ /* Some providers do not supply a filename. */ }
+            return "";
+        }
+        return uri.getPath()==null?"":PhotoSelection.name(new File(uri.getPath()).getName());
     }
     private File ownerRoot(PluginCall call) throws Exception {
         String owner=call.getString("owner");

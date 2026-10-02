@@ -77,14 +77,14 @@ export function HomeView(props: Props) {
           <div className="home-capture-heading"><span className="eyebrow">错题 · 难题 · 手写过程</span><h1>收下每一次思考</h1></div>
           <div className="home-capture-actions">
             <button type="button" className="capture-primary" disabled={busy || !!uploading || !student} onClick={() => props.onCapture('camera')}>
-              <Camera size={26} /><span><strong>拍照收题</strong><small>连续拍摄 · 最多 100 张</small></span>
+              <Camera size={26} /><span><strong>拍照收题</strong><small>连续拍摄 · 随时添加</small></span>
             </button>
             <button type="button" className="capture-secondary" disabled={busy || !!uploading || !student} onClick={() => props.onCapture('gallery')}>
-              <ImagePlus size={23} /><span><strong>相册选图</strong><small>多选导入 · 最多 100 张</small></span>
+              <ImagePlus size={23} /><span><strong>相册选图</strong><small>多选导入 · 随时添加</small></span>
             </button>
           </div>
           {props.onOpenCloud && <button className="cloud-drive-entry" disabled={busy || !!uploading || !student} onClick={props.onOpenCloud}>
-            <span><strong>批量上传图片</strong><small>图片云盘 · 原图保存 · 最多 100 张</small></span><ChevronRight size={20} /></button>}
+            <span><strong>批量上传图片</strong><small>图片云盘 · 保留原文件名</small></span><ChevronRight size={20} /></button>}
         </section>
         <FeatureCatalog compact onSelect={(name) => {
           if (name === '错题本') { props.onLibraryMode('wrong'); navigate('library'); }
@@ -156,7 +156,7 @@ export function HomeView(props: Props) {
         </section>
         <PermissionInfo />
         <section className="profile-card"><h2>账号设置</h2><div className="button-row"><button disabled={busy || !!uploading} onClick={() => setAccountChange('username')}>修改用户名</button><button disabled={busy || !!uploading} onClick={() => setAccountChange('password')}>修改密码</button></div></section>
-        <section className="profile-card profile-storage"><h2>资料与功能</h2><p>拍题支持每批 100 张，处理后上传确认的图片，原片留在手机。“图片云盘”可将选中的手机原图完整复制到家庭服务器，按当前孩子保存，不自动识别。</p><p className="hint">卸载应用或清除应用数据会删除本机原片和待提交照片；已上传成功的云盘照片仍保留在服务器。框题选科后可存错题本并请求 AI 讲解，分析结果需核对。</p></section>
+        <section className="profile-card profile-storage"><h2>资料与功能</h2><p>拍题支持多选和连续添加，处理后上传确认的图片，原片留在手机。“图片云盘”可将选中的手机原图完整复制到家庭服务器，按当前孩子保存，不自动识别。</p><p className="hint">卸载应用或清除应用数据会删除本机原片和待提交照片；已上传成功的云盘照片仍保留在服务器。框题选科后可存错题本并请求 AI 讲解，分析结果需核对。</p></section>
         {props.children}
       </div>}
     </main>

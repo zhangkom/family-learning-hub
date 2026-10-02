@@ -1,5 +1,7 @@
 import { Capacitor } from '@capacitor/core';
 import { photoPlugin } from './native-plugin';
+import { originalPhotoName } from './original-name';
+export { originalPhotoName } from './original-name';
 import { validateMatrix, validateQuad, type Quad, type Matrix3 } from './geometry';
 export { fullPage, mapPoint, mapQuestionToOriginal, pointerToImage } from './geometry';
 export type { Quad, Matrix3 } from './geometry';
@@ -8,7 +10,7 @@ export type OriginalPhoto = {
   schemaVersion: 1; originalId: string; studentId: string; sha256: string; bytes: number;
   mime: 'image/jpeg' | 'image/png' | 'image/webp';
   width: number; height: number; orientation: number; uprightWidth: number; uprightHeight: number;
-  originalUri: string; previewUri: string; createdAt: number;
+  originalUri: string; previewUri: string; createdAt: number; originalName?: string;
 };
 export type ProcessOptions = {
   /** EXIF-upright source coordinates; NEVER coordinates from the rotated result preview. */
@@ -58,6 +60,7 @@ export function validateOriginal(photo: OriginalPhoto) {
     !['image/jpeg', 'image/png', 'image/webp'].includes(photo.mime) ||
     !Number.isInteger(photo.orientation) || photo.orientation < 1 || photo.orientation > 8 ||
     !Number.isFinite(photo.createdAt) || photo.createdAt <= 0 ||
+    (photo.originalName !== undefined && (typeof photo.originalName !== 'string' || !photo.originalName || photo.originalName.length > 1024 || Array.from(photo.originalName).some(c => c === '/' || c === '\\' || c.charCodeAt(0) < 32 || c.charCodeAt(0) === 127))) ||
     ![photo.width, photo.height, photo.uprightWidth, photo.uprightHeight].every((v) => Number.isInteger(v) && v > 0 && v <= 50000))
     throw new Error('本机原片记录无效');
   localFile(photo.originalUri); localFile(photo.previewUri);
@@ -155,8 +158,7 @@ export async function readOriginalUpload(owner: string, original: OriginalPhoto,
   const current = await getOriginal(owner, original.originalId);
   if (current.sha256 !== original.sha256 || current.studentId !== original.studentId) throw new Error('原片归属或内容已变化');
   const file = await readVerifiedFile(current.originalUri, current.bytes, current.sha256, current.mime, signal);
-  const extension = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' }[current.mime];
-  return { file, name: `原片-${current.originalId}.${extension}`, originalId: current.originalId,
+  return { file, name: originalPhotoName(current), originalId: current.originalId,
     studentId: current.studentId, sha256: current.sha256, mime: current.mime, bytes: current.bytes,
     uploadEligibility: { status: current.bytes > 8 * 1024 * 1024 ? 'exceeds-current-limit' as const : 'within-current-limit' as const,
       maxBytes: 8 * 1024 * 1024 } };

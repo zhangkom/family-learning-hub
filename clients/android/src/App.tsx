@@ -19,7 +19,7 @@ import { captureFailure } from './permissions';
 import { AuthForm, type AuthMode } from './AuthForm';
 import { GuestHome } from './GuestHome';
 import { pageNames } from './BottomNavigation';
-import { CaptureBatch, MAX_CAPTURE_BATCH, collectionSize, type CaptureCollection } from './CaptureBatch';
+import { CaptureBatch, collectionSize, type CaptureCollection } from './CaptureBatch';
 import { runPhotoBatch, type BatchProgress } from './batch-upload';
 
 function message(error: unknown) {
@@ -330,7 +330,7 @@ function Home({
       };
       await drafts.save(draft);
       const batch = collectionRef.current;
-      if (live.current && batch?.studentId === studentId && !batch.drafts.some(item => item.id === id) && collectionSize(batch) < MAX_CAPTURE_BATCH) {
+      if (live.current && batch?.studentId === studentId && !batch.drafts.some(item => item.id === id)) {
         const next = { ...batch, drafts: [...batch.drafts, draft] }; collectionRef.current = next; setCollection(next);
       }
       await refreshDrafts();
@@ -354,7 +354,7 @@ function Home({
         if (live.current && generation === scopeGeneration.current && activeStudent.current === result.studentId) {
           const batch = collectionRef.current;
           if (batch?.studentId === result.studentId) {
-            if (!batch.originals.some(item => item.originalId === original.originalId) && collectionSize(batch) < MAX_CAPTURE_BATCH) {
+            if (!batch.originals.some(item => item.originalId === original.originalId)) {
               const next = { ...batch, originals: [...batch.originals, original] }; collectionRef.current = next; setCollection(next);
             }
           } else { setPreparing(original); setOriginalsOpen(false); }
@@ -392,11 +392,11 @@ function Home({
     const listener = () => void recoverCamera(); window.addEventListener(cameraResultEvent, listener);
     return () => window.removeEventListener(cameraResultEvent, listener);
   }, [selected, recoverCamera]);
-  async function capture(source: 'camera' | 'gallery') {
+  async function capture(source: 'camera' | 'gallery' | 'folder') {
     if (!student || busy || captureBusy.current || uploadAbort.current) return;
     setError(''); setCaptureProgress('');
     const batch = collectionRef.current ?? { studentId: student.id, originals: [], drafts: [] };
-    if (batch.studentId !== student.id || collectionSize(batch) >= MAX_CAPTURE_BATCH) { setError('本批已达到 100 张，请先完成本批'); return; }
+    if (batch.studentId !== student.id) { setError('照片归属已变化，请重新选择学生'); return; }
     updateCollection(batch);
     captureStudent.current = student.id;
     if (!Capacitor.isNativePlatform()) {
@@ -409,17 +409,18 @@ function Home({
     let cameraReturned = false;
     setBusy(true); captureBusy.current = true;
     try {
-      if (source === 'gallery' && localPhotosEnabled) {
-        const result = await pickOriginals(owner, student.id, MAX_CAPTURE_BATCH - collectionSize(batch), { purpose: 'processed', signal: abort.signal,
+      if ((source === 'gallery' || source === 'folder') && localPhotosEnabled) {
+        const result = await pickOriginals(owner, student.id, 200, { purpose: 'processed', signal: abort.signal, folderRange: source === 'folder',
           onProgress: progress => { if (live.current && generation === scopeGeneration.current) setCaptureProgress(`正在导入相册：已处理 ${progress.items.filter(item => item.status !== 'pending').length} / ${progress.items.length} 张`); } });
         if (live.current && generation === scopeGeneration.current && activeStudent.current === student.id) {
           const current = collectionRef.current;
-          if (current?.studentId === student.id) updateCollection({ ...current, originals: [...current.originals, ...result.originals].slice(0, MAX_CAPTURE_BATCH - current.drafts.length),
+          if (current?.studentId === student.id) updateCollection({ ...current, originals: [...current.originals, ...result.originals.filter(photo => !current.originals.some(old => old.originalId === photo.originalId))],
             nativeBatchIds: [...(current.nativeBatchIds || []), ...(result.batchId ? [result.batchId] : [])] });
           if (result.failures.length) setError(`${result.failures.length} 张未导入：${result.failures.map(item => item.message).join('；')}`);
         }
         return;
       }
+      if (source === 'folder') throw new Error('请更新应用后使用按文件夹选范围');
       context = beginCamera(owner, student.id, source);
       const photos =
         source === 'camera'
@@ -431,14 +432,12 @@ function Home({
           : (
               await Camera.chooseFromGallery({
                 allowMultipleSelection: true,
-                limit: MAX_CAPTURE_BATCH - collectionSize(batch),
                 mediaType: MediaTypeSelection.Photo,
                 includeMetadata: false,
               })
             ).results;
       cameraReturned = true;
       if (!photos.length) { cancelCamera(context); return; }
-      if (photos.length > MAX_CAPTURE_BATCH - collectionSize(batch)) throw new Error('选择的照片超过本批剩余名额，请重新选择，最多 100 张');
       const results = photos.map((photo, index) => stageCamera(index ? { ...context!, id: crypto.randomUUID() } : context!, photo));
       const failures: string[] = [];
       for (const result of results) {
@@ -447,7 +446,7 @@ function Home({
       }
       if (failures.length && live.current && generation === scopeGeneration.current) setError(`${failures.length} 张未读取，引用已保留，可重试：${failures.join('；')}`);
     } catch (e) {
-      const failure = cameraReturned || !context ? message(e) : captureFailure(e, source);
+      const failure = cameraReturned || !context ? message(e) : captureFailure(e, source === 'folder' ? 'gallery' : source);
       if (failure && live.current && generation === scopeGeneration.current) setError(failure);
       if (context) cancelCamera(context);
     } finally {
@@ -459,7 +458,6 @@ function Home({
   async function saveBrowserBatch(files: File[]) {
     const id = captureStudent.current, generation = scopeGeneration.current, batch = collectionRef.current;
     if (!batch || batch.studentId !== id || captureBusy.current) return;
-    if (files.length > MAX_CAPTURE_BATCH - collectionSize(batch)) { setError('选择的照片超过本批剩余名额，请重新选择，最多 100 张'); return; }
     captureBusy.current = true; setBusy(true); setError(''); const failures: string[] = [];
     try {
       for (const file of files) {
@@ -511,9 +509,8 @@ function Home({
       // The native list contains references only; import one item at a time when explicitly resumed.
       const originals: OriginalPhoto[] = []; const failures: string[] = []; const nativeBatchIds: string[] = [];
       for (const batch of saved.batches) {
-        if (!live.current || generation !== scopeGeneration.current || originals.length >= MAX_CAPTURE_BATCH) break;
+        if (!live.current || generation !== scopeGeneration.current) break;
         if (batch.state === 'cancelled' || batch.state === 'selecting') continue;
-        if (batch.items.length + originals.length > MAX_CAPTURE_BATCH) break;
         const result = await resumeOriginalBatch(owner, student.id, batch.batchId, { signal: abort.signal });
         for (const original of result.originals) if (!originals.some(item => item.originalId === original.originalId)) originals.push(original);
         failures.push(...result.failures.map(item => item.message)); nativeBatchIds.push(batch.batchId);
@@ -569,7 +566,7 @@ function Home({
     const items: Item[] = [
       ...photoQueue.filter(item => item.owner === owner && item.studentId === studentId).map(prepared => ({ id: prepared.id, prepared })),
       ...localDrafts.filter(item => item.owner === owner && item.studentId === studentId).map(draft => ({ id: draft.id, draft })),
-    ].slice(0, MAX_CAPTURE_BATCH);
+    ];
     if (!items.length) return;
     const abort = new AbortController(); uploadAbort.current = abort; setUploading('batch'); setError('');
     const current = () => live.current && generation === scopeGeneration.current && activeStudent.current === studentId;
@@ -605,7 +602,7 @@ function Home({
   if (cloudOpen && student) return <CloudPhotoDrive key={`${owner}/${selected}`} api={api} owner={owner} studentId={selected} studentLabel={student.name} onClose={() => setCloudOpen(false)}
     onOpenOriginals={localPhotosEnabled ? () => { setCloudOpen(false); setOriginalsOpen(true); } : undefined} />;
   if (collection && collection.studentId === selected) return <><CaptureBatch collection={collection} studentLabel={student?.name || '当前孩子'} busy={busy} error={error} progress={captureProgress}
-    onCapture={source => void capture(source)} onFinish={finishCollection} onClose={closeLocalPhotos}
+    onCapture={source => void capture(source)} onFolderRange={localPhotosEnabled ? () => void capture('folder') : undefined} onFinish={finishCollection} onClose={closeLocalPhotos}
     onRemove={id => void removeCollectedPhoto(id)} />{fileInputs}</>;
   if (preparing && preparing.studentId === selected) return <>
     {preparationBatch && <div className="capture-batch-progress"><strong>逐张调整 · 第 {preparationBatch.index + 1} / {preparationBatch.photos.length} 张</strong>
@@ -654,9 +651,9 @@ function Home({
       processedCount={photoQueue.length + photoQueueIssues.length} onOpenOriginals={localPhotosEnabled ? () => setOriginalsOpen(true) : undefined}
       onOpenCloud={() => setCloudOpen(true)}
       batchUploads={<section className="batch-upload-panel" aria-label="拍题批量上传">
-        <strong>单批最多上传 100 张</strong><p className="hint">照片清晰完整后，确认上传当前孩子的待提交照片。处理图原片仍留在手机。</p>
+        <strong>照片按每组200张依次上传</strong><p className="hint">照片清晰完整后，确认上传当前孩子的待提交照片。处理图原片仍留在手机。</p>
         <div className="button-row"><button className="primary" disabled={busy || !!uploading || !(photoQueue.length + localDrafts.filter(item => item.studentId === selected).length)} onClick={() => void uploadMany()}>
-          确认并批量上传（{Math.min(100, photoQueue.length + localDrafts.filter(item => item.studentId === selected).length)} 张）</button>
+          确认并批量上传（{photoQueue.length + localDrafts.filter(item => item.studentId === selected).length} 张）</button>
           {uploading === 'batch' && <button onClick={() => uploadAbort.current?.abort()}>停止本批上传</button>}</div>
         {batchProgress && <><output>已处理 {batchProgress.completed} / {batchProgress.total} 张 · 成功 {batchProgress.succeeded} · 失败 {batchProgress.failed.length}{batchProgress.stopped ? ' · 已停止' : ''}</output>
           <progress max={batchProgress.total} value={batchProgress.completed} />

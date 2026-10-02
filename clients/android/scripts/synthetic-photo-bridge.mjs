@@ -31,7 +31,7 @@ export function installSyntheticPhotoBridge({ api, initialToken = 'test-A', init
   const batchKey = (owner, id) => 'batch:' + JSON.stringify([owner, id]);
   const createOriginal = async (owner, studentId, id = crypto.randomUUID()) => {
     const data = image(), originalUri = uriFor(owner, id, 'original'), previewUri = uriFor(owner, id, 'preview.jpg');
-    const original = { schemaVersion: 1, originalId: id, studentId, ...(await info(data)), mime: 'image/png', width: 900, height: 1200,
+    const original = { schemaVersion: 1, originalId: id, studentId, originalName: 'IMG_' + id.slice(0, 8) + '.png', ...(await info(data)), mime: 'image/png', width: 900, height: 1200,
       uprightWidth: 900, uprightHeight: 1200, orientation: 1, originalUri, previewUri, createdAt: Date.now() };
     store(sourceKey(owner, id), original); store('file:' + originalUri, data); store('file:' + previewUri, data); return original;
   };
@@ -78,8 +78,8 @@ export function installSyntheticPhotoBridge({ api, initialToken = 'test-A', init
         return createOriginal(args.owner, args.studentId);
       }
       if (method === 'pickOriginalBatch') {
-        if (albumCount > args.limit && args.purpose !== 'cloud-original') throw new Error('选择数量超过剩余名额');
-        const batch = { schemaVersion: 1, batchId: crypto.randomUUID(), studentId: args.studentId, purpose: args.purpose, state: 'ready', limit: args.purpose === 'cloud-original' ? Math.max(args.limit, albumCount) : args.limit, createdAt: Date.now(),
+        store('lastPicker', { folderRange: !!args.folderRange, purpose: args.purpose });
+        const batch = { schemaVersion: 1, batchId: crypto.randomUUID(), studentId: args.studentId, purpose: args.purpose, state: 'ready', limit: Math.max(args.limit, albumCount), createdAt: Date.now(),
           items: Array.from({ length: albumCount }, (_, index) => ({ index, originalId: crypto.randomUUID(), status: 'pending' })) };
         store(batchKey(args.owner, batch.batchId), batch); return batch;
       }

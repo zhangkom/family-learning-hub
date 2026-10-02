@@ -237,6 +237,19 @@ describe('private cloud photo API', () => {
       'IDEMPOTENCY_CONFLICT',
     );
   });
+  it('keeps long original names including leading dots and separates distinct photos with the same filename', async () => {
+    const name = '.作业照片 ' + 'a'.repeat(150) + '.JPG';
+    const b = await batch(2), bytes = await jpeg(1), other = await jpeg(3);
+    const first = await upload(bytes, b.id, { name }), second = await upload(other, b.id, { name });
+    expect(first.status).toBe(201); expect(second.status).toBe(201);
+    const a = (await first.text().then(JSON.parse)).photo, c = (await second.text().then(JSON.parse)).photo;
+    expect(a.originalName).toBe(name); expect(c.originalName).toBe(name); expect(a.id).not.toBe(c.id);
+    expect(a.sha256).not.toBe(c.sha256);
+    const downloaded = await call(`cloud-photos/${a.id}/file`);
+    expect(downloaded.headers.get('content-disposition')).toContain(encodeURIComponent(name));
+    expect(Buffer.from(await downloaded.arrayBuffer())).toEqual(bytes);
+  });
+
   it('preserves original bytes, UTF8 filename, EXIF and private download while creating no scan or model job', async () => {
     const model = vi
       .spyOn(globalThis, 'fetch')

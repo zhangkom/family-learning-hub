@@ -49,7 +49,6 @@ export function restoredCamera(event: { pluginId: string; methodName?: string; s
   if (!event.success) { cancelCamera(context, storage); return null; }
   const data = event.data as Parameters<typeof stageCamera>[1];
   if (context.source === 'gallery' && Array.isArray(data?.results)) {
-    if (data.results.length > 100) throw new Error('恢复的相册选择超过 100 张，请重新选择');
     if (!data.results.length) { cancelCamera(context, storage); return null; }
     // Persist every reference before the active activity context is removed.
     const staged = data.results.map((photo, index) => {

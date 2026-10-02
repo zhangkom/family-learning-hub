@@ -80,13 +80,13 @@ function DriveSession({ api, owner, studentId, studentLabel, onClose, onOpenOrig
     setNotice(result.cancelled && !accepted.length ? '已取消选图' : accepted.length ? `已保存 ${accepted.length} 张到本机待上传，按每组最多 ${limits.maxBatch} 张自动分组，请点“开始上传”。` : '没有新的图片需要加入');
     setError([...result.failures, ...rejected].join('；'));
   }
-  async function select(recover = false) {
+  async function select(recover = false, folderRange = false) {
     const signal = controller.current?.signal; if (locked || !signal) return;
     setError(''); setNotice('');
     if (!services.native && !recover) { input.current?.click(); return; }
     setPicking(true);
     try {
-      const result = recover ? await services.recover?.({ owner, studentId }, batchSize, signal) : await services.pick?.({ owner, studentId }, batchSize, signal);
+      const result = recover ? await services.recover?.({ owner, studentId }, batchSize, signal) : await services.pick?.({ owner, studentId }, batchSize, signal, folderRange);
       if (!result) throw new Error('此设备暂不支持此选图方式');
       await addPicked(result);
     } catch (e) { if (live.current && !signal.aborted) setError(message(e)); }
@@ -129,8 +129,10 @@ function DriveSession({ api, owner, studentId, studentLabel, onClose, onOpenOrig
     {onOpenOriginals && <div className="cloud-panel"><p>云盘用于备份；收题和调整照片可以直接使用手机保留的原片。</p><button type="button" disabled={locked} onClick={onOpenOriginals}>从本机照片收题</button></div>}
     <div className="cloud-select"><div><h3>批量上传图片</h3><p>每组最多 {batchSize} 张，超出自动分组 · 原图保存</p></div>
       <button type="button" className="cloud-primary" disabled={locked || !limits} onClick={() => void select()}>{picking ? '正在读取选图…' : services.native ? '从相册选择图片' : '选择图片'}</button>
+      {services.native && <button type="button" disabled={locked || !limits} onClick={() => void select(false, true)}>按文件夹选范围 / 全选</button>}
       <input ref={input} type="file" multiple accept={limits?.mimeTypes.join(',') || 'image/jpeg,image/png,image/webp'} aria-label="选择云盘图片文件" hidden onChange={e => { const files = Array.from(e.currentTarget.files || []); e.currentTarget.value = ''; if (files.length) void filesSelected(files); }} />
       {services.recover && <button type="button" disabled={locked} onClick={() => void select(true)}>恢复上次选图</button>}
+      {services.native && <p className="cloud-hint">图片多时可选择照片所在文件夹，再指定起始、结束图片或全选；按文件名排序。新导入的图片保留原文件名。</p>}
       <p className="cloud-hint">{limits ? `支持 JPEG、PNG、WebP；单张最多 ${sizeLabel(limits.maxFileBytes)}。不支持的图片会明确提示，不会压缩替换原件。` : '正在读取云盘限制…'}</p>
     </div>
     {(error || queue.error) && <p role="alert" className="cloud-error">{error || queue.error}</p>}{notice && <output className="cloud-notice">{notice}</output>}

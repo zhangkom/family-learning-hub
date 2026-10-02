@@ -28,7 +28,7 @@ final class CloudOriginalDownload {
         String extension="image/png".equals(mime)?".png":"image/webp".equals(mime)?".webp":".jpg";
         String clean=name==null?"":name.replaceAll("[\\p{Cntrl}/\\\\:*?\"<>|]","_").trim();
         if(clean.isEmpty()||clean.equals(".")||clean.equals(".."))return "原图"+extension;
-        return clean.length()>120?clean.substring(0,100)+extension:clean;
+        return clean.length()>255?clean.substring(0,255-extension.length())+extension:clean;
     }
     static final class Job {
         final AtomicBoolean cancelled=new AtomicBoolean();

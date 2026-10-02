@@ -32,7 +32,7 @@ export interface DriveServices {
   read(job: UploadJob, signal: AbortSignal): Promise<UploadBytes>;
   preview(photo: CloudPhoto, signal: AbortSignal): Promise<Blob>;
   download(photo: CloudPhoto, signal: AbortSignal): Promise<void>;
-  pick?(scope: CloudScope, limit: number, signal: AbortSignal): Promise<PickResult>;
+  pick?(scope: CloudScope, limit: number, signal: AbortSignal, folderRange?: boolean): Promise<PickResult>;
   recover?(scope: CloudScope, limit: number, signal: AbortSignal): Promise<PickResult>;
 }
 

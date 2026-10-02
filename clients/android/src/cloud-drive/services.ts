@@ -1,13 +1,14 @@
 import { Capacitor } from '@capacitor/core';
 import type { FamilyApi } from '../api';
 import type { OriginalPhoto } from '../photo-processing';
+import { originalPhotoName } from '../photo-processing/original-name';
 import { createCloudApi, cloudFilePath, sha256 } from './api';
 import type { CloudScope, DriveServices, PickResult, UploadJob } from './types';
 import { ImageRequestGate, retryBusy } from './scheduler';
 
 type BatchResult = { batchId: string; originals: OriginalPhoto[]; failures: { index: number; originalId: string; message: string }[]; cancelled: boolean };
 type NativeBridge = {
-  pickOriginals(owner: string, studentId: string, limit: number, options: { purpose: 'cloud-original'; signal?: AbortSignal }): Promise<BatchResult>;
+  pickOriginals(owner: string, studentId: string, limit: number, options: { purpose: 'cloud-original'; folderRange?: boolean; signal?: AbortSignal }): Promise<BatchResult>;
   readCloudOriginalUpload(owner: string, photo: OriginalPhoto, signal?: AbortSignal): Promise<{ file: Blob; sha256: string; studentId: string }>;
   listOriginalBatches(owner: string, studentId: string, purpose: 'cloud-original'): Promise<{ batches: { batchId: string; studentId: string; purpose: string; state: string; createdAt: number }[] }>;
   resumeOriginalBatch(owner: string, studentId: string, batchId: string, options: { signal?: AbortSignal; purpose?: 'cloud-original' }): Promise<BatchResult>;
@@ -27,7 +28,7 @@ function fromNative(result: BatchResult, scope: CloudScope, bridge: NativeBridge
   return { cancelled: result.cancelled, ...(result.batchId && !result.failures.length ? { acknowledge: () => bridge.forgetOriginalBatch(scope.owner, scope.studentId, result.batchId) } : {}),
     ...(result.batchId && result.failures.length ? { discardRecovery: () => discardBatch(bridge, scope, result.batchId) } : {}),
     failures: result.failures.map(f => `第 ${f.index + 1} 张未导入：${f.message}`), items: result.originals.map(original => ({
-    id: original.originalId, name: `原图-${original.originalId}.${original.mime === 'image/png' ? 'png' : original.mime === 'image/webp' ? 'webp' : 'jpg'}`,
+    id: original.originalId, name: originalPhotoName(original),
     size: original.bytes, mimeType: original.mime, source: { kind: 'native', original },
   })) };
 }
@@ -66,8 +67,8 @@ export function createDriveServices(api: FamilyApi): DriveServices {
       }
     },
     ...(native ? {
-      pick: async (scope: CloudScope, limit: number, signal: AbortSignal) => {
-        const bridge = await nativeBridge(); return fromNative(await bridge.pickOriginals(scope.owner, scope.studentId, limit, { purpose: 'cloud-original', signal }), scope, bridge);
+      pick: async (scope: CloudScope, limit: number, signal: AbortSignal, folderRange = false) => {
+        const bridge = await nativeBridge(); return fromNative(await bridge.pickOriginals(scope.owner, scope.studentId, limit, { purpose: 'cloud-original', signal, ...(folderRange ? { folderRange: true } : {}) }), scope, bridge);
       },
       recover: async (scope: CloudScope, _limit: number, signal: AbortSignal) => {
         const bridge = await nativeBridge();

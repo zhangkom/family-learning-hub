@@ -8,14 +8,14 @@ final class PhotoBatchStore {
     static int maxItems(String purpose) {
         checkPurpose(purpose);
         // A cloud selection may span many 200-image upload groups; this manifest contains metadata only.
-        return "cloud-original".equals(purpose) ? Integer.MAX_VALUE : 100;
+        return Integer.MAX_VALUE;
     }
     static final class Item {
         String originalId, uri, status = "pending", error = "";
         Item(String uri) { this.uri=uri; originalId=UUID.randomUUID().toString(); }
     }
     final File file;
-    String id, studentId, purpose, state = "selecting";
+    String id, studentId, purpose, state = "selecting", treeUri = "";
     int limit;
     long createdAt;
     final List<Item> items = new ArrayList<>();
@@ -68,6 +68,8 @@ final class PhotoBatchStore {
         PhotoBatchStore b=new PhotoBatchStore(file);
         try {
             b.id=p.getProperty("id"); b.studentId=p.getProperty("student"); b.purpose=p.getProperty("purpose");
+            b.treeUri=p.getProperty("treeUri","");
+            if(!b.treeUri.isEmpty()&&(!b.treeUri.startsWith("content://")||b.treeUri.length()>8192))throw new IllegalArgumentException();
             checkStudent(b.studentId); checkPurpose(b.purpose);
             if(!path(file.getParentFile().getParentFile(),b.id).equals(file)) throw new IllegalArgumentException();
             b.state=p.getProperty("state");
@@ -88,9 +90,8 @@ final class PhotoBatchStore {
     void select(List<String> uris) throws IOException {
         if(!state.equals("selecting")) throw new IllegalArgumentException("该相册选择已经结束");
         LinkedHashSet<String> unique=new LinkedHashSet<>(uris);
-        if(!purpose.equals("cloud-original")&&unique.size()>limit) throw new IllegalArgumentException("所选照片超过本批剩余数量（"+limit+" 张），请重新选择");
         for(String uri:unique) if(uri==null||!uri.startsWith("content://")||uri.length()>8192) throw new IllegalArgumentException("系统未返回有效的照片地址");
-        if(purpose.equals("cloud-original")) limit=Math.max(limit,unique.size());
+        limit=Math.max(limit,unique.size());
         for(String uri:unique) items.add(new Item(uri));
         state=items.isEmpty()?"cancelled":"ready"; save();
     }
@@ -111,6 +112,7 @@ final class PhotoBatchStore {
         Properties p=new Properties();
         p.setProperty("id",id);p.setProperty("student",studentId);p.setProperty("purpose",purpose);p.setProperty("state",state);
         p.setProperty("limit",Integer.toString(limit));p.setProperty("createdAt",Long.toString(createdAt));p.setProperty("count",Integer.toString(items.size()));
+        p.setProperty("treeUri",treeUri);
         for(int n=0;n<items.size();n++) {Item i=items.get(n);p.setProperty(n+".id",i.originalId);p.setProperty(n+".uri",i.uri);p.setProperty(n+".status",i.status);p.setProperty(n+".error",i.error);}
         File tmp=new File(file.getPath()+".part"),bak=new File(file.getPath()+".bak");
         try(FileOutputStream out=new FileOutputStream(tmp)){p.store(out,"Photo batch v1");out.getFD().sync();}

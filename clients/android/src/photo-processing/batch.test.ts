@@ -17,7 +17,7 @@ beforeEach(() => {
   vi.resetAllMocks(); vi.unstubAllGlobals();
   state = { schemaVersion: 1, batchId: id(999), studentId: 'student', purpose: 'processed', state: 'ready', limit: 100, createdAt: 1,
     items: Array.from({ length: 100 }, (_, i) => ({ index: i, originalId: id(i), status: 'pending' })) };
-  mocks.native.pickOriginalBatch.mockImplementation(async () => structuredClone(state));
+  mocks.native.pickOriginalBatch.mockImplementation(async ({ limit }: { limit: number }) => { state.limit = Math.max(state.limit, limit); return structuredClone(state); });
   mocks.native.getOriginalBatch.mockImplementation(async () => structuredClone(state));
   mocks.native.cancelOriginalBatch.mockImplementation(async () => { state.state = 'cancelled'; return structuredClone(state); });
   mocks.native.importBatchItem.mockImplementation(async ({ index }: { index: number }) => {
@@ -48,8 +48,15 @@ describe('durable sequential original batches', () => {
     expect(result.originals).toHaveLength(100); expect(result.failures).toEqual([]); expect(maximum).toBe(1);
     expect(fetcher).not.toHaveBeenCalled(); expect(mocks.native.forgetOriginalBatch).not.toHaveBeenCalled();
   });
-  it.each([0, 101, 1.5])('rejects invalid remaining capacity %s before picker', async limit => {
-    await expect(pickOriginals('owner', 'student', limit)).rejects.toThrow('100'); expect(mocks.native.pickOriginalBatch).not.toHaveBeenCalled();
+  it.each([0, 2147483648, 1.5])('rejects invalid group parameter %s before picker', async limit => {
+    await expect(pickOriginals('owner', 'student', limit)).rejects.toThrow('分组参数'); expect(mocks.native.pickOriginalBatch).not.toHaveBeenCalled();
+  });
+  it('imports all 450 processed photos selected by folder range and recovers without truncating', async () => {
+    state.limit = 450; state.items = Array.from({ length: 450 }, (_, i) => ({ index: i, originalId: id(i), status: 'pending' }));
+    const result = await pickOriginals('owner', 'student', 200, { folderRange: true });
+    expect(mocks.native.pickOriginalBatch).toHaveBeenCalledWith({ owner: 'owner', studentId: 'student', limit: 200, purpose: 'processed', folderRange: true });
+    expect(result.originals).toHaveLength(450); expect(result.failures).toEqual([]);
+    expect((await resumeOriginalBatch('owner', 'student', state.batchId)).originals).toHaveLength(450);
   });
   it('reports one failed image and continues, while keeping completed originals for retry/recovery', async () => {
     const importer = mocks.native.importBatchItem.getMockImplementation()!;

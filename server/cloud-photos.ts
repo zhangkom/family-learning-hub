@@ -22,7 +22,7 @@ import {
   type CloudPhotoBatch,
   type CloudPhotoPage,
 } from '../lib/cloud-photos';
-import { sanitizeDisplayName } from '../lib/upload-security';
+import { sanitizeOriginalDisplayName } from '../lib/upload-security';
 import type { FamilyStore } from './family-store';
 import { HttpError, json, readJson } from './family-backend';
 import { MobileError, requireStudent } from './mobile-service';
@@ -208,7 +208,7 @@ async function uploadPhoto(
       throw new HttpError(400, '上传图片与批次的孩子不一致');
     if (!/^[a-f0-9]{64}$/.test(fields.sha256) || fields.sha256 !== input.sha256)
       throw new HttpError(400, '图片哈希不一致，请重新读取原图');
-    const originalName = sanitizeDisplayName(input.filename);
+    const originalName = sanitizeOriginalDisplayName(input.filename);
     const fingerprint = cloudHash(
       JSON.stringify([
         student.id,

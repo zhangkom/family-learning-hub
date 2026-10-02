@@ -30,10 +30,10 @@ public final class PhotoBatchTransportTest {
         rejects(()->PhotoBatchStore.load(alice,batch.id,"学生乙"),"student isolation");
         rejects(()->PhotoBatchStore.load(bob,batch.id,"学生甲"),"owner isolation");
         rejects(()->PhotoBatchStore.load(alice,"../escape","学生甲"),"path traversal");
-        rejects(()->PhotoBatchStore.create(alice,"学生甲","processed",101),"processed count validation");
+        rejects(()->PhotoBatchStore.create(alice,"学生甲","processed",0),"invalid group parameter");
         PhotoBatchStore overflow=PhotoBatchStore.create(alice,"学生甲","processed",99);
-        rejects(()->overflow.select(sources),"provider exceeding remaining count rejected without truncation");
-        check(PhotoBatchStore.load(alice,overflow.id,"学生甲").items.isEmpty(),"overflow stores no partial selection");
+        overflow.treeUri="content://synthetic/tree/photos";overflow.select(sources);check(overflow.items.size()==450&&overflow.limit==450,"processed selection accepts all 450");
+        check(PhotoBatchStore.load(alice,overflow.id,"学生甲").treeUri.equals("content://synthetic/tree/photos"),"folder grant persists with batch");
         PhotoBatchStore duplicate=PhotoBatchStore.create(alice,"学生甲","processed",1);
         duplicate.select(List.of(sources.get(0),sources.get(0)));check(duplicate.items.size()==1,"duplicate URI deduplication");
         // Simulate process loss between backup rename and new manifest publication.
