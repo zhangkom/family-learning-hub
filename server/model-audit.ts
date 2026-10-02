@@ -12,6 +12,7 @@ import { randomUUID } from 'node:crypto';
 
 export const weaknessRejectionCodes = ['shared_evidence', 'source_conditions', 'unsupported_inference', 'dimension_mismatch', 'practice_scope', 'priority_overclaim', 'other'] as const;
 export type WeaknessRejectionCode = typeof weaknessRejectionCodes[number];
+export type WeaknessFocusReview = { focusId: string; approved: boolean; rejectionCode: 'none' | WeaknessRejectionCode };
 export type ModelTrace = {
   provider?: string;
   requestedModel?: string;
@@ -24,6 +25,7 @@ export type ModelTrace = {
   httpMs?: number;
   parseValidationMs?: number;
   weaknessRejection?: WeaknessRejectionCode;
+  weaknessFocusReviews?: WeaknessFocusReview[];
 };
 export type ModelFailureCode =
   | 'UPSTREAM_AUTH'
@@ -52,6 +54,16 @@ export type AttemptAudit = ModelTrace & {
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 const dayPattern = /^\d{4}-\d{2}-\d{2}$/;
 const filePattern = /^[a-f0-9-]{36}-[1-3]\.json$/;
+function safeWeaknessReviews(value: unknown): WeaknessFocusReview[] | undefined {
+  if (!Array.isArray(value) || !value.length || value.length > 8) return undefined;
+  const ids = new Set<string>(), reviews: WeaknessFocusReview[] = [];
+  for (const item of value) {
+    if (!item || typeof item !== 'object' || !uuid.test(item.focusId) || ids.has(item.focusId) || typeof item.approved !== 'boolean' ||
+        (item.approved ? item.rejectionCode !== 'none' : !weaknessRejectionCodes.includes(item.rejectionCode))) return undefined;
+    ids.add(item.focusId); reviews.push({ focusId: item.focusId, approved: item.approved, rejectionCode: item.rejectionCode });
+  }
+  return reviews;
+}
 const phases = [
   'readOriginalMs',
   'cropMs',
@@ -195,6 +207,7 @@ export async function writeAttemptAudit(value: AttemptAudit): Promise<boolean> {
       outcome: value.outcome,
       ...(value.failureCode ? { failureCode: value.failureCode } : {}),
       ...(value.kind === 'weakness' && weaknessRejectionCodes.includes(value.weaknessRejection!) ? { weaknessRejection: value.weaknessRejection } : {}),
+      ...(value.kind === 'weakness' && safeWeaknessReviews(value.weaknessFocusReviews) ? { weaknessFocusReviews: safeWeaknessReviews(value.weaknessFocusReviews) } : {}),
       provider:
         typeof value.provider === 'string' &&
         /^[a-zA-Z0-9.-]{1,253}$/.test(value.provider)

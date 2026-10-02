@@ -142,6 +142,20 @@ it('records only a controlled weakness rejection category, never arbitrary revie
     expect(saved.weaknessRejection).toBe(expected); expect(JSON.stringify(saved)).not.toContain('private');
   }
 });
+it('keeps bounded UUID review decisions without source IDs, original text or malformed partial lists', async () => {
+  const focusId = randomUUID();
+  for (const [reviews, expected] of [
+    [[{ focusId, approved: false, rejectionCode: 'shared_evidence', sourceId: 'private/source', reason: 'private reason' }], [{ focusId, approved: false, rejectionCode: 'shared_evidence' }]],
+    [[{ focusId: 'private/source', approved: true, rejectionCode: 'none' }], undefined],
+    [[{ focusId, approved: true, rejectionCode: 'none' }, { focusId, approved: false, rejectionCode: 'other' }], undefined],
+    [[{ focusId, approved: 'true', rejectionCode: 'none' }], undefined],
+  ] as const) {
+    const value = { ...record(), kind: 'weakness', weaknessFocusReviews: reviews };
+    expect(await writeAttemptAudit(value as unknown as AttemptAudit)).toBe(true);
+    const saved = JSON.parse(readFileSync(join(directory, 'model-audit', new Date(value.endedAt).toISOString().slice(0, 10), value.jobId + '-1.json'), 'utf8'));
+    expect(saved.weaknessFocusReviews).toEqual(expected); expect(JSON.stringify(saved)).not.toContain('private');
+  }
+});
 it('backs up and verifies immutable audit files beside the database without schema changes', async () => {
   const db = new FamilyStore(join(directory, 'family.sqlite'));
   const schema = db.db

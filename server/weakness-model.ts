@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { recognizeModel, ModelGatewayError } from './model-gateway';
-import { weaknessRejectionCodes, type ModelTrace, type WeaknessRejectionCode } from './model-audit';
+import { weaknessRejectionCodes, type ModelTrace, type WeaknessFocusReview, type WeaknessRejectionCode } from './model-audit';
 import type { StoredWeakness } from './weakness-reports';
 import type { WeaknessFocus, WeaknessResult } from '../lib/weakness';
 import type { ScanRecord } from '../lib/scans';
@@ -35,6 +35,48 @@ function containsClaim(value: string, pattern: RegExp) {
     const clause = part.trim();
     return !abstentionClause.test(clause) && !preventionClause.test(clause) && !masteryAbstentionClause.test(clause) && pattern.test(clause);
   });
+}
+
+function reviewedNarrative(report: StoredWeakness, kept: number, rejected: number) {
+  const { selected, omitted, needsReview } = report.coverage;
+  const answerSources = report.input.filter(source => source.studentEvidence.length > 0).length;
+  return {
+    summary: `本次分析选入 ${selected} 道收录题，保留 ${kept} 项通过逐条依据复核的 AI 待核对练习建议。${rejected ? `另有 ${rejected} 项候选建议未通过复核，未列入报告。` : ''}`,
+    limitations: [
+      `本次选入 ${selected} 道题；另有 ${omitted} 道已核对题未纳入、${needsReview} 道待核对题未纳入。`,
+      '收录行为不代表实际做错，练习建议仍需结合原题核对，不能代替个人能力诊断。',
+      answerSources ? `其中 ${answerSources} 道题提供了可用学生作答或已批改学习记录；AI 批改仍需核对，参考答案不代表学生表现。` : '本次没有可用的学生作答或已批改学习记录，不能据此判断个人具体错因。',
+      '本次未读取图片像素，只使用已核对文字；未清晰记录的图像条件仍需补充校对。',
+      '能力参考分由服务端依据独立练习和复测记录计算，证据不足的维度保持待评估。',
+    ],
+  };
+}
+
+export function applyWeaknessReview(raw: unknown, candidate: WeaknessResult, report: StoredWeakness, trace: ModelTrace): WeaknessResult {
+  const verification = object(array(raw, 1, 1)[0]);
+  const entries = array(verification.reviews, candidate.focuses.length, candidate.focuses.length);
+  const candidates = new Map(candidate.focuses.map(focus => [focus.id, focus])), seen = new Set<string>();
+  const reviews = entries.map((rawReview): WeaknessFocusReview => {
+    const review = object(rawReview), focusId = text(review.focusId, 100);
+    if (!candidates.has(focusId) || seen.has(focusId)) return fail('逐条复核的建议编号不匹配，请重试');
+    seen.add(focusId);
+    if (typeof review.approved !== 'boolean' || (review.approved ? review.rejectionCode !== 'none' : !weaknessRejectionCodes.includes(review.rejectionCode as WeaknessRejectionCode))) return fail('分析复核结构不完整，请重试');
+    text(review.reason, 2500);
+    return { focusId, approved: review.approved, rejectionCode: review.rejectionCode as WeaknessFocusReview['rejectionCode'] };
+  });
+  // Only server-generated candidate IDs survive this one-to-one check. Never
+  // persist free-form reviewer explanations or accept replacement suggestions.
+  trace.weaknessFocusReviews = reviews;
+  const firstRejected = reviews.find(review => !review.approved);
+  if (firstRejected) trace.weaknessRejection = firstRejected.rejectionCode as WeaknessRejectionCode;
+  const approved = new Set(reviews.filter(review => review.approved).map(review => review.focusId));
+  const focuses = candidate.focuses.filter(focus => approved.has(focus.id));
+  if (!focuses.length) {
+    const code = (firstRejected?.rejectionCode || 'shared_evidence') as WeaknessRejectionCode;
+    trace.weaknessRejection = code;
+    return fail(`本次未形成有充分依据的练习建议：${rejectionMessages[code]}。原题已保留，可补充材料后重试分析。`);
+  }
+  return { ...reviewedNarrative(report, focuses.length, candidate.focuses.length - focuses.length), focuses, axes: [] };
 }
 
 export function validateWeaknessResult(raw: unknown, report: StoredWeakness): WeaknessResult {
@@ -85,12 +127,12 @@ export async function analyzeWeakness(report: StoredWeakness, trace: ModelTrace)
     'high仅可用于有至少两题真实作答支持的answer_evidence方向，且仍需结合实际证据解释；medium/low可用于共同考点的复习次序。不能把收录次数当错误次数或错误率。正确复测体现改善，不应忽略；一次正确不代表长期掌握。practiceDirection给清楚的练习方法和验收方法，不直接编造新题目。' +
     '缺少可用证据、跨科目无共同方向或图像条件不清楚时focuses可以为空，并具体说明待补充内容。未提供图片，不能猜图中条件；无图也可根据已确认题干判断考点，不能声称已经复核题目答案。不要引用未核对AI错因。' +
     '每个方向的dimensionId必须从对应科目profiles.dimensions的id中选且有引用支持，knowledgePoints填写具体考点。结合年级参考目标但以已确认题目为准，不假定教材顺序。你不能打分或输出能力数值，不能由错题少推断能力高。' +
-    'summary说明这是收录题目样本的AI待核对学习建议，不能代替能力诊断；limitations明确覆盖范围、缺失作答、缺图或既有AI批改待核对等实际限制。总共最多8个方向，其中题干型最多2个，不要凑数量。';
+    '本轮仅输出focuses，不输出摘要、限制说明或能力分数。总共最多8个方向，其中题干型最多2个，不要凑数量。';
   const answerSubjects = report.input.filter(source => source.studentEvidence.length > 0).map(source => source.subject);
   const hasAnswerPair = new Set(answerSubjects).size < answerSubjects.length;
-  const properties = { summary: string, focuses: { type: 'array', maxItems: hasAnswerPair ? 8 : 2, items: shape({ title: string, subject: string, dimensionId: string, knowledgePoints: strings,
+  const properties = { focuses: { type: 'array', maxItems: hasAnswerPair ? 8 : 2, items: shape({ title: string, subject: string, dimensionId: string, knowledgePoints: strings,
     priority: { type: 'string', enum: hasAnswerPair ? ['high', 'medium', 'low'] : ['medium', 'low'] }, basis: { type: 'string', enum: hasAnswerPair ? ['wrong_question_pattern', 'answer_evidence'] : ['wrong_question_pattern'] }, reason: string, practiceDirection: string,
-    evidence: { type: 'array', minItems: 2, maxItems: 8, items: shape({ sourceId: string, kind: { type: 'string', enum: ['question', 'student_answer'] }, quote: string, reason: string }) } }) }, limitations: strings };
+    evidence: { type: 'array', minItems: 2, maxItems: 8, items: shape({ sourceId: string, kind: { type: 'string', enum: ['question', 'student_answer'] }, quote: string, reason: string }) } }) } };
   const profiles = (report.subject ? [report.subject] : abilitySubjects).map(subject => abilityProfile(subject, report.grade));
   const context = { coverage: report.coverage, sources: report.input, profiles, evidencePolicy,
     subjectEvidence: profiles.map(profile => {
@@ -98,18 +140,19 @@ export async function analyzeWeakness(report: StoredWeakness, trace: ModelTrace)
       return { subject: profile.subject, questionCount: sources.length, sourcesWithStudentEvidence: withAnswers,
         allowedBasis: [...(sources.length >= 2 ? ['wrong_question_pattern'] : []), ...(withAnswers >= 2 ? ['answer_evidence'] : [])] };
     }) };
-  const result = validateWeaknessResult(await recognizeModel(record, undefined, schema(properties), guide, JSON.stringify(context), trace), report);
+  const generated = object(array(await recognizeModel(record, undefined, schema(properties), guide, JSON.stringify(context), trace), 1, 1)[0]);
+  // Free-form model summaries can contain claims tied to a rejected focus.
+  // Ignore them entirely; the final narrative is derived from verified counts.
+  const result = validateWeaknessResult([{ focuses: generated.focuses, summary: '内部候选练习建议，尚待逐条依据复核。', limitations: ['候选内容尚未通过依据复核。'] }], report);
+  if (!result.focuses.length) {
+    trace.weaknessRejection = 'shared_evidence';
+    return fail('本次未形成有充分依据的练习建议。原题已保留，可补充同科材料后重试分析。');
+  }
   // A second grounding pass checks semantic overclaims that structural quote
   // validation alone cannot establish. It receives only the same source snapshot.
-  const verification = object(array(await recognizeModel(record, undefined, schema({ approved: { type: 'boolean' }, rejectionCode: { type: 'string', enum: ['none', ...weaknessRejectionCodes] }, reason: string }), safety +
-    '你是薄弱点依据核验老师。' + evidencePolicy + commonEvidencePolicy + '逐项核查方向中的每个核心要求是否有至少2道所引用题目的共同支持，仅每题各支持方向的一部分不合格；不要将题目的并集误作交集。知识点和dimensionId与引用应对应，方向具体且可实施。题干型medium/low只表达复习次序，不能仅因无学生作答而拒绝合格的共同考点建议。wrong_question_pattern不能由题干臆断学生实际错误或能力；answer_evidence必须有真实作答支持所述具体错误，不能把正确作答或参考答案当能力不足，且AI批改只能作为待核对依据。区分“练习时避免计算错误”等未来预防动作和对已发生错误的判断；明确不能下结论的限定语不是能力判断，但限定语不免除同句其他断言的依据要求。检查全部标题、考点、依据、练习方法、摘要和限制说明，摘要不能增加未被证据支持的新结论。不得忽略已有独立复测正确等改善证据，不能虚构图中条件。全部通过才approved=true且rejectionCode=none；否则approved=false并给出reason，同时从以下代码中选最主要一项：shared_evidence共同依据不足、source_conditions题设/选项条件不一致、unsupported_inference无依据个人判断、dimension_mismatch维度考点不匹配、practice_scope练习超出共同范围、priority_overclaim优先级夸大、other其他。',
-    JSON.stringify({ ...context, candidate: result }), trace), 1, 1)[0]);
-  text(verification.reason, 2500);
-  if (verification.approved === false && weaknessRejectionCodes.includes(verification.rejectionCode as WeaknessRejectionCode)) {
-    const code = verification.rejectionCode as WeaknessRejectionCode;
-    trace.weaknessRejection = code;
-    return fail(`分析依据未通过复核：${rejectionMessages[code]}。原题已保留，可重试分析。`);
-  }
-  if (verification.approved !== true || verification.rejectionCode !== 'none') return fail('分析复核结构不完整，请重试');
-  return result;
+  const verification = await recognizeModel(record, undefined, schema({ reviews: { type: 'array', minItems: result.focuses.length, maxItems: result.focuses.length,
+    items: shape({ focusId: { type: 'string', enum: result.focuses.map(focus => focus.id) }, approved: { type: 'boolean' }, rejectionCode: { type: 'string', enum: ['none', ...weaknessRejectionCodes] }, reason: string }) } }), safety +
+    '你是薄弱点依据核验老师。' + evidencePolicy + commonEvidencePolicy + '逐项核查方向中的每个核心要求是否有至少2道所引用题目的共同支持，仅每题各支持方向的一部分不合格；不要将题目的并集误作交集。知识点和dimensionId与引用应对应，方向具体且可实施。题干型medium/low只表达复习次序，不能仅因无学生作答而拒绝合格的共同考点建议。wrong_question_pattern不能由题干臆断学生实际错误或能力；answer_evidence必须有真实作答支持所述具体错误，不能把正确作答或参考答案当能力不足，且AI批改只能作为待核对依据。区分“练习时避免计算错误”等未来预防动作和对已发生错误的判断；明确不能下结论的限定语不是能力判断，但限定语不免除同句其他断言的依据要求。逐条检查候选的标题、每个考点、依据及练习方法，不得忽略已有独立复测正确等改善证据，不能虚构图中条件。每个候选ID必须恰好返回一条reviews，不得漏项、重复或新增ID。不得改写候选，也不能先修改再批准；某条不合格只拒绝该条，不影响其他条目的独立判断。完整合格才approved=true且rejectionCode=none；否则approved=false并给出reason，同时从以下代码中选最主要一项：shared_evidence共同依据不足、source_conditions题设/选项条件不一致、unsupported_inference无依据个人判断、dimension_mismatch维度考点不匹配、practice_scope练习超出共同范围、priority_overclaim优先级夸大、other其他。只输出逐条复核结果，不输出新建议、摘要、分数或限制说明。',
+    JSON.stringify({ ...context, candidate: { focuses: result.focuses } }), trace);
+  return applyWeaknessReview(verification, result, report, trace);
 }

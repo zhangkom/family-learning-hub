@@ -20,7 +20,7 @@ globalThis.fetch = async (url, options) => {
   const contextText = request.messages[1].content[0].text;
   const context = () => JSON.parse(contextText.slice(contextText.indexOf('\n') + 1));
   const reply = questions => Response.json({ choices: [{ finish_reason: 'stop', message: { content: JSON.stringify({ questions }) } }] });
-  if (guide.includes('薄弱点依据核验老师')) return reply([{ approved: true, rejectionCode: 'none', reason: '隔离合成模型：引用与补强方向一致' }]);
+  if (guide.includes('薄弱点依据核验老师')) return reply([{ reviews: context().candidate.focuses.map(focus => ({ focusId: focus.id, approved: true, rejectionCode: 'none', reason: '隔离合成模型：引用与补强方向一致' })) }]);
   if (guide.includes('薄弱点分析助手')) {
     const input = context(), bySubject = new Map();
     for (const source of input.sources) { const group = bySubject.get(source.subject) || []; group.push(source); bySubject.set(source.subject, group); }
@@ -32,7 +32,7 @@ globalThis.fetch = async (url, options) => {
       practiceDirection: '逐题列出已知量与目标量，写清关系式；完成后用新的条件独立复测。',
       evidence: group.slice(0, 2).map(source => ({ sourceId: source.id, kind: 'question', quote: source.prompt.slice(0, 100), reason: '题干包含需要整理的已知条件。' })),
     }));
-    return reply([{ summary: '基于本次错题样本的 AI 待核对学习建议。', focuses, limitations: ['隔离合成模型响应，只验证流程，不代表真实教学分析。', '错题分布不能证明具体错因，需要结合真实作答继续核对。'] }]);
+    return reply([{ focuses }]);
   }
   if (guide.includes('独立的题目核验老师')) return reply(context().map(task => ({ approved: true, reason: '合成核验通过', answer: task.answer, explanation: task.explanation })));
   if (guide.includes('只批改这次新提交的作答')) {
