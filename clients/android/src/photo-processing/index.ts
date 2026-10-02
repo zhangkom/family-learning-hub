@@ -165,3 +165,11 @@ export async function deleteOriginal(owner: string, originalId: string, confirme
   if (confirmed !== true) throw new Error('删除本机原片需要确认');
   await native.deleteOriginal({ owner, originalId, confirmDelete: true });
 }
+
+/** Explicit cloud-original flow. No processing, re-encoding, or legacy 8 MiB scan limit. */
+export async function readCloudOriginalUpload(owner: string, original: OriginalPhoto, signal?: AbortSignal) {
+  const { uploadEligibility: _legacyScanLimit, ...result } = await readOriginalUpload(owner, original, signal);
+  return result;
+}
+export * from './batch';
+export * from './cloud-download';
