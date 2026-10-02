@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="108" height="108" viewBox="18 18 72 72"><defs><linearGradient id="background" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#151E38" stop-opacity="1"/><stop offset="1" stop-color="#090F24" stop-opacity="1"/></linearGradient><linearGradient id="glass" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#E7F8FF" stop-opacity="1"/><stop offset="1" stop-color="#508FC8" stop-opacity="1"/></linearGradient><linearGradient id="edge" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FAFFFF" stop-opacity="1"/><stop offset="1" stop-color="#70B9E7" stop-opacity="1"/></linearGradient><clipPath id="clip"><rect x="18" y="18" width="72" height="72" rx="17"/></clipPath></defs><g clip-path="url(#clip)"><rect width="108" height="108" fill="url(#background)"/>
+    <path d="M26 54 L44 54" stroke="#F5FCFF" stroke-width="2.8" stroke-linecap="round"/>
+    <path d="M58 53 L81 42" stroke="#82F0D3" stroke-width="3" stroke-linecap="round"/>
+    <path d="M61 57 L83 56" stroke="#82CBFF" stroke-width="3" stroke-linecap="round"/>
+    <path d="M63 61 L81 71" stroke="#B69AFC" stroke-width="3" stroke-linecap="round"/>
+    <path d="M48 29 L27 73 L71 73 Z" fill="url(#glass)" fill-opacity=".23" stroke="url(#edge)" stroke-width="1.6" stroke-linejoin="round"/>
+    <path d="M48 29 L52 61 L27 73 Z" fill="#D8F8FF" fill-opacity=".12"/>
+    <path d="M48 29 L52 61 L71 73 Z" fill="#9C94FC" fill-opacity=".15"/>
+    <path d="M48 31 L52 61 L29 72" fill="none" stroke="#E5FAFF" stroke-width="0.8" stroke-opacity="0.6" stroke-linecap="round" stroke-linejoin="round"/>
+  </g></svg>

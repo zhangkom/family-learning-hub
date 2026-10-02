@@ -1,0 +1,51 @@
+{
+  "status": "awaiting-user-selection",
+  "published": false,
+  "options": [
+    {
+      "id": "P1",
+      "name": "经典折射",
+      "desc": "玻璃三角 + 三束色光"
+    },
+    {
+      "id": "P2",
+      "name": "立体三棱柱",
+      "desc": "真实棱柱轮廓 · 清爽明亮"
+    },
+    {
+      "id": "P3",
+      "name": "光谱切面",
+      "desc": "三种切面 · 饱满有力量"
+    },
+    {
+      "id": "P4",
+      "name": "留白棱镜",
+      "desc": "线条轮廓 · 极简品牌感"
+    },
+    {
+      "id": "P5",
+      "name": "冰蓝玻璃",
+      "desc": "通透材质 · 安静精致"
+    },
+    {
+      "id": "P6",
+      "name": "晨光棱镜",
+      "desc": "暖色光谱 · 活力与亲和"
+    },
+    {
+      "id": "P7",
+      "name": "光束棱镜",
+      "desc": "平面折射 · 小图标清晰"
+    },
+    {
+      "id": "P8",
+      "name": "菱形晶棱",
+      "desc": "棱镜切面 · 独立轮廓"
+    }
+  ],
+  "references": [
+    "https://www.prismgameapp.com/",
+    "https://apps.apple.com/us/app/prism-daily-ai-news/id6757409783"
+  ],
+  "originalVectorCandidates": true
+}
