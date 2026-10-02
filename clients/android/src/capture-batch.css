@@ -15,3 +15,17 @@
 .cloud-drive-entry { display: flex; align-items: center; justify-content: space-between; gap: 14px; width: 100%; text-align: left; padding: 16px; margin: 12px 0 0; border: 1px solid #bfdbe2; border-radius: 16px; background: #f0fafb; }
 .cloud-drive-entry strong, .cloud-drive-entry small { display: block; }
 .cloud-drive-entry small { margin-top: 4px; color: #526571; }
+.home-dashboard .cloud-drive-entry { padding: 12px 14px; }
+@media (max-width: 760px) and (max-height: 780px) {
+  .dashboard.home-dashboard { padding-top: 6px; padding-bottom: 74px; }
+  .home-dashboard .student-switcher { margin-bottom: 8px; }
+  .home-dashboard .home-capture { padding: 12px; }
+  .home-dashboard .home-capture-actions { margin-top: 8px; }
+  .home-dashboard :is(.capture-primary, .capture-secondary) { min-height: 70px; padding: 7px; gap: 4px; }
+  .home-dashboard .cloud-drive-entry { padding: 8px 10px; margin-top: 8px; }
+  .home-dashboard .feature-catalog-compact { margin-top: 8px; }
+  .home-dashboard .feature-catalog-compact .feature-grid { padding-block: 8px; }
+  .home-dashboard .home-summary { margin-top: 8px; padding-block: 6px; }
+  .home-dashboard .home-summary > button { min-height: 44px; }
+  .home-dashboard .home-recent { margin-top: 6px; }
+}
