@@ -28,6 +28,7 @@ function DriveSession({ api, owner, studentId, studentLabel, onClose, services: 
   const [error, setError] = useState(''), [notice, setNotice] = useState(''), [picking, setPicking] = useState(false);
   const [photos, setPhotos] = useState<CloudPage>({ photos: [] }), [listing, setListing] = useState(false);
   const [viewing, setViewing] = useState<CloudPhoto | null>(null), [downloading, setDownloading] = useState('');
+  const [recoveryAction, setRecoveryAction] = useState<{ run: () => Promise<void> } | null>(null);
   const controller = useRef<AbortController | null>(null), queueRef = useRef<UploadQueue | null>(null), input = useRef<HTMLInputElement>(null);
   const live = useRef(false), listTicket = useRef(0), closeRef = useRef<() => void>(() => {});
   const dialog = useRef<HTMLDialogElement>(null);
@@ -73,6 +74,7 @@ function DriveSession({ api, owner, studentId, studentLabel, onClose, services: 
     if (result.items.length > limits.maxBatch) throw new Error(`一批最多 ${limits.maxBatch} 张，请重新选择`);
     if (accepted.length) await queueRef.current?.add(accepted);
     if (!live.current || signal.aborted) return;
+    setRecoveryAction(result.discardRecovery ? { run: result.discardRecovery } : null);
     if (!rejected.length && !result.failures.length) await result.acknowledge?.();
     if (!live.current || signal.aborted) return;
     setNotice(result.cancelled && !accepted.length ? '已取消选图' : accepted.length ? `已保存 ${accepted.length} 张到本机待上传，请点“开始上传”。` : '没有新的图片需要加入');
@@ -116,6 +118,12 @@ function DriveSession({ api, owner, studentId, studentLabel, onClose, services: 
     } catch (e) { if (live.current && !signal.aborted) setError(message(e)); }
     finally { if (live.current && !signal.aborted) setDownloading(''); }
   }
+  async function discardRecovery() {
+    if (!recoveryAction || locked) return; setPicking(true);
+    try { await recoveryAction.run(); if (live.current) { setRecoveryAction(null); setError(''); setNotice('已忽略这批未导入项，已导入原片和待上传记录均保留。可继续恢复下一批。'); } }
+    catch (e) { if (live.current) setError(message(e)); }
+    finally { if (live.current) setPicking(false); }
+  }
   const bytesWaiting = queue.jobs.filter(job => job.status !== 'completed').reduce((sum, job) => sum + job.size, 0);
   return <section className="cloud-drive" aria-labelledby="cloud-drive-title">
     <header className="cloud-header"><button type="button" onClick={close} aria-label="返回上一页">‹ 返回</button><span className="cloud-child">{studentLabel || '当前孩子'}</span></header>
@@ -127,6 +135,7 @@ function DriveSession({ api, owner, studentId, studentLabel, onClose, services: 
       <p className="cloud-hint">{limits ? `支持 JPEG、PNG、WebP；单张最多 ${sizeLabel(limits.maxFileBytes)}。不支持的图片会明确提示，不会压缩替换原件。` : '正在读取云盘限制…'}</p>
     </div>
     {(error || queue.error) && <p role="alert" className="cloud-error">{error || queue.error}</p>}{notice && <output className="cloud-notice">{notice}</output>}
+    {recoveryAction && <button type="button" disabled={locked} onClick={() => void discardRecovery()}>忽略这批未导入项，保留原片</button>}
     <section className="cloud-panel" aria-labelledby="cloud-queue-title"><div className="cloud-section-heading"><h3 id="cloud-queue-title">本机待上传</h3><span>{waiting} 张待完成</span></div>
       {queue.jobs.length ? <>
         <div className="cloud-progress"><span>已存云盘 {uploadCount} / {queue.jobs.length} 张</span><progress max={queue.jobs.length} value={uploadCount} aria-label="本批上传进度" /></div>
@@ -158,6 +167,7 @@ function PrivatePreview({ photo, services }: { photo: CloudPhoto; services: Driv
   const [url, setUrl] = useState(''), [failed, setFailed] = useState(false), element = useRef<HTMLSpanElement>(null);
   useEffect(() => {
     const abort = new AbortController(); let objectUrl = '', started = false;
+    setUrl(''); setFailed(false);
     const load = async () => {
       if (started) return; started = true;
       try { const file = await services.preview(photo, abort.signal); if (abort.signal.aborted) return; objectUrl = URL.createObjectURL(file); setUrl(objectUrl); }

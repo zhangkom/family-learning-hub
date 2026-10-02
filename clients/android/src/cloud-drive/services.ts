@@ -10,8 +10,10 @@ type NativeBridge = {
   pickOriginals(owner: string, studentId: string, limit: number, options: { purpose: 'cloud-original'; signal?: AbortSignal }): Promise<BatchResult>;
   readCloudOriginalUpload(owner: string, photo: OriginalPhoto, signal?: AbortSignal): Promise<{ file: Blob; sha256: string; studentId: string }>;
   listOriginalBatches(owner: string, studentId: string, purpose: 'cloud-original'): Promise<{ batches: { batchId: string; studentId: string; purpose: string; state: string; createdAt: number }[] }>;
-  resumeOriginalBatch(owner: string, studentId: string, batchId: string, options: { signal?: AbortSignal }): Promise<BatchResult>;
+  resumeOriginalBatch(owner: string, studentId: string, batchId: string, options: { signal?: AbortSignal; purpose?: 'cloud-original' }): Promise<BatchResult>;
   forgetOriginalBatch(owner: string, studentId: string, batchId: string): Promise<void>;
+  getOriginalBatch(owner: string, studentId: string, batchId: string): Promise<{ state: string }>;
+  cancelOriginalBatch(owner: string, studentId: string, batchId: string): Promise<unknown>;
   downloadCloudOriginal(options: { base: string; token: string; path: string; name: string; mime: string; bytes: number; sha256: string }, signal?: AbortSignal): Promise<{ cancelled: boolean; saved: boolean }>;
 };
 async function nativeBridge() {
@@ -22,10 +24,17 @@ async function nativeBridge() {
 }
 function fromNative(result: BatchResult, scope: CloudScope, bridge: NativeBridge): PickResult {
   if (result.originals.some(photo => photo.studentId !== scope.studentId)) throw new Error('原图所属孩子不匹配');
-  return { cancelled: result.cancelled, ...(result.batchId && !result.failures.length ? { acknowledge: () => bridge.forgetOriginalBatch(scope.owner, scope.studentId, result.batchId) } : {}), failures: result.failures.map(f => `第 ${f.index + 1} 张未导入：${f.message}`), items: result.originals.map(original => ({
+  return { cancelled: result.cancelled, ...(result.batchId && !result.failures.length ? { acknowledge: () => bridge.forgetOriginalBatch(scope.owner, scope.studentId, result.batchId) } : {}),
+    ...(result.batchId && result.failures.length ? { discardRecovery: () => discardBatch(bridge, scope, result.batchId) } : {}),
+    failures: result.failures.map(f => `第 ${f.index + 1} 张未导入：${f.message}`), items: result.originals.map(original => ({
     id: original.originalId, name: `原图-${original.originalId}.${original.mime === 'image/png' ? 'png' : original.mime === 'image/webp' ? 'webp' : 'jpg'}`,
     size: original.bytes, mimeType: original.mime, source: { kind: 'native', original },
   })) };
+}
+async function discardBatch(bridge: NativeBridge, scope: CloudScope, batchId: string) {
+  const current = await bridge.getOriginalBatch(scope.owner, scope.studentId, batchId);
+  if (!['completed', 'cancelled'].includes(current.state)) await bridge.cancelOriginalBatch(scope.owner, scope.studentId, batchId);
+  await bridge.forgetOriginalBatch(scope.owner, scope.studentId, batchId);
 }
 export function createDriveServices(api: FamilyApi): DriveServices {
   const cloud = createCloudApi(api), native = Capacitor.getPlatform() === 'android', gate = new ImageRequestGate();
@@ -65,9 +74,10 @@ export function createDriveServices(api: FamilyApi): DriveServices {
         const { batches } = await bridge.listOriginalBatches(scope.owner, scope.studentId, 'cloud-original');
         signal.throwIfAborted();
         if (batches.some(batch => batch.studentId !== scope.studentId || batch.purpose !== 'cloud-original')) throw new Error('上次选图记录所属孩子不匹配');
-        const batch = batches.sort((a, b) => a.createdAt - b.createdAt).find(batch => batch.state !== 'selecting');
+        const batch = batches.sort((a, b) => a.createdAt - b.createdAt)[0];
         if (!batch) return { items: [], failures: [] };
-        return fromNative(await bridge.resumeOriginalBatch(scope.owner, scope.studentId, batch.batchId, { signal }), scope, bridge);
+        if (batch.state === 'selecting') return { items: [], failures: ['上次系统相册尚未返回，请完成选择；也可忽略这次未完成的选图。'], discardRecovery: () => discardBatch(bridge, scope, batch.batchId) };
+        return fromNative(await bridge.resumeOriginalBatch(scope.owner, scope.studentId, batch.batchId, { signal, purpose: 'cloud-original' }), scope, bridge);
       },
     } : {}),
   };
