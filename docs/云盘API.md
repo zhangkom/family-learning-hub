@@ -2,7 +2,7 @@
 
 前缀 `/family-learning/api/mobile/v1`，全部云盘接口要求现有 Bearer 登录并沿用 CORS。云盘独立于 scans、错题和模型任务，上传不触发 AI。服务端类型见 `lib/cloud-photos.ts`。
 
-`GET /setup` 新增 `cloudPhotos`：`{version:1,maxBatchItems:100,maxFileBytes:8388608,maxPixels:32000000,mimeTypes:["image/jpeg","image/png","image/webp"],recommendedConcurrency:2}`。字段缺失时客户端不启用此流程。每批1–100张；逐个 multipart 请求，客户端默认并发2。超量、超过8MiB/3200万像素、动画或其他格式明确拒绝，不通过偷偷压缩原图绕过限制。HEIC/GIF/PDF 首版不支持。
+`GET /setup` 新增 `cloudPhotos`：`{version:1,maxBatchItems:100,maxFileBytes:33554432,maxPixels:32000000,mimeTypes:["image/jpeg","image/png","image/webp"],recommendedConcurrency:1}`。字段缺失时客户端不启用此流程。每批1–100张；逐个 multipart 请求，客户端默认串行1张。超量、超过32MiB/3200万像素、动画或其他格式明确拒绝，不通过偷偷压缩原图绕过限制。HEIC/GIF/PDF 首版不支持。
 
 ## 创建批次
 
@@ -20,7 +20,7 @@
 
 CloudPhoto 字段：`id,batchId,studentId,clientRequestId,originalName,mimeType,size,sha256,width,height,orientation,createdAt`。文件名会净化；size/sha256 对应服务器持久保存的原始字节。width/height 是按 EXIF 纠正后的显示尺寸，orientation 是原 EXIF 方向。服务器保留相机元数据与文件字节，不转码原件。
 
-同 clientRequestId 异原图、SHA、孩子、批次或净化后的文件名返回409 `IDEMPOTENCY_CONFLICT`。客户端必须固定标识和表单，回执丢失后用相同内容重试，可得到同一 photo。不同标识不做相册内容去重。手机原片可在验证回执的字节数/hash/孩子后继续保留；不自动删除。
+同 clientRequestId 异原图、SHA、孩子、批次或净化后的文件名返回409 `IDEMPOTENCY_CONFLICT`。photoId 与 batchId 是小写标准UUID（8-4-4-4-12十六进制）；客户端必须固定标识和表单，回执丢失后用相同内容重试，可得到同一 photo。不同标识不做相册内容去重。手机原片可在验证回执的字节数/hash/孩子后继续保留；不自动删除。
 
 ## 浏览和下载
 
@@ -39,4 +39,4 @@ CloudPhoto 字段：`id,batchId,studentId,clientRequestId,originalName,mimeType,
 
 原件位于工程 `data/<sha256(accountId)>/cloud-photos/<photoId>/original`，独立 immutable record.json 保存回执字段。分类只修改或查询元数据，不移动原件；本版不提供删除/移动。缩略图为可重建内存缓存，不改变原件。新表为附加表，旧后台忽略云盘；回退必须保留 data 与新版云盘备份工具。
 
-2026-10-02 开发前只读检查：腾讯可用39,156,809,728字节，既有 Nginx `client_max_body_size 9m` 足以容纳8MiB图片和64KiB表单开销。此记录不代表将来仍有同样空间；上传及部署分别重查。尚未发布新后台。
+2026-10-02 开发前只读检查：腾讯可用39,156,809,728字节，既有 Nginx `client_max_body_size 9m` 不适合新云盘；正式发布时仅本工程上调为 `33m`，旧 scans 服务端8MiB限制保持不变。云盘采用流式临时文件接收与独立图片子进程，临时文件位于工程 `temp/cloud-photos`，部署时给服务增加该目录的专用可写绑定。此记录不代表将来仍有同样空间；上传及部署分别重查。尚未发布新后台。
