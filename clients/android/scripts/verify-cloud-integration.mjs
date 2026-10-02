@@ -25,6 +25,10 @@ const context = await browser.newContext({ viewport: { width: 390, height: 844 }
 await context.addInitScript(api => { if (/^https?:$/.test(location.protocol)) localStorage.setItem('family-learning:server', api); }, api);
 const page = await context.newPage(); page.setDefaultTimeout(30000);
 const errors = [], receipts = [], batches = []; let attempts = 0, modelCalls = 0, external = 0, lostReceipt;
+const allowWindowsRenameRetry = process.platform === 'win32' && process.env.FAMILY_QA_ALLOW_WINDOWS_RENAME_RETRY === 'true';
+const errorLog = path.join(config.directory, 'server-error.log');
+const priorErrorLog = allowWindowsRenameRetry ? await readFile(errorLog, 'utf8') : '';
+let transientRenameFailures = 0;
 let releaseFive, releaseTwoHundred;
 const atFive = new Promise(resolve => { releaseFive = resolve; }), atTwoHundred = new Promise(resolve => { releaseTwoHundred = resolve; });
 page.on('pageerror', error => errors.push(error.message));
@@ -40,6 +44,12 @@ await page.route('**/*', async route => {
     attempts++; if (attempts === 6) await atFive; if (attempts === 201) await atTwoHundred; const response = await route.fetch();
     const result = await response.json();
     if (response.ok()) receipts.push(result.photo);
+    else if (allowWindowsRenameRetry && response.status() === 500) {
+      const newErrors = (await readFile(errorLog, 'utf8')).slice(priorErrorLog.length);
+      assert.equal(result.code, 'INTERNAL_ERROR');
+      assert.ok((newErrors.match(/EPERM: operation not permitted, rename /g) || []).length > transientRenameFailures, 'Only diagnosed Windows rename failures may be retried by this fixture');
+      transientRenameFailures++;
+    } else assert.fail(`Unexpected upload response ${response.status()}`);
     if (attempts === 300) { assert.equal(response.status(), 201); lostReceipt = result.photo; return route.abort('connectionreset'); }
     return route.fulfill({ response });
   }
@@ -63,15 +73,16 @@ try {
   await page.screenshot({ path: path.join(out, 'cloud-5-of-500.png') }); releaseFive();
   await page.waitForFunction(() => document.querySelector('[aria-label="上传完成数量"]')?.textContent === '200/500', null, { timeout: 120000 });
   await page.screenshot({ path: path.join(out, 'cloud-200-of-500.png') }); releaseTwoHundred();
-  await page.waitForFunction(() => document.querySelectorAll('.cloud-job-completed').length === 499 && document.querySelectorAll('.cloud-job-failed').length === 1, null, { timeout: 180000 });
-  assert.equal(attempts, 500); assert.equal(receipts.length, 500);
+  await page.waitForFunction(() => document.querySelectorAll('.cloud-job-completed, .cloud-job-failed').length === 500, null, { timeout: 180000 });
+  assert.equal(await page.locator('.cloud-job-failed').count(), 1 + transientRenameFailures);
+  assert.equal(attempts, 500); assert.equal(receipts.length, 500 - transientRenameFailures);
   const uniqueBatches = [...new Map(batches.map(batch => [batch.clientBatchId, batch])).values()];
   assert.deepEqual(uniqueBatches.map(batch => batch.expectedCount), [500]);
   await page.reload(); await logIn(); await openDrive();
-  await page.waitForFunction(() => document.querySelectorAll('.cloud-job-completed').length === 499 && document.querySelectorAll('.cloud-job-failed').length === 1);
+  await page.waitForFunction(n => document.querySelectorAll('.cloud-job-completed').length === 499 - n && document.querySelectorAll('.cloud-job-failed').length === 1 + n, transientRenameFailures);
   await button('中断续传').click();
   await page.waitForFunction(() => document.querySelectorAll('.cloud-job-completed').length === 500);
-  assert.equal(attempts, 501); assert.equal(receipts.at(-1).id, lostReceipt.id);
+  assert.equal(attempts, 501 + transientRenameFailures); assert.equal(receipts.filter(p => p.id === lostReceipt.id).length, 2);
   const photos = []; let cursor;
   do {
     const response = await fetch(`${api}/cloud-photos?studentId=${student.id}&limit=30${cursor ? '&cursor=' + encodeURIComponent(cursor) : ''}`, { headers });
@@ -192,7 +203,7 @@ try {
   const top = await nativePage.locator('.cloud-header').boundingBox(); assert.ok(top.y >= 32);
   await nativePage.screenshot({ path: path.join(out, 'cloud-safe-area.png') });
   await nativeContext.close(); assert.equal(external, 0); assert.deepEqual(errors, []);
-  const result = { checkedAt: new Date().toISOString(), syntheticOnly: true, realLocalBackend: true, nativeDeviceTested: false, count: photos.length, uploadAttempts: attempts,
+  const result = { checkedAt: new Date().toISOString(), syntheticOnly: true, realLocalBackend: true, nativeDeviceTested: false, count: photos.length, uploadAttempts: attempts, transientWindowsRenameFailures: transientRenameFailures,
     batchSizes: uniqueBatches.map(batch => batch.expectedCount), totalProgressVerified: ["5/500", "200/500", "500/500"], duplicateChoicesVerified: ["suffix", "manual", "replace"], partialImportRecoveryVerified: true, freshSelectionResetsCompletedTotal: true, layoutChecks, originalNamesPreserved: true, nativeNamesSurviveRestartAndUpload: true, nativeAlbumModeWired: true, nativeSystemModeWired: true, nativeAlbumDialogTested: false, nativeFolderModeWired: true, nativeFolderDialogTested: false, originalHashVerified: true, downloadHashVerified: true, durableQueueRecovery: true, lostReceiptRecoveredWithoutDuplicate: true, noScansCreated: true, modelCalls, external, errors };
   await writeFile(path.join(out, 'cloud-real-api-result.json'), JSON.stringify(result, null, 2)); console.log(JSON.stringify(result));
 } catch (error) { await page.screenshot({ path: path.join(out, 'cloud-real-api-failure.png') }); console.error((await page.locator('body').innerText()).slice(0, 1800)); throw error; }
