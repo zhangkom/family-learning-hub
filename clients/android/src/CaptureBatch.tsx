@@ -13,8 +13,8 @@ function DraftThumbnail({ draft }: { draft: Draft }) {
   return <img src={url || undefined} alt={draft.name} loading="lazy" />;
 }
 
-export function CaptureBatch({ collection, studentLabel, busy, error, onCapture, onRemove, onFinish, onClose }: {
-  collection: CaptureCollection; studentLabel: string; busy: boolean; error: string;
+export function CaptureBatch({ collection, studentLabel, busy, error, progress, onCapture, onRemove, onFinish, onClose }: {
+  collection: CaptureCollection; studentLabel: string; busy: boolean; error: string; progress?: string;
   onCapture: (source: 'camera' | 'gallery') => void; onRemove: (id: string) => void; onFinish: () => void; onClose: () => void;
 }) {
   const count = collectionSize(collection);
@@ -27,7 +27,7 @@ export function CaptureBatch({ collection, studentLabel, busy, error, onCapture,
       <button disabled={busy || count >= MAX_CAPTURE_BATCH} onClick={() => onCapture('gallery')}>从相册添加</button>
       <button className="primary" disabled={busy || !count} onClick={onFinish}>{collection.originals.length ? '完成选择，逐张调整' : '完成选择，查看待上传'}</button>
     </div>
-    {busy && <output>正在保存照片，请稍候…</output>}
+    {busy && <output>{progress || '正在保存照片，请稍候…'}</output>}
     {error && <p role="alert" className="error">{error}</p>}
     {!count && !busy && <p className="hint">尚未添加照片。取消拍摄后，也可以继续添加。</p>}
     <div className="capture-batch-grid">

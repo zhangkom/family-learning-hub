@@ -193,6 +193,7 @@ function Home({
   const [preparationBatch, setPreparationBatch] = useState<{ photos: OriginalPhoto[]; index: number; nativeBatchIds: string[] } | null>(null);
   const [batchProgress, setBatchProgress] = useState<BatchProgress | null>(null);
   const [cloudOpen, setCloudOpen] = useState(false);
+  const [captureProgress, setCaptureProgress] = useState('');
   const captureBusy = useRef(false);
   const captureAbort = useRef<AbortController | null>(null);
   function updateCollection(next: CaptureCollection | null) { collectionRef.current = next; setCollection(next); }
@@ -393,7 +394,7 @@ function Home({
   }, [selected, recoverCamera]);
   async function capture(source: 'camera' | 'gallery') {
     if (!student || busy || captureBusy.current || uploadAbort.current) return;
-    setError('');
+    setError(''); setCaptureProgress('');
     const batch = collectionRef.current ?? { studentId: student.id, originals: [], drafts: [] };
     if (batch.studentId !== student.id || collectionSize(batch) >= MAX_CAPTURE_BATCH) { setError('本批已达到 100 张，请先完成本批'); return; }
     updateCollection(batch);
@@ -409,7 +410,8 @@ function Home({
     setBusy(true); captureBusy.current = true;
     try {
       if (source === 'gallery' && localPhotosEnabled) {
-        const result = await pickOriginals(owner, student.id, MAX_CAPTURE_BATCH - collectionSize(batch), { purpose: 'processed', signal: abort.signal });
+        const result = await pickOriginals(owner, student.id, MAX_CAPTURE_BATCH - collectionSize(batch), { purpose: 'processed', signal: abort.signal,
+          onProgress: progress => { if (live.current && generation === scopeGeneration.current) setCaptureProgress(`正在导入相册：已处理 ${progress.items.filter(item => item.status !== 'pending').length} / ${progress.items.length} 张`); } });
         if (live.current && generation === scopeGeneration.current && activeStudent.current === student.id) {
           const current = collectionRef.current;
           if (current?.studentId === student.id) updateCollection({ ...current, originals: [...current.originals, ...result.originals].slice(0, MAX_CAPTURE_BATCH - current.drafts.length),
@@ -581,7 +583,7 @@ function Home({
       onChange={e => { const files = Array.from(e.target.files || []); e.target.value = ''; void saveBrowserBatch(files); }} />
   </>;
   if (cloudOpen && student) return <CloudPhotoDrive key={`${owner}/${selected}`} api={api} owner={owner} studentId={selected} studentLabel={student.name} onClose={() => setCloudOpen(false)} />;
-  if (collection && collection.studentId === selected) return <><CaptureBatch collection={collection} studentLabel={student?.name || '当前孩子'} busy={busy} error={error}
+  if (collection && collection.studentId === selected) return <><CaptureBatch collection={collection} studentLabel={student?.name || '当前孩子'} busy={busy} error={error} progress={captureProgress}
     onCapture={source => void capture(source)} onFinish={finishCollection} onClose={closeLocalPhotos}
     onRemove={id => updateCollection({ ...collection, originals: collection.originals.filter(item => item.originalId !== id), drafts: collection.drafts.filter(item => item.id !== id) })} />{fileInputs}</>;
   if (preparing && preparing.studentId === selected) return <>
