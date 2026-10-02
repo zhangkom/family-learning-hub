@@ -26,6 +26,15 @@ function storage(): Storage {
 }
 afterEach(() => vi.unstubAllGlobals());
 describe('host handoff persistence', () => {
+  it('restores all 100 fallback gallery references and keeps other scopes isolated', () => {
+    const local = storage(); beginCamera('owner', 'a', 'gallery', local);
+    restoredCamera({ pluginId: 'Camera', methodName: 'chooseFromGallery', success: true,
+      data: { results: Array.from({ length: 100 }, (_, n) => ({ uri: `/gallery/${n}.png` })) } }, local);
+    const results = listCameraResults('owner', 'a', local).results;
+    expect(results).toHaveLength(100); expect(new Set(results.map(result => result.id)).size).toBe(100);
+    expect(results.at(-1)?.uri).toBe('/gallery/99.png'); expect(listCameraResults('other', 'a', local).results).toEqual([]);
+    expect(local.getItem('family-learning:pending-camera')).toBeNull();
+  });
   it('binds a restored camera result to its original owner/student, never the current viewer', () => {
     const local = storage(), context = beginCamera('owner', 'a', 'camera', local);
     restoredCamera({ pluginId: 'Camera', methodName: 'takePhoto', success: true, data: { uri: '/camera/restored.jpg' } }, local);

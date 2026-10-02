@@ -47,7 +47,19 @@ export function restoredCamera(event: { pluginId: string; methodName?: string; s
   if (event.methodName && event.methodName !== (context.source === 'camera' ? 'takePhoto' : 'chooseFromGallery'))
     throw new Error('恢复的相机操作与本机记录不匹配，请重新选择照片');
   if (!event.success) { cancelCamera(context, storage); return null; }
-  return stageCamera(context, event.data as Parameters<typeof stageCamera>[1], storage);
+  const data = event.data as Parameters<typeof stageCamera>[1];
+  if (context.source === 'gallery' && Array.isArray(data?.results)) {
+    if (data.results.length > 100) throw new Error('恢复的相册选择超过 100 张，请重新选择');
+    if (!data.results.length) { cancelCamera(context, storage); return null; }
+    // Persist every reference before the active activity context is removed.
+    const staged = data.results.map((photo, index) => {
+      if (!photo.uri && !photo.webPath) throw new Error('相册未返回照片地址，请重新选择');
+      return { ...context, id: index ? `${context.id}-${index}` : context.id, uri: photo.uri, webPath: photo.webPath };
+    });
+    for (const result of staged) storage.setItem(resultPrefix + result.id, JSON.stringify(result));
+    cancelCamera(context, storage); return staged[0];
+  }
+  return stageCamera(context, data, storage);
 }
 export function listCameraResults(owner: string, studentId: string, storage: Storage = localStorage): { results: CameraResult[]; issues: string[] } {
   const results: CameraResult[] = [];

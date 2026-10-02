@@ -6,7 +6,7 @@ import { BookOpen } from 'lucide-react';
 import { ApiError, FamilyApi, sessionExpiredEvent } from './api';
 import { session } from './session';
 import { drafts, listPhotoDeliveries, recoverPhotoDelivery, removePhotoDelivery, removeDamagedPhotoDelivery, type PhotoDeliveryRecord, type PhotoDeliveryIssue, type Draft } from './drafts';
-import { PhotoPreparation, OriginalPhotoLibrary, photoProcessingAvailable, importOriginal, previewUrl, pickOriginals, listOriginalBatches, resumeOriginalBatch, forgetOriginalBatch, type OriginalPhoto } from './photo-processing/public';
+import { PhotoPreparation, OriginalPhotoLibrary, photoProcessingAvailable, importOriginal, previewUrl, pickOriginals, listOriginalBatches, resumeOriginalBatch, getOriginalBatch, forgetOriginalBatch, type OriginalPhoto } from './photo-processing/public';
 import { CloudPhotoDrive } from './cloud-drive/CloudPhotoDrive';
 import { activeCamera, beginCamera, cancelCamera, clearUnfinishedCamera, stageCamera, restoredCamera, listCameraResults, removeCameraResult, cameraResultEvent, type CameraResult } from './photo-processing/camera-handoff';
 import { Review } from './Review';
@@ -486,12 +486,21 @@ function Home({
     } catch (e) { if (live.current && generation === scopeGeneration.current) setError(message(e)); }
     finally { if (live.current && generation === scopeGeneration.current) setBusy(false); }
   }
-  function advancePreparation() {
+  async function advancePreparation() {
     if (preparationBatch && preparationBatch.index + 1 < preparationBatch.photos.length) {
       const next = { ...preparationBatch, index: preparationBatch.index + 1 }; setPreparationBatch(next); setPreparing(next.photos[next.index]);
     } else {
-      for (const batchId of preparationBatch?.nativeBatchIds || []) void forgetOriginalBatch(owner, selected, batchId).catch(() => { /* Incomplete imports remain recoverable. */ });
-      setPreparationBatch(null); setPreparing(null); setHomePage('library'); setLibraryMode('photos');
+      const generation = scopeGeneration.current; setBusy(true);
+      try {
+        for (const batchId of preparationBatch?.nativeBatchIds || []) {
+          if (!live.current || generation !== scopeGeneration.current) break;
+          const batch = await getOriginalBatch(owner, selected, batchId);
+          if (batch.state === 'completed' || batch.state === 'cancelled') await forgetOriginalBatch(owner, selected, batchId);
+        }
+      } catch (e) { if (live.current && generation === scopeGeneration.current) setError(`照片已保存；相册批次收尾未完成：${message(e)}`); }
+      finally {
+        if (live.current && generation === scopeGeneration.current) { setBusy(false); setPreparationBatch(null); setPreparing(null); setHomePage('library'); setLibraryMode('photos'); }
+      }
     }
   }
   async function recoverGallery() {
@@ -598,13 +607,14 @@ function Home({
     onCapture={source => void capture(source)} onFinish={finishCollection} onClose={closeLocalPhotos}
     onRemove={id => void removeCollectedPhoto(id)} />{fileInputs}</>;
   if (preparing && preparing.studentId === selected) return <>
-    {preparationBatch && <div className="capture-batch-progress"><div className="section-line"><strong>逐张调整 · 第 {preparationBatch.index + 1} / {preparationBatch.photos.length} 张</strong>
-      <button onClick={advancePreparation}>跳过这张，保留原片</button></div><p className="hint">确认当前照片后进入下一张，全部确认后可以批量上传。</p></div>}
+    {preparationBatch && <div className="capture-batch-progress"><strong>逐张调整 · 第 {preparationBatch.index + 1} / {preparationBatch.photos.length} 张</strong>
+      <p className="hint">确认当前照片后进入下一张，全部确认后可以批量上传。</p></div>}
     <PhotoPreparation owner={owner} studentId={selected} studentLabel={student?.name}
     original={preparing} onCancel={closeLocalPhotos}
-    onConfirm={delivery => {
+    onConfirm={async delivery => {
       if (!live.current || viewGeneration !== scopeGeneration.current || delivery.record.owner !== owner || delivery.record.studentId !== activeStudent.current) return;
-      refreshPhotoQueue(); advancePreparation();
+      refreshPhotoQueue(); await advancePreparation();
+      if (!live.current || viewGeneration !== scopeGeneration.current || delivery.record.studentId !== activeStudent.current) return;
       setNotice('处理图已保存为本机待提交。检查后点击上传；原片仍保留。');
     }} /></>;
   if (originalsOpen && student) return <main><div className="button-row"><button onClick={closeLocalPhotos}>返回题目资料</button></div>
