@@ -1,5 +1,5 @@
 import { ApiError, FamilyApi, sessionExpiredEvent } from '../api';
-import { assertReceipt, type CloudLimits, type CloudPage, type CloudPhoto, type UploadBytes, type UploadJob } from './types';
+import { BATCH_LIMIT, assertReceipt, type CloudLimits, type CloudPage, type CloudPhoto, type UploadBytes, type UploadJob } from './types';
 
 export async function sha256(file: Blob) {
   return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', await file.arrayBuffer())), b => b.toString(16).padStart(2, '0')).join('');
@@ -13,7 +13,7 @@ export function createCloudApi(api: FamilyApi) {
     const cap = setup.cloudPhotos;
     if (!cap || cap.version !== 1 || !Number.isSafeInteger(cap.maxFileBytes) || cap.maxFileBytes < 1 || !Number.isInteger(cap.maxBatchItems) || cap.maxBatchItems < 1 || !Array.isArray(cap.mimeTypes) || !cap.mimeTypes.length)
       throw new Error('服务器尚未开放图片云盘，请更新服务后重试');
-    cachedLimits = { maxFileBytes: cap.maxFileBytes, maxBatch: Math.min(100, cap.maxBatchItems), mimeTypes: cap.mimeTypes };
+    cachedLimits = { maxFileBytes: cap.maxFileBytes, maxBatch: Math.min(BATCH_LIMIT, cap.maxBatchItems), mimeTypes: cap.mimeTypes };
     return cachedLimits;
   }
   async function upload(job: UploadJob, bytes: UploadBytes, signal: AbortSignal) {

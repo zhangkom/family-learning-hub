@@ -85,9 +85,9 @@ async function createBatch(
     ) ||
     !Number.isSafeInteger(body.expectedCount) ||
     Number(body.expectedCount) < 1 ||
-    Number(body.expectedCount) > 100
+    Number(body.expectedCount) > CLOUD_PHOTO_CAPABILITY.maxBatchItems
   )
-    throw new HttpError(400, '每批请选择1至100张图片');
+    throw new HttpError(400, `每批请选择1至${CLOUD_PHOTO_CAPABILITY.maxBatchItems}张图片`);
   const student = requireStudent(store, account, body.studentId),
     client = uuid(body.clientBatchId);
   const prior = store.db

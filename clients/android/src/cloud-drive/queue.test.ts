@@ -17,12 +17,24 @@ const receipt = (job: UploadJob): CloudPhoto => ({ id: 'server-' + job.id, batch
 function services() { return { read: vi.fn(async (job: UploadJob) => ({ file: (job.source as { file: Blob }).file, sha256: digest })), upload: vi.fn(async (job: UploadJob) => receipt(job)) }; }
 
 describe('cloud original upload queue', () => {
-  it('persists 100 selections without reading/uploading, rejects overflow, and keeps each upload in one stable batch', async () => {
+  it('groups 450 selections as 200/200/50 and keeps all group IDs across recovery and further selection', async () => {
     const { store } = memory(), api = services(), queue = new UploadQueue(scope, store, api); await queue.load();
-    await queue.add(Array.from({ length: 100 }, (_, i) => item(`${i}.jpg`)));
+    await queue.add(Array.from({ length: 450 }, (_, i) => item(`${i}.jpg`)));
     expect(api.read).not.toHaveBeenCalled(); expect(api.upload).not.toHaveBeenCalled();
-    expect(new Set(queue.snapshot().jobs.map(j => j.clientBatchId)).size).toBe(1); expect(queue.snapshot().jobs[0].expectedCount).toBe(100);
-    await expect(queue.add([item()])).rejects.toThrow('100'); expect((await store.list(scope)).length).toBe(100);
+    const saved = queue.snapshot().jobs;
+    const groups = [...new Set(saved.map(j => j.clientBatchId))];
+    expect(groups.map(id => saved.filter(j => j.clientBatchId === id).length)).toEqual([200, 200, 50]);
+    expect(groups.map(id => saved.find(j => j.clientBatchId === id)!.expectedCount)).toEqual([200, 200, 50]);
+    queue.dispose(); const restored = new UploadQueue(scope, store, api); await restored.load();
+    expect(restored.snapshot().jobs.map(j => [j.id, j.clientBatchId])).toEqual(saved.map(j => [j.id, j.clientBatchId]));
+    await restored.add([item()]); expect((await store.list(scope)).length).toBe(451);
+    await restored.start(); expect(api.upload).toHaveBeenCalledTimes(451);
+    expect(restored.snapshot().jobs.every(j => j.status === 'completed')).toBe(true);
+  });
+  it('honors an older server group limit without blocking larger selections', async () => {
+    const { store } = memory(), api = services(), queue = new UploadQueue(scope, store, api); await queue.load();
+    await queue.add(Array.from({ length: 201 }, () => item()), 100);
+    expect([...new Set(queue.snapshot().jobs.map(j => j.clientBatchId))].map(id => queue.snapshot().jobs.filter(j => j.clientBatchId === id).length)).toEqual([100, 100, 1]);
   });
   it('reads/sends serially, releases web blobs only after verified receipts', async () => {
     const { store } = memory(), api = services(), queue = new UploadQueue(scope, store, api); let live = 0, peak = 0;

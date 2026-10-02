@@ -1,6 +1,6 @@
 import type { OriginalPhoto } from '../photo-processing';
 
-export const BATCH_LIMIT = 100;
+export const BATCH_LIMIT = 200;
 export type CloudScope = { owner: string; studentId: string };
 export type CloudPhoto = {
   id: string; batchId: string; clientRequestId: string; studentId: string; originalName: string; mimeType: string;

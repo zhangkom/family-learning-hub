@@ -602,7 +602,8 @@ function Home({
     <input className="visually-hidden" ref={galleryInput} type="file" multiple accept="image/jpeg,image/png,image/webp"
       onChange={e => { const files = Array.from(e.target.files || []); e.target.value = ''; void saveBrowserBatch(files); }} />
   </>;
-  if (cloudOpen && student) return <CloudPhotoDrive key={`${owner}/${selected}`} api={api} owner={owner} studentId={selected} studentLabel={student.name} onClose={() => setCloudOpen(false)} />;
+  if (cloudOpen && student) return <CloudPhotoDrive key={`${owner}/${selected}`} api={api} owner={owner} studentId={selected} studentLabel={student.name} onClose={() => setCloudOpen(false)}
+    onOpenOriginals={localPhotosEnabled ? () => { setCloudOpen(false); setOriginalsOpen(true); } : undefined} />;
   if (collection && collection.studentId === selected) return <><CaptureBatch collection={collection} studentLabel={student?.name || '当前孩子'} busy={busy} error={error} progress={captureProgress}
     onCapture={source => void capture(source)} onFinish={finishCollection} onClose={closeLocalPhotos}
     onRemove={id => void removeCollectedPhoto(id)} />{fileInputs}</>;

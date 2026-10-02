@@ -16,19 +16,22 @@ const server = await createServer({ root, server: { host: '127.0.0.1', port: 330
 const loginResponse = await fetch(api + '/session/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: config.username, password: config.password }) });
 assert.equal(loginResponse.status, 200); const login = await loginResponse.json();
 const headers = { Authorization: 'Bearer ' + login.token };
-const studentResponse = await fetch(api + '/students', { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify({ name: '云盘百图合成验收' }) });
+const studentResponse = await fetch(api + '/students', { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify({ name: '云盘450图分组合成验收' }) });
 assert.equal(studentResponse.status, 201); const student = (await studentResponse.json()).student;
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
 const context = await browser.newContext({ viewport: { width: 390, height: 844 }, acceptDownloads: true });
 await context.addInitScript(api => { if (/^https?:$/.test(location.protocol)) localStorage.setItem('family-learning:server', api); }, api);
 const page = await context.newPage(); page.setDefaultTimeout(30000);
-const errors = [], receipts = []; let attempts = 0, modelCalls = 0, external = 0, lostReceipt;
+const errors = [], receipts = [], batches = []; let attempts = 0, modelCalls = 0, external = 0, lostReceipt;
 page.on('pageerror', error => errors.push(error.message));
 await page.route('**/*', async route => {
   const request = route.request(), url = new URL(request.url());
   if (url.href.endsWith('/downloads/android/latest.json')) return route.fulfill({ status: 503, body: '{}' });
   if (![origin, new URL(api).origin].includes(url.origin)) { external++; return route.abort(); }
   if (/\/(recognize|explain)$/.test(url.pathname)) { modelCalls++; return route.abort(); }
+  if (request.url() === api + '/cloud-photo-batches' && request.method() === 'POST') {
+    batches.push(request.postDataJSON());
+  }
   if (request.url() === api + '/cloud-photos' && request.method() === 'POST') {
     attempts++; const response = await route.fetch();
     const result = await response.json();
@@ -49,22 +52,25 @@ const sha256 = createHash('sha256').update(png).digest('hex');
 try {
   await page.goto(origin); await logIn(); await openDrive();
   const chooser = page.waitForEvent('filechooser'); await button('选择图片').click();
-  await (await chooser).setFiles(Array.from({ length: 100 }, (_, n) => ({ name: `原图合成-${n + 1}.png`, mimeType: 'image/png', buffer: png })));
-  await page.waitForFunction(() => document.querySelectorAll('.cloud-job').length === 100); assert.equal(attempts, 0);
+  await (await chooser).setFiles(Array.from({ length: 450 }, (_, n) => ({ name: `原图合成-${n + 1}.png`, mimeType: 'image/png', buffer: png })));
+  await page.waitForFunction(() => document.querySelectorAll('.cloud-job').length === 450); assert.equal(attempts, 0);
   await button('开始上传').click();
-  await page.waitForFunction(() => document.querySelectorAll('.cloud-job-completed').length === 99 && document.querySelectorAll('.cloud-job-failed').length === 1, null, { timeout: 180000 });
-  assert.equal(attempts, 100); assert.equal(receipts.length, 100);
+  await page.waitForFunction(() => document.querySelectorAll('.cloud-job-completed').length === 449 && document.querySelectorAll('.cloud-job-failed').length === 1, null, { timeout: 180000 });
+  assert.equal(attempts, 450); assert.equal(receipts.length, 450);
+  const uniqueBatches = [...new Map(batches.map(batch => [batch.clientBatchId, batch])).values()];
+  assert.deepEqual(uniqueBatches.map(batch => batch.expectedCount), [200, 200, 50]);
   await page.reload(); await logIn(); await openDrive();
-  await page.waitForFunction(() => document.querySelectorAll('.cloud-job-completed').length === 99 && document.querySelectorAll('.cloud-job-failed').length === 1);
+  await page.waitForFunction(() => document.querySelectorAll('.cloud-job-completed').length === 449 && document.querySelectorAll('.cloud-job-failed').length === 1);
   await button('继续上传 / 重试').click();
-  await page.waitForFunction(() => document.querySelectorAll('.cloud-job-completed').length === 100);
-  assert.equal(attempts, 101); assert.equal(receipts.at(-1).id, lostReceipt.id);
+  await page.waitForFunction(() => document.querySelectorAll('.cloud-job-completed').length === 450);
+  assert.equal(attempts, 451); assert.equal(receipts.at(-1).id, lostReceipt.id);
   const photos = []; let cursor;
   do {
     const response = await fetch(`${api}/cloud-photos?studentId=${student.id}&limit=30${cursor ? '&cursor=' + encodeURIComponent(cursor) : ''}`, { headers });
     assert.equal(response.status, 200); const result = await response.json(); photos.push(...result.photos); cursor = result.nextCursor;
   } while (cursor);
-  assert.equal(photos.length, 100); assert.equal(new Set(photos.map(photo => photo.id)).size, 100);
+  assert.equal(photos.length, 450); assert.equal(new Set(photos.map(photo => photo.id)).size, 450);
+  assert.deepEqual([...new Set(photos.map(photo => photo.batchId))].map(id => photos.filter(photo => photo.batchId === id).length).sort((a,b) => b-a), [200, 200, 50]);
   assert.ok(photos.every(photo => photo.studentId === student.id && photo.sha256 === sha256 && photo.size === png.length));
   const scans = await (await fetch(`${api}/scans?studentId=${student.id}`, { headers })).json(); assert.equal(scans.scans.length, 0);
   await page.locator('.cloud-photo').first().scrollIntoViewIfNeeded(); await page.locator('.cloud-photo').first().locator('img').waitFor();
@@ -79,7 +85,7 @@ try {
   await page.screenshot({ path: path.join(out, 'cloud-real-api-320.png') });
   assert.equal(modelCalls, 0); assert.equal(external, 0); assert.deepEqual(errors, []);
   const result = { checkedAt: new Date().toISOString(), syntheticOnly: true, realLocalBackend: true, nativeDeviceTested: false, count: photos.length, uploadAttempts: attempts,
-    originalHashVerified: true, downloadHashVerified: true, durableQueueRecovery: true, lostReceiptRecoveredWithoutDuplicate: true, noScansCreated: true, modelCalls, external, errors };
+    batchSizes: uniqueBatches.map(batch => batch.expectedCount), originalHashVerified: true, downloadHashVerified: true, durableQueueRecovery: true, lostReceiptRecoveredWithoutDuplicate: true, noScansCreated: true, modelCalls, external, errors };
   await writeFile(path.join(out, 'cloud-real-api-result.json'), JSON.stringify(result, null, 2)); console.log(JSON.stringify(result));
 } catch (error) { await page.screenshot({ path: path.join(out, 'cloud-real-api-failure.png') }); console.error((await page.locator('body').innerText()).slice(0, 1800)); throw error; }
 finally { await browser.close(); await server.close(); }

@@ -1,7 +1,7 @@
 // Original-byte cloud storage is independent of scans and model jobs.
 export const CLOUD_PHOTO_CAPABILITY = {
   version: 1,
-  maxBatchItems: 100,
+  maxBatchItems: 200,
   maxFileBytes: 32 * 1024 * 1024,
   maxPixels: 32_000_000,
   mimeTypes: ['image/jpeg', 'image/png', 'image/webp'],

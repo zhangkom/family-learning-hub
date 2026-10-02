@@ -5,7 +5,11 @@ import java.util.*;
 
 /** Durable metadata only. Image bytes live in the existing original store, never in this manifest. */
 final class PhotoBatchStore {
-    static final int MAX_ITEMS = 100;
+    static int maxItems(String purpose) {
+        checkPurpose(purpose);
+        // A cloud selection may span many 200-image upload groups; this manifest contains metadata only.
+        return "cloud-original".equals(purpose) ? Integer.MAX_VALUE : 100;
+    }
     static final class Item {
         String originalId, uri, status = "pending", error = "";
         Item(String uri) { this.uri=uri; originalId=UUID.randomUUID().toString(); }
@@ -19,7 +23,7 @@ final class PhotoBatchStore {
     private PhotoBatchStore(File file) { this.file=file; }
     static PhotoBatchStore create(File root,String student,String purpose,int limit) throws IOException {
         checkStudent(student); checkPurpose(purpose);
-        if(limit<1||limit>MAX_ITEMS) throw new IllegalArgumentException("每批最多选择 100 张照片");
+        if(limit<1||limit>maxItems(purpose)) throw new IllegalArgumentException("每批最多选择 "+maxItems(purpose)+" 张照片");
         String id=UUID.randomUUID().toString();
         PhotoBatchStore batch=new PhotoBatchStore(path(root,id));
         batch.id=id; batch.studentId=student; batch.purpose=purpose; batch.limit=limit;
@@ -59,7 +63,7 @@ final class PhotoBatchStore {
     private static PhotoBatchStore read(File file) throws IOException {
         File backup=new File(file.getPath()+".bak");
         if(!file.exists()&&backup.exists()&&!backup.renameTo(file)) throw new IOException("batch recovery failed");
-        if(!file.isFile()||file.length()>2*1024*1024) throw new IOException("batch missing or oversized");
+        if(!file.isFile()) throw new IOException("batch missing");
         Properties p=new Properties(); try(InputStream in=new FileInputStream(file)){p.load(in);}
         PhotoBatchStore b=new PhotoBatchStore(file);
         try {
@@ -70,7 +74,7 @@ final class PhotoBatchStore {
             if(!Arrays.asList("selecting","ready","completed","cancelled").contains(b.state)) throw new IllegalArgumentException();
             b.limit=Integer.parseInt(p.getProperty("limit")); b.createdAt=Long.parseLong(p.getProperty("createdAt"));
             int count=Integer.parseInt(p.getProperty("count"));
-            if(b.limit<1||b.limit>MAX_ITEMS||count<0||count>b.limit||b.createdAt<=0) throw new IllegalArgumentException();
+            if(b.limit<1||b.limit>maxItems(b.purpose)||count<0||count>b.limit||b.createdAt<=0) throw new IllegalArgumentException();
             for(int i=0;i<count;i++) {
                 Item item=new Item(p.getProperty(i+".uri","")); item.originalId=p.getProperty(i+".id");
                 path(file.getParentFile().getParentFile(),item.originalId);
@@ -84,8 +88,9 @@ final class PhotoBatchStore {
     void select(List<String> uris) throws IOException {
         if(!state.equals("selecting")) throw new IllegalArgumentException("该相册选择已经结束");
         LinkedHashSet<String> unique=new LinkedHashSet<>(uris);
-        if(unique.size()>limit) throw new IllegalArgumentException("所选照片超过本批剩余数量（"+limit+" 张），请重新选择");
+        if(!purpose.equals("cloud-original")&&unique.size()>limit) throw new IllegalArgumentException("所选照片超过本批剩余数量（"+limit+" 张），请重新选择");
         for(String uri:unique) if(uri==null||!uri.startsWith("content://")||uri.length()>8192) throw new IllegalArgumentException("系统未返回有效的照片地址");
+        if(purpose.equals("cloud-original")) limit=Math.max(limit,unique.size());
         for(String uri:unique) items.add(new Item(uri));
         state=items.isEmpty()?"cancelled":"ready"; save();
     }

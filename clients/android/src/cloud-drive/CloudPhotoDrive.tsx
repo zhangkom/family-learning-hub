@@ -9,7 +9,7 @@ import { BATCH_LIMIT, type CloudLimits, type CloudPage, type CloudPhoto, type Dr
 import './cloud-drive.css';
 
 export type CloudPhotoDriveProps = {
-  api: FamilyApi; owner: string; studentId: string; studentLabel?: string; onClose: () => void;
+  api: FamilyApi; owner: string; studentId: string; studentLabel?: string; onClose: () => void; onOpenOriginals?: () => void;
   /** Isolated synthetic QA or a host-specific native adapter. */
   services?: DriveServices; store?: DriveStore;
 };
@@ -21,7 +21,7 @@ export function CloudPhotoDrive(props: CloudPhotoDriveProps) {
   if (!props.owner.trim() || !props.studentId.trim()) return <section className="cloud-drive" role="alert">请先选择账号和孩子。</section>;
   return <DriveSession key={JSON.stringify([props.owner, props.studentId, props.api.base])} {...props} />;
 }
-function DriveSession({ api, owner, studentId, studentLabel, onClose, services: supplied, store = driveStore }: CloudPhotoDriveProps) {
+function DriveSession({ api, owner, studentId, studentLabel, onClose, onOpenOriginals, services: supplied, store = driveStore }: CloudPhotoDriveProps) {
   const services = useMemo(() => supplied || createDriveServices(api), [api, supplied]);
   const [queue, setQueue] = useState<QueueSnapshot>({ jobs: [], running: false });
   const [ready, setReady] = useState(false), [limits, setLimits] = useState<CloudLimits | null>(null);
@@ -34,7 +34,8 @@ function DriveSession({ api, owner, studentId, studentLabel, onClose, services: 
   const dialog = useRef<HTMLDialogElement>(null);
   useEffect(() => { const element = dialog.current; if (viewing && element && !element.open) element.showModal(); return () => element?.close(); }, [viewing]);
   const uploadCount = queue.jobs.filter(job => job.status === 'completed').length;
-  const waiting = queue.jobs.length - uploadCount, available = Math.max(0, (limits?.maxBatch || BATCH_LIMIT) - waiting);
+  const waiting = queue.jobs.length - uploadCount, batchSize = limits?.maxBatch || BATCH_LIMIT;
+  const groupCount = new Set(queue.jobs.map(job => job.clientBatchId)).size;
   const locked = queue.running || picking || !ready;
   const refresh = useCallback(async (cursor?: string) => {
     const signal = controller.current?.signal; if (!live.current || !signal || signal.aborted) return;
@@ -71,23 +72,21 @@ function DriveSession({ api, owner, studentId, studentLabel, onClose, services: 
       else if (item.size > limits.maxFileBytes || item.size < 1) rejected.push(`${item.name}：超过单张大小限制或文件为空`);
       else accepted.push(item);
     }
-    if (result.items.length > limits.maxBatch) throw new Error(`一批最多 ${limits.maxBatch} 张，请重新选择`);
-    if (accepted.length) await queueRef.current?.add(accepted);
+    if (accepted.length) await queueRef.current?.add(accepted, limits.maxBatch);
     if (!live.current || signal.aborted) return;
     setRecoveryAction(result.discardRecovery ? { run: result.discardRecovery } : null);
     if (!rejected.length && !result.failures.length) await result.acknowledge?.();
     if (!live.current || signal.aborted) return;
-    setNotice(result.cancelled && !accepted.length ? '已取消选图' : accepted.length ? `已保存 ${accepted.length} 张到本机待上传，请点“开始上传”。` : '没有新的图片需要加入');
+    setNotice(result.cancelled && !accepted.length ? '已取消选图' : accepted.length ? `已保存 ${accepted.length} 张到本机待上传，按每组最多 ${limits.maxBatch} 张自动分组，请点“开始上传”。` : '没有新的图片需要加入');
     setError([...result.failures, ...rejected].join('；'));
   }
   async function select(recover = false) {
     const signal = controller.current?.signal; if (locked || !signal) return;
     setError(''); setNotice('');
-    if (!recover && !available) { setError('一批最多 100 张，请先上传或移除待上传图片'); return; }
     if (!services.native && !recover) { input.current?.click(); return; }
     setPicking(true);
     try {
-      const result = recover ? await services.recover?.({ owner, studentId }, 100, signal) : await services.pick?.({ owner, studentId }, available, signal);
+      const result = recover ? await services.recover?.({ owner, studentId }, batchSize, signal) : await services.pick?.({ owner, studentId }, batchSize, signal);
       if (!result) throw new Error('此设备暂不支持此选图方式');
       await addPicked(result);
     } catch (e) { if (live.current && !signal.aborted) setError(message(e)); }
@@ -96,7 +95,6 @@ function DriveSession({ api, owner, studentId, studentLabel, onClose, services: 
   async function filesSelected(files: File[]) {
     setPicking(true); setError(''); setNotice('');
     try {
-      if (files.length > available) throw new Error(`本批还可加入 ${available} 张，请重新选择`);
       await addPicked({ items: files.map(file => ({ name: file.name, mimeType: file.type, size: file.size, source: { kind: 'web', file } })), failures: [] });
     } catch (e) { if (live.current) setError(message(e)); }
     finally { if (live.current) setPicking(false); }
@@ -128,7 +126,8 @@ function DriveSession({ api, owner, studentId, studentLabel, onClose, services: 
   return <section className="cloud-drive" aria-labelledby="cloud-drive-title">
     <header className="cloud-header"><button type="button" onClick={close} aria-label="返回上一页">‹ 返回</button><span className="cloud-child">{studentLabel || '当前孩子'}</span></header>
     <div className="cloud-hero"><span className="cloud-eyebrow">知燃 AI · 私有图片云盘</span><h2 id="cloud-drive-title">把原图安心存好</h2><p>当前归属：<strong>{studentLabel || '当前孩子'}</strong>。只保存你选择的原图，不自动分析题目。</p></div>
-    <div className="cloud-select"><div><h3>批量上传图片</h3><p>每批最多 100 张 · 原图保存 · 不自动同步</p></div>
+    {onOpenOriginals && <div className="cloud-panel"><p>云盘用于备份；收题和调整照片可以直接使用手机保留的原片。</p><button type="button" disabled={locked} onClick={onOpenOriginals}>从本机照片收题</button></div>}
+    <div className="cloud-select"><div><h3>批量上传图片</h3><p>每组最多 {batchSize} 张，超出自动分组 · 原图保存</p></div>
       <button type="button" className="cloud-primary" disabled={locked || !limits} onClick={() => void select()}>{picking ? '正在读取选图…' : services.native ? '从相册选择图片' : '选择图片'}</button>
       <input ref={input} type="file" multiple accept={limits?.mimeTypes.join(',') || 'image/jpeg,image/png,image/webp'} aria-label="选择云盘图片文件" hidden onChange={e => { const files = Array.from(e.currentTarget.files || []); e.currentTarget.value = ''; if (files.length) void filesSelected(files); }} />
       {services.recover && <button type="button" disabled={locked} onClick={() => void select(true)}>恢复上次选图</button>}
@@ -138,7 +137,7 @@ function DriveSession({ api, owner, studentId, studentLabel, onClose, services: 
     {recoveryAction && <button type="button" disabled={locked} onClick={() => void discardRecovery()}>忽略这批未导入项，保留原片</button>}
     <section className="cloud-panel" aria-labelledby="cloud-queue-title"><div className="cloud-section-heading"><h3 id="cloud-queue-title">本机待上传</h3><span>{waiting} 张待完成</span></div>
       {queue.jobs.length ? <>
-        <div className="cloud-progress"><span>已存云盘 {uploadCount} / {queue.jobs.length} 张</span><progress max={queue.jobs.length} value={uploadCount} aria-label="本批上传进度" /></div>
+        <div className="cloud-progress"><span>已存云盘 {uploadCount} / {queue.jobs.length} 张 · 共 {groupCount} 组</span><progress max={queue.jobs.length} value={uploadCount} aria-label="全部图片上传进度" /></div>
         <div className="cloud-actions"><button type="button" className="cloud-primary" disabled={locked || !waiting || !limits} onClick={() => void start()}>{queue.jobs.some(job => job.status === 'failed' || job.status === 'paused') ? '继续上传 / 重试' : '开始上传'}</button>
           <button type="button" disabled={!queue.running} onClick={() => queueRef.current?.stop()}>停止继续上传</button></div>
         <p className="cloud-hint">逐张读取并上传；停止后保留已完成图片，未确认的项目可重试。离开页面会停止后续上传。</p>

@@ -3,12 +3,35 @@ import { mkdirSync, chmodSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { Student } from '../lib/mobile';
+import { CLOUD_PHOTO_CAPABILITY } from '../lib/cloud-photos';
 import {
   emptyFamily,
   mergeFamily,
   validateFamily,
   type FamilyState,
 } from '../lib/family-state';
+
+const cloudBatchTable = (name: 'cloud_photo_batches' | 'cloud_photo_batches_upgrade') =>
+  `CREATE TABLE IF NOT EXISTS ${name} (id TEXT PRIMARY KEY, account_id TEXT NOT NULL REFERENCES accounts(id), student_id TEXT NOT NULL, client_id TEXT NOT NULL, expected_count INTEGER NOT NULL CHECK(expected_count BETWEEN 1 AND ${CLOUD_PHOTO_CAPABILITY.maxBatchItems}), body TEXT NOT NULL, UNIQUE(account_id,client_id), FOREIGN KEY(account_id,student_id) REFERENCES students(account_id,id));`;
+
+function upgradeCloudPhotoBatches(db: DatabaseSync) {
+  const needsUpgrade = () => /expected_count\s+BETWEEN\s+1\s+AND\s+100\b/i.test(String(db.prepare("SELECT sql FROM sqlite_schema WHERE name='cloud_photo_batches'").get()?.sql));
+  if (!needsUpgrade()) return;
+  // Disable foreign keys before the transaction so replacing the parent table
+  // preserves every cloud_photos reference. Recheck after acquiring the lock.
+  db.exec('PRAGMA foreign_keys=OFF; BEGIN IMMEDIATE');
+  try {
+    if (needsUpgrade()) {
+      db.exec(cloudBatchTable('cloud_photo_batches_upgrade'));
+      db.exec(`INSERT INTO cloud_photo_batches_upgrade SELECT * FROM cloud_photo_batches;
+        DROP TABLE cloud_photo_batches;
+        ALTER TABLE cloud_photo_batches_upgrade RENAME TO cloud_photo_batches;`);
+      if (db.prepare('PRAGMA foreign_key_check').all().length) throw new Error('Cloud photo batch migration failed integrity validation');
+    }
+    db.exec('COMMIT');
+  } catch (error) { db.exec('ROLLBACK'); throw error; }
+  finally { db.exec('PRAGMA foreign_keys=ON'); }
+}
 
 export class FamilyStore {
   readonly db: DatabaseSync;
@@ -26,13 +49,14 @@ export class FamilyStore {
       CREATE TABLE IF NOT EXISTS scan_documents (owner TEXT NOT NULL, id TEXT NOT NULL, body TEXT NOT NULL, PRIMARY KEY(owner,id));
       CREATE TABLE IF NOT EXISTS scan_versions (owner TEXT NOT NULL, id TEXT NOT NULL, revision INTEGER NOT NULL, body TEXT NOT NULL, actor TEXT NOT NULL, created_at INTEGER NOT NULL, PRIMARY KEY(owner,id,revision));
       CREATE TABLE IF NOT EXISTS scan_uploads (account_id TEXT NOT NULL REFERENCES accounts(id), request_id TEXT NOT NULL, fingerprint TEXT NOT NULL, scan_id TEXT NOT NULL, PRIMARY KEY(account_id,request_id));
-      CREATE TABLE IF NOT EXISTS cloud_photo_batches (id TEXT PRIMARY KEY, account_id TEXT NOT NULL REFERENCES accounts(id), student_id TEXT NOT NULL, client_id TEXT NOT NULL, expected_count INTEGER NOT NULL CHECK(expected_count BETWEEN 1 AND 100), body TEXT NOT NULL, UNIQUE(account_id,client_id), FOREIGN KEY(account_id,student_id) REFERENCES students(account_id,id));
+      ${cloudBatchTable('cloud_photo_batches')}
       CREATE TABLE IF NOT EXISTS cloud_photos (id TEXT PRIMARY KEY, account_id TEXT NOT NULL REFERENCES accounts(id), student_id TEXT NOT NULL, batch_id TEXT NOT NULL REFERENCES cloud_photo_batches(id), request_id TEXT NOT NULL, fingerprint TEXT NOT NULL, size INTEGER NOT NULL, created_at TEXT NOT NULL, body TEXT NOT NULL, UNIQUE(account_id,request_id), FOREIGN KEY(account_id,student_id) REFERENCES students(account_id,id));
       CREATE INDEX IF NOT EXISTS cloud_photos_page ON cloud_photos(account_id,student_id,created_at DESC,id DESC);
       CREATE INDEX IF NOT EXISTS cloud_photos_batch ON cloud_photos(batch_id);
       CREATE TABLE IF NOT EXISTS scan_jobs (id TEXT PRIMARY KEY, account_id TEXT NOT NULL REFERENCES accounts(id), owner TEXT NOT NULL, student_id TEXT NOT NULL, scan_id TEXT NOT NULL, revision INTEGER NOT NULL, status TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, available_at INTEGER NOT NULL, lease_until INTEGER NOT NULL DEFAULT 0, lease_token TEXT, error TEXT, created_at INTEGER NOT NULL);
       CREATE INDEX IF NOT EXISTS scan_jobs_ready ON scan_jobs(status,available_at,lease_until);
       CREATE UNIQUE INDEX IF NOT EXISTS scan_jobs_active ON scan_jobs(owner,scan_id) WHERE status IN ('queued','processing');`);
+    upgradeCloudPhotoBatches(this.db);
     // Null denotes the original whole-page recognition task. Older workers must
     // not consume queued question jobs when rolling back; cancel them first.
     if (

@@ -8,6 +8,7 @@ import { CandidatePicker } from './CandidatePicker';
 import { adoptCandidates, candidateQuestions, overlapsExisting } from './candidates';
 import { TutoringResult } from './TutoringResult';
 import { reviewDrafts } from './drafts';
+import { loadReviewImage } from './photo-processing/review-image';
 import { photoSubjectKey, readPhotoSubject, rememberPhotoSubject } from './photo-subject';
 import {
   emptyQuestion,
@@ -52,6 +53,8 @@ export function Review({
   const [image, setImage] = useState(''),
     [dirty, setDirty] = useState(false),
     [busy, setBusy] = useState(false);
+  const [allowCloudImage, setAllowCloudImage] = useState(false), [localImageMissing, setLocalImageMissing] = useState(false);
+  const [imageSource, setImageSource] = useState<'local' | 'cloud'>();
   const [notice, setNotice] = useState(''),
     [error, setError] = useState(''),
     [mergeTarget, setMergeTarget] = useState('');
@@ -110,21 +113,24 @@ export function Review({
   useEffect(() => {
     const abort = new AbortController();
     let url = '';
-    void api
-      .image(initial.id, abort.signal)
-      .then((blob) => {
-        url = URL.createObjectURL(blob);
-        if (!abort.signal.aborted) setImage(url);
+    setLocalImageMissing(false);
+    void loadReviewImage(api, owner, initial, allowCloudImage, abort.signal)
+      .then(({ file, source }) => {
+        url = URL.createObjectURL(file);
+        if (!abort.signal.aborted) { setImage(url); setImageSource(source); }
         else URL.revokeObjectURL(url);
       })
       .catch((e) => {
-        if (!abort.signal.aborted) setError(e.message);
+        if (!abort.signal.aborted) {
+          if (Capacitor.getPlatform() === 'android' && !allowCloudImage) setLocalImageMissing(true);
+          else setError(e.message);
+        }
       });
     return () => {
       abort.abort();
       if (url) URL.revokeObjectURL(url);
     };
-  }, [api, initial.id]);
+  }, [api, owner, initial, allowCloudImage]);
   useEffect(() => {
     if (!draftReady || dirty || (!hasPendingAnalysis && !['queued', 'processing'].includes(scan.status)))
       return;
@@ -407,6 +413,9 @@ export function Review({
           <Save size={17} /> 保存校对
         </button>
       </header>
+      {imageSource === 'local' && <p className="hint">正在使用本机照片，无需下载原图。</p>}
+      {localImageMissing && <section className="notice"><p>本机没有这张题图的可用副本。可以返回“本机原片”重新处理，或主动从云端恢复。</p>
+        <button type="button" onClick={() => setAllowCloudImage(true)}>从云端恢复这张题图</button></section>}
       <div className="review-status">
         <span className="status">
           {statusNames[scan.status] || scan.status}

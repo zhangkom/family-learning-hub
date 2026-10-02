@@ -106,7 +106,7 @@ const setup = await setupResponse.json(); assert.equal(setup.enabled, true); ass
 assert.equal(setup.processedPhotoMetadataVersion, 1);
 if (expected.versionCode >= 12) {
   assert.equal(setup.cloudPhotos?.version, 1);
-  assert.equal(setup.cloudPhotos.maxBatchItems, 100);
+  assert.equal(setup.cloudPhotos.maxBatchItems, expected.versionCode >= 13 ? 200 : 100);
   assert.equal(setup.cloudPhotos.maxFileBytes, 32 * 1024 * 1024);
 }
 const account = await fetch(base + 'account', { signal: AbortSignal.timeout(20000) }); assert.equal(account.status, 200);

@@ -2,6 +2,8 @@ import { photoPlugin } from './native-plugin';
 import { getOriginal, photoProcessingAvailable, validateOriginal, type OriginalPhoto } from './index';
 
 export type PhotoBatchPurpose = 'processed' | 'cloud-original';
+// A native cloud batch stores a picker selection. The upload queue splits it into 200-item server batches.
+const batchLimit = (value: PhotoBatchPurpose) => value === 'cloud-original' ? 2147483647 : 100;
 export type NativePhotoBatch = {
   schemaVersion: 1; batchId: string; studentId: string; purpose: PhotoBatchPurpose;
   state: 'selecting' | 'ready' | 'completed' | 'cancelled'; limit: number; createdAt: number;
@@ -38,7 +40,7 @@ export function validatePhotoBatch(batch: NativePhotoBatch, studentId: string, b
   if (!batch || batch.schemaVersion !== 1 || !uuid.test(batch.batchId) || (batchId !== undefined && batch.batchId !== batchId) ||
     batch.studentId !== studentId || !['processed', 'cloud-original'].includes(batch.purpose) ||
     !['selecting', 'ready', 'completed', 'cancelled'].includes(batch.state) ||
-    !Number.isInteger(batch.limit) || batch.limit < 1 || batch.limit > 100 || !Number.isFinite(batch.createdAt) || batch.createdAt <= 0 ||
+    !Number.isInteger(batch.limit) || batch.limit < 1 || batch.limit > batchLimit(batch.purpose) || !Number.isFinite(batch.createdAt) || batch.createdAt <= 0 ||
     !Array.isArray(batch.items) || batch.items.length > batch.limit ||
     batch.items.some((item, index) => item.index !== index || !uuid.test(item.originalId) || !['pending', 'imported', 'failed'].includes(item.status)) ||
     new Set(batch.items.map(item => item.originalId)).size !== batch.items.length ||
@@ -48,9 +50,9 @@ export function validatePhotoBatch(batch: NativePhotoBatch, studentId: string, b
 }
 export async function pickOriginalBatch(owner: string, studentId: string, limit = 100, batchPurpose: PhotoBatchPurpose = 'processed') {
   scope(owner, studentId); purpose(batchPurpose);
-  if (!Number.isInteger(limit) || limit < 1 || limit > 100) throw new Error('每批最多选择 100 张照片');
+  if (!Number.isInteger(limit) || limit < 1 || limit > batchLimit(batchPurpose)) throw new Error(`每批最多选择 ${batchLimit(batchPurpose)} 张照片`);
   const batch = validatePhotoBatch(await native.pickOriginalBatch({ owner, studentId, limit, purpose: batchPurpose }), studentId);
-  if (batch.purpose !== batchPurpose || batch.limit !== limit) throw new Error('相册选择与请求的批次不匹配');
+  if (batch.purpose !== batchPurpose || (batchPurpose === 'cloud-original' ? batch.limit < limit : batch.limit !== limit)) throw new Error('相册选择与请求的批次不匹配');
   return batch;
 }
 export async function getOriginalBatch(owner: string, studentId: string, batchId: string) {
@@ -78,7 +80,7 @@ export async function forgetOriginalBatch(owner: string, studentId: string, batc
 }
 export async function importBatchItem(owner: string, studentId: string, batchId: string, index: number) {
   scope(owner, studentId, batchId);
-  if (!Number.isInteger(index) || index < 0 || index >= 100) throw new Error('照片序号无效');
+  if (!Number.isInteger(index) || index < 0 || index >= 2147483647) throw new Error('照片序号无效');
   const result = await native.importBatchItem({ owner, studentId, batchId, index });
   validatePhotoBatch(result.batch, studentId, batchId);
   if (result.original) {

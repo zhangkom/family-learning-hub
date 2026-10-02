@@ -14,7 +14,7 @@ const origin = 'http://127.0.0.1:3294', api = origin + '/test-api';
 const server = await createServer({ root, server: { host: '127.0.0.1', port: 3294, strictPort: true } }); await server.listen();
 const browser = await chromium.launch({ channel: process.env.PLAYWRIGHT_CHANNEL || 'chrome', headless: true });
 const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
-const errors = [], checks = [], uploads = [], records = new Map(); let replyMode = 'success', replyDelay = 0;
+const errors = [], checks = [], uploads = [], records = new Map(); let replyMode = 'success', replyDelay = 0, serverPhotoDownloads = 0;
 await context.addInitScript(installSyntheticPhotoBridge, { api });
 const page = await context.newPage(); page.on('pageerror', e => errors.push(e.message));
 const students = ['a', 'b'].map(id => ({ id, name: '测试学生' + id.toUpperCase(), createdAt: '2026-10-01T12:00:00Z' }));
@@ -24,6 +24,7 @@ await page.route('**/*', async route => {
   if (url.origin !== origin) throw new Error('Unexpected external request: ' + url.origin);
   if (!url.pathname.startsWith('/test-api')) return route.continue();
   const endpoint = url.pathname.slice('/test-api'.length), method = request.method();
+  if (/^\/scans\/[^/]+\/file$/.test(endpoint)) { serverPhotoDownloads++; return route.abort(); }
   const token = request.headers().authorization?.replace('Bearer test-', '') || 'A';
   const send = (data, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(data) });
   if (endpoint === '/session') return send({ user: { id: token, username: '家庭' + token } });
@@ -82,6 +83,16 @@ try {
   assert.equal(await pendingCount(), 1);
   replyMode = 'success'; await button('上传处理图').click(); await page.waitForFunction(() => !Object.keys(localStorage).some(k => k.startsWith('family-photo-delivery-v1:')));
   assert.equal(await pendingCount(), 0); assert.equal(new Set(uploads.map(u => u.id)).size, 1);
+  await page.locator('.record-card').first().click();
+  await page.getByText('正在使用本机照片，无需下载原图。', { exact: true }).waitFor();
+  await page.waitForFunction(() => [...document.querySelectorAll('.review-page img')].some(img => img.complete && img.naturalWidth > 0));
+  assert.equal(serverPhotoDownloads, 0);
+  await page.screenshot({ path: path.join(out, 'local-review-no-download.png') });
+  await button('返回资料列表').click();
+  await page.locator('.record-card').first().click();
+  await page.getByText('正在使用本机照片，无需下载原图。', { exact: true }).waitFor();
+  assert.equal(serverPhotoDownloads, 0); await button('返回资料列表').click();
+  checks.push('收题及重复打开均读取本机处理图；服务器原图下载请求为零');
   await button('本机原片').click(); await button('继续处理').waitFor(); assert.equal(await page.locator('.photo-library-card').count(), 1);
   checks.push('重启恢复；断网、旧服务器、错误回执保留；匹配回执才清队列，同outputId重试；上传后原片保留');
   await button('返回题目资料').click(); await page.evaluate(() => window.hostPhotoTest.seedRestore('b')); await page.reload(); await waitHome();

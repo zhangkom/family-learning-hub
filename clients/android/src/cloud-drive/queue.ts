@@ -19,18 +19,19 @@ export class UploadQueue {
     this.set({ jobs: saved.filter(job => inScope(job, this.scope)).map(job => job.status === 'uploading' ? { ...job, status: 'paused', message: '上次上传未确认完成，继续时将核对同一份记录' } : job) });
     this.loaded = true;
   }
-  async add(items: PickedOriginal[]) {
+  async add(items: PickedOriginal[], batchSize = BATCH_LIMIT) {
     if (!this.live || !this.loaded || this.state.running || this.adding) throw new Error('请等待当前操作完成');
+    if (!Number.isInteger(batchSize) || batchSize < 1 || batchSize > BATCH_LIMIT) throw new Error('上传分组数量无效');
     const known = new Set(this.state.jobs.map(job => job.id));
     const additions = items.filter(item => { if (!item.id) return true; if (known.has(item.id)) return false; known.add(item.id); return true; });
-    if (items.length > BATCH_LIMIT || additions.length + this.state.jobs.filter(job => job.status !== 'completed').length > BATCH_LIMIT)
-      throw new Error('一批最多 100 张，请先上传或移除已有待上传图片');
     this.adding = true;
-    const clientBatchId = crypto.randomUUID();
     try {
-      for (const item of additions) {
+      let clientBatchId = '';
+      for (const [index, item] of additions.entries()) {
         if (!this.live) break;
-        const job: UploadJob = { ...this.scope, ...item, id: item.id || crypto.randomUUID(), clientBatchId, expectedCount: additions.length, createdAt: Date.now(), status: 'queued' };
+        if (index % batchSize === 0) clientBatchId = crypto.randomUUID();
+        const expectedCount = Math.min(batchSize, additions.length - Math.floor(index / batchSize) * batchSize);
+        const job: UploadJob = { ...this.scope, ...item, id: item.id || crypto.randomUUID(), clientBatchId, expectedCount, createdAt: Date.now(), status: 'queued' };
         if (item.source.kind === 'native' && item.source.original.studentId !== this.scope.studentId) throw new Error('原图所属孩子不匹配');
         await this.store.put(job);
         this.set({ jobs: [...this.state.jobs, job] });

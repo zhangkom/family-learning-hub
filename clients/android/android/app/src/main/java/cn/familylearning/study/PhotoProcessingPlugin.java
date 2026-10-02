@@ -118,7 +118,8 @@ public class PhotoProcessingPlugin extends Plugin {
         if(!busy.compareAndSet(false,true)) {call.reject("正在处理另一张照片，请稍候","PHOTO_BUSY");return;}
         worker.execute(() -> {
             try {
-                PhotoBatchStore b=PhotoBatchStore.create(ownerRoot(call),call.getString("studentId"),call.getString("purpose","processed"),integer(call,"limit",100,1,100));
+                String purpose=call.getString("purpose","processed");
+                PhotoBatchStore b=PhotoBatchStore.create(ownerRoot(call),call.getString("studentId"),purpose,integer(call,"limit",100,1,PhotoBatchStore.maxItems(purpose)));
                 // Capacitor serializes these non-sensitive identifiers for an activity/process restore.
                 call.getData().put("batchId",b.id);
                 Intent intent=new Intent(Intent.ACTION_OPEN_DOCUMENT);
@@ -178,7 +179,7 @@ public class PhotoProcessingPlugin extends Plugin {
     }
     @PluginMethod public void importBatchItem(PluginCall call) {
         run(call,()-> {
-            PhotoBatchStore b=batch(call);int index=integer(call,"index",-1,0,99);
+            PhotoBatchStore b=batch(call);int index=integer(call,"index",-1,0,b.items.size()-1);
             if(b.state.equals("cancelled")||b.state.equals("selecting"))throw new IllegalArgumentException("此照片批次尚未选择或已取消");
             PhotoBatchStore.Item item=b.item(index);String uri=item.uri;JSObject original=null;
             try { JSObject imported=importAt(ownerRoot(call),b.studentId,item.uri,item.originalId);b.imported(index);original=imported; }

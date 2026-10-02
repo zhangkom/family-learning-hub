@@ -11,6 +11,8 @@ vi.mock('@capacitor/core', () => ({
 import { fullPage, mapPoint, pointerToImage, mapQuestionToOriginal, validateQuad } from './geometry';
 import { deleteOriginal, importOriginal, listOriginals, preparePhoto, readConfirmedUpload, readOriginalUpload, type OriginalPhoto, type PreparedPhoto } from './index';
 import { buildPhotoDelivery, listPhotoDeliveries, recoverPhotoDelivery, removePhotoDelivery, savePhotoDelivery } from './delivery';
+import { loadReviewImage } from './review-image';
+import type { FamilyApi } from '../api';
 
 const originalId = '11111111-1111-1111-1111-111111111111';
 const outputId = '22222222-2222-2222-2222-222222222222';
@@ -65,6 +67,39 @@ describe('original export and processed-only recovery', () => {
     return { get length() { return entries.size; }, clear: () => entries.clear(), getItem: key => entries.get(key) ?? null,
       key: index => [...entries.keys()][index] ?? null, removeItem: key => { entries.delete(key); }, setItem: (key, value) => { entries.set(key, value); } };
   }
+  it('opens the exact local processed photo for review without downloading from the server', async () => {
+    const f = await fixture();
+    const image = vi.fn(); const api = { image } as unknown as FamilyApi;
+    const scan = { id: 'scan-1', studentId: original.studentId, sourceKind: 'processed-photo' as const, processing: f.result };
+    const loaded = await loadReviewImage(api, 'owner', scan, false, new AbortController().signal);
+    expect(loaded.source).toBe('local');
+    expect(new Uint8Array(await loaded.file.arrayBuffer())).toEqual(f.bytes);
+    expect(vi.mocked(fetch).mock.calls[0][0]).toBe(`https://localhost/_capacitor_file_/private/${outputId}.jpg`);
+    expect(image).not.toHaveBeenCalled();
+  });
+  it('does not silently fall back to a server download for a missing or mismatched local photo', async () => {
+    const f = await fixture();
+    const image = vi.fn(); const api = { image } as unknown as FamilyApi;
+    const scan = { id: 'scan-1', studentId: original.studentId, sourceKind: 'processed-photo' as const, processing: f.result };
+    mocks.plugin.getOriginal.mockRejectedValueOnce(new Error('本机文件不存在'));
+    await expect(loadReviewImage(api, 'owner', scan, false, new AbortController().signal)).rejects.toThrow('不存在');
+    mocks.plugin.getOriginal.mockResolvedValueOnce({ ...f.photo, studentId: 'other' });
+    await expect(loadReviewImage(api, 'owner', scan, false, new AbortController().signal)).rejects.toThrow('不匹配');
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(new Uint8Array(4))));
+    await expect(loadReviewImage(api, 'owner', scan, false, new AbortController().signal)).rejects.toThrow('校验失败');
+    expect(image).not.toHaveBeenCalled();
+  });
+  it('uses the server only after explicit recovery, and preserves browser access', async () => {
+    const file = new Blob(['synthetic']); const image = vi.fn().mockResolvedValue(file);
+    const api = { image } as unknown as FamilyApi;
+    const scan = { id: 'scan-1', studentId: original.studentId };
+    const signal = new AbortController().signal;
+    await expect(loadReviewImage(api, 'owner', scan, true, signal)).resolves.toEqual({ file, source: 'cloud' });
+    mocks.available = false;
+    await expect(loadReviewImage(api, 'owner', scan, false, signal)).resolves.toEqual({ file, source: 'cloud' });
+    expect(image).toHaveBeenCalledTimes(2); expect(image).toHaveBeenCalledWith('scan-1', signal);
+    expect(mocks.plugin.getOriginal).not.toHaveBeenCalled();
+  });
   it('exports byte-identical PNG with original MIME and its native student binding', async () => {
     const f = await fixture(); const result = await readOriginalUpload('owner', f.photo);
     expect(new Uint8Array(await result.file.arrayBuffer())).toEqual(f.bytes);

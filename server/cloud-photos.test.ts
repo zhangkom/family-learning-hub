@@ -199,7 +199,7 @@ describe('private cloud photo API', () => {
         )
       ).status,
     ).toBe(403);
-    for (const expectedCount of [0, 101, 1.5, '1'])
+    for (const expectedCount of [0, 201, 1.5, '1'])
       expect(
         (
           await call('cloud-photo-batches', {
@@ -359,10 +359,10 @@ describe('private cloud photo API', () => {
     expect((await upload(huge, b.id, { mime: 'image/png' })).status).toBe(413);
     expect(readdirSync(temp)).toEqual([]);
   }, 30000);
-  it('accepts a full 100-photo batch and rejects the 101st distinct photo', async () => {
-    const b = await batch(100),
+  it('accepts a full 200-photo server group and requires the 201st photo to use another group', async () => {
+    const b = await batch(200),
       bytes = await jpeg();
-    for (let i = 0; i < 100; i++) {
+    for (let i = 0; i < 200; i++) {
       const response = await upload(bytes, b.id);
       expect(response.status, await response.clone().text()).toBe(201);
     }
@@ -373,8 +373,31 @@ describe('private cloud photo API', () => {
     );
     expect(
       store.db.prepare('SELECT count(*) n FROM cloud_photos').get()?.n,
-    ).toBe(100);
+    ).toBe(200);
   }, 60000);
+  it('upgrades an existing 100-photo database while preserving photos, foreign keys and upload receipts', async () => {
+    const oldBatch = await batch(100), bytes = await jpeg(), requestId = randomUUID();
+    const before = await upload(bytes, oldBatch.id, { requestId });
+    const oldPhoto = (await before.text().then(JSON.parse)).photo;
+    const oldSchema = String(store.db.prepare("SELECT sql FROM sqlite_schema WHERE name='cloud_photo_batches'").get()?.sql)
+      .replace('CREATE TABLE cloud_photo_batches', 'CREATE TABLE old_cloud_batches')
+      .replace('BETWEEN 1 AND 200', 'BETWEEN 1 AND 100');
+    store.db.exec(`PRAGMA foreign_keys=OFF; BEGIN IMMEDIATE; ${oldSchema};
+      INSERT INTO old_cloud_batches SELECT * FROM cloud_photo_batches;
+      DROP TABLE cloud_photo_batches; ALTER TABLE old_cloud_batches RENAME TO cloud_photo_batches;
+      COMMIT; PRAGMA foreign_keys=ON;`);
+    store.close(); store = new FamilyStore(join(data, 'family.sqlite'));
+    expect(store.db.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
+    expect(store.db.prepare('PRAGMA foreign_keys').get()?.foreign_keys).toBe(1);
+    const retry = await upload(bytes, oldBatch.id, { requestId });
+    expect(retry.status).toBe(200);
+    expect((await retry.text().then(JSON.parse)).photo).toEqual(oldPhoto);
+    expect(await (await call('cloud-photos/' + oldPhoto.id + '/file')).arrayBuffer()).toEqual(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
+    await batch(200);
+    store.close(); store = new FamilyStore(join(data, 'family.sqlite'));
+    expect(store.db.prepare('SELECT count(*) n FROM cloud_photo_batches').get()?.n).toBe(2);
+    expect(store.db.prepare('SELECT count(*) n FROM cloud_photos').get()?.n).toBe(1);
+  });
   it('isolates other families, requires explicit child, and paginates without repeats or cursor crossover', async () => {
     const bytes = await jpeg(),
       secondChild = store.addStudent(account, '同家庭另一个孩子').id;

@@ -27,6 +27,16 @@ beforeEach(() => {
   mocks.native.getOriginal.mockImplementation(async ({ originalId }: { originalId: string }) => original(Number(originalId.slice(-12))));
 });
 describe('durable sequential original batches', () => {
+  it('imports and recovers all 450 cloud originals without applying the upload group size to selection', async () => {
+    state.purpose = 'cloud-original'; state.limit = 450;
+    state.items = Array.from({ length: 450 }, (_, i) => ({ index: i, originalId: id(i), status: 'pending' }));
+    const result = await pickOriginals('owner', 'student', 200, { purpose: 'cloud-original' });
+    expect(result.originals).toHaveLength(450); expect(result.failures).toEqual([]);
+    expect(mocks.native.importBatchItem).toHaveBeenLastCalledWith({ owner: 'owner', studentId: 'student', batchId: state.batchId, index: 449 });
+    mocks.native.importBatchItem.mockClear();
+    const restored = await resumeOriginalBatch('owner', 'student', state.batchId, { purpose: 'cloud-original' });
+    expect(restored.originals).toHaveLength(450); expect(mocks.native.importBatchItem).not.toHaveBeenCalled();
+  });
   it('imports 100 metadata references with maximum concurrency one and no image reads', async () => {
     const fetcher = vi.fn(); vi.stubGlobal('fetch', fetcher);
     let active = 0, maximum = 0; const importer = mocks.native.importBatchItem.getMockImplementation()!;

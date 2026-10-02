@@ -19,10 +19,10 @@ public final class PhotoBatchTransportTest {
     public static void main(String[] args)throws Exception {
         File root=Files.createTempDirectory(Path.of(args[0]),"native-batch-").toFile();
         File alice=new File(root,"owner-a"),bob=new File(root,"owner-b");alice.mkdirs();bob.mkdirs();
-        PhotoBatchStore batch=PhotoBatchStore.create(alice,"学生甲","cloud-original",100);
-        List<String> sources=new ArrayList<>();for(int i=0;i<100;i++)sources.add("content://synthetic/"+i);
+        PhotoBatchStore batch=PhotoBatchStore.create(alice,"学生甲","cloud-original",200);
+        List<String> sources=new ArrayList<>();for(int i=0;i<450;i++)sources.add("content://synthetic/"+i);
         batch.select(sources);String first=batch.items.get(0).originalId;
-        check(batch.items.size()==100,"exact 100");check(new HashSet<>(batch.items.stream().map(i->i.originalId).toList()).size()==100,"stable unique IDs");
+        check(batch.items.size()==450&&batch.limit==450,"cloud selection expands beyond 200 without truncation");check(new HashSet<>(batch.items.stream().map(i->i.originalId).toList()).size()==450,"stable unique IDs");
         batch.imported(0);batch.failed(1,"source unavailable");
         PhotoBatchStore resumed=PhotoBatchStore.load(alice,batch.id,"学生甲");
         check(resumed.items.get(0).originalId.equals(first)&&resumed.items.get(0).status.equals("imported")&&resumed.items.get(0).uri.isEmpty(),"restart keeps completed ID and drops source grant ref");
@@ -30,7 +30,7 @@ public final class PhotoBatchTransportTest {
         rejects(()->PhotoBatchStore.load(alice,batch.id,"学生乙"),"student isolation");
         rejects(()->PhotoBatchStore.load(bob,batch.id,"学生甲"),"owner isolation");
         rejects(()->PhotoBatchStore.load(alice,"../escape","学生甲"),"path traversal");
-        rejects(()->PhotoBatchStore.create(alice,"学生甲","cloud-original",101),"max count validation");
+        rejects(()->PhotoBatchStore.create(alice,"学生甲","processed",101),"processed count validation");
         PhotoBatchStore overflow=PhotoBatchStore.create(alice,"学生甲","processed",99);
         rejects(()->overflow.select(sources),"provider exceeding remaining count rejected without truncation");
         check(PhotoBatchStore.load(alice,overflow.id,"学生甲").items.isEmpty(),"overflow stores no partial selection");
@@ -38,8 +38,8 @@ public final class PhotoBatchTransportTest {
         duplicate.select(List.of(sources.get(0),sources.get(0)));check(duplicate.items.size()==1,"duplicate URI deduplication");
         // Simulate process loss between backup rename and new manifest publication.
         File backup=new File(resumed.file.getPath()+".bak");check(resumed.file.renameTo(backup),"simulate interrupted manifest replacement");
-        resumed=PhotoBatchStore.load(alice,batch.id,"学生甲");check(resumed.items.size()==100,"atomic backup recovered");
-        for(int i=1;i<100;i++)resumed.imported(i);
+        resumed=PhotoBatchStore.load(alice,batch.id,"学生甲");check(resumed.items.size()==450,"atomic backup recovered");
+        for(int i=1;i<450;i++)resumed.imported(i);
         check(PhotoBatchStore.load(alice,batch.id,"学生甲").state.equals("completed"),"completed persisted until application acknowledgment");
         duplicate.cancel();check(PhotoBatchStore.load(alice,duplicate.id,"学生甲").items.get(0).uri.isEmpty(),"cancellation clears pending access reference");
 
