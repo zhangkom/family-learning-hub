@@ -76,7 +76,7 @@ function PreparationSession({ owner, studentId, studentLabel, original, onConfir
   }
   async function process(enhancement: 'none' | 'light' = light ? 'light' : 'none') {
     const life = lifecycle.current, ticket = ++life.sequence;
-    setBusy(true); setError(''); setPrepared(null); setSeen(false); setHandedOff(false);
+    setBusy(true); setError(''); setPrepared(null); setSeen(false); setHandedOff(false); setView('original');
     try {
       const result = await services.prepare(owner, original, { corners: manual ? corners : fullPage, quarterTurns: turns, enhancement });
       if (!life.live || ticket !== life.sequence) return;
@@ -130,10 +130,10 @@ function PreparationSession({ owner, studentId, studentLabel, original, onConfir
         </svg>}
     </div>
     <fieldset disabled={busy} className="photo-prep-tools"><legend>照片调整</legend>
-      <div className="photo-prep-row photo-prep-toolstrip"><button type="button" aria-pressed={!manual} onClick={() => { invalidate(); setManual(false); }}>整张照片</button>
-        <button type="button" aria-pressed={manual} onClick={() => { invalidate(); setManual(true); }}>调整四角</button>
-        <button type="button" onClick={() => { invalidate(); setTurns(((turns + 1) % 4) as QuarterTurns); }}>顺时针转 90°</button>
-        <button type="button" aria-pressed={light} onClick={() => { const next = !light; invalidate(); setLight(next); void process(next ? 'light' : 'none'); }}>提亮阴影</button></div>
+      <div className="photo-prep-row photo-prep-toolstrip"><button type="button" aria-label="整张照片" aria-pressed={!manual} onClick={() => { invalidate(); setManual(false); }}><span>整张</span><span>照片</span></button>
+        <button type="button" aria-label="调整四角" aria-pressed={manual} onClick={() => { invalidate(); setManual(true); }}><span>调整</span><span>四角</span></button>
+        <button type="button" aria-label="顺时针转 90°" onClick={() => { invalidate(); setTurns(((turns + 1) % 4) as QuarterTurns); }}><span>旋转</span><span>90°</span></button>
+        <button type="button" aria-label="提亮阴影" aria-pressed={light} onClick={() => { const next = !light; invalidate(); setLight(next); void process(next ? 'light' : 'none'); }}><span>提亮</span><span>阴影</span></button></div>
       <p className="photo-prep-hint">{busy ? '正在生成真实处理预览…' : light ? '提亮已开启；请对比细字和彩色批注。' : '提亮已关闭。'}原片文件始终保留。</p>
     </fieldset>
     <details className="photo-prep-detail" key={`${view}:${prepared?.outputId || 'original'}`}><summary>放大检查细节</summary><div>
