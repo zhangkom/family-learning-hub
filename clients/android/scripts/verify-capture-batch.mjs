@@ -71,7 +71,9 @@ try {
   await page.getByText('本批上传结束：成功 1 张，失败 0 张。未确认成功的照片仍留在本机，可继续上传。', { exact: true }).waitFor();
   assert.equal(uploads.at(-1).id, failed); assert.equal(records.size, 100); assert.equal(await page.locator('.draft-card').count(), 0);
   checks.push('100张顺序上传；丢失回执后99成功1失败；刷新恢复待提交项并用同ID重试，服务器仍只有100份');
-  await select(/相册选图/, 5); await button('完成选择，查看待上传').click(); delay = 600;
+  await select(/相册选图/, 6); await page.waitForFunction(() => document.querySelectorAll('.capture-batch-grid article').length === 6);
+  await button('移出本批').first().click(); await page.waitForFunction(() => document.querySelectorAll('.capture-batch-grid article').length === 5);
+  await button('完成选择，查看待上传').click(); assert.equal(await page.locator('.draft-card').count(), 5); delay = 600;
   await page.getByRole('button', { name: /确认并批量上传（5 张）/ }).click(); await button('停止本批上传').click();
   await page.getByText(/本批已停止：/).waitFor(); const stoppedAt = uploads.length;
   await new Promise(resolve => setTimeout(resolve, 800)); assert.equal(uploads.length, stoppedAt); assert.equal(await page.locator('.draft-card').count(), 5);
@@ -90,8 +92,19 @@ try {
   await page.getByRole('button', { name: '确认使用处理图', exact: true }).click();
   await page.getByText('逐张调整 · 第 2 / 2 张', { exact: true }).waitFor();
   await page.getByRole('button', { name: '生成预览', exact: true }).click(); await page.getByRole('button', { name: '确认使用处理图', exact: true }).click();
-  assert.equal(await page.getByRole('button', { name: '上传处理图', exact: true }).count(), 2);
+  await page.waitForFunction(() => [...document.querySelectorAll('button')].filter(button => button.textContent === '上传处理图').length === 2);
   checks.push('合成原生桥连续拍摄两张，逐张预览确认进入同一待提交队列，确认前不上传');
+  await page.evaluate(() => window.hostPhotoTest.album(2)); await page.getByRole('button', { name: /相册选图/ }).click();
+  await page.getByRole('heading', { name: '本批照片 · 2 / 100', exact: true }).waitFor();
+  await page.getByRole('button', { name: '从相册添加', exact: true }).click(); await page.getByRole('heading', { name: '本批照片 · 4 / 100', exact: true }).waitFor();
+  await page.getByRole('button', { name: '完成选择，逐张调整', exact: true }).click();
+  for (let n = 1; n <= 4; n++) {
+    await page.getByText(`逐张调整 · 第 ${n} / 4 张`, { exact: true }).waitFor();
+    await page.getByRole('button', { name: '生成预览', exact: true }).click(); await page.getByRole('button', { name: '确认使用处理图', exact: true }).click();
+  }
+  await page.waitForFunction(() => !Object.keys(localStorage).some(key => key.startsWith('host-test:batch:')));
+  await page.waitForFunction(() => [...document.querySelectorAll('button')].filter(button => button.textContent === '上传处理图').length === 6);
+  checks.push('两次原生相册选择合并为一批4张；确认后串行清理两个批次，无PHOTO_BUSY遗留或重复恢复');
   assert.deepEqual(errors, []); assert.equal(blockedExternal, 0);
   const result = { checkedAt: new Date().toISOString(), syntheticOnly: true, nativeDeviceTested: false, checks, uploadAttempts: uploads.length, maxConcurrentUploads: peak, errors };
   await writeFile(path.join(out, 'capture-batch-result.json'), JSON.stringify(result, null, 2)); console.log(JSON.stringify(result));

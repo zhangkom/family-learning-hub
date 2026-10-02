@@ -5,7 +5,7 @@ export function installSyntheticPhotoBridge({ api, initialToken = 'test-A', init
   const store = (key, value) => localStorage.setItem('host-test:' + key, JSON.stringify(value));
   const read = (key, fallback) => JSON.parse(localStorage.getItem('host-test:' + key) || JSON.stringify(fallback));
   if (localStorage.getItem('host-test:vault') === null) store('vault', JSON.stringify({ base: api, token: initialToken }));
-  let processingDelay = 0;
+  let processingDelay = 0, albumCount = 2, batchMutation = false;
   const listeners = new Map();
   const sourceKey = (owner, id) => 'original:' + JSON.stringify([owner, id]);
   const rotations = [
@@ -28,6 +28,13 @@ export function installSyntheticPhotoBridge({ api, initialToken = 'test-A', init
   const blob = data => { const [header, base64] = data.split(','); return new Blob([Uint8Array.from(atob(base64), c => c.charCodeAt(0))], { type: header.slice(5).split(';')[0] }); };
   const info = async data => { const file = blob(data); return { bytes: file.size, sha256: [...new Uint8Array(await crypto.subtle.digest('SHA-256', await file.arrayBuffer()))].map(b => b.toString(16).padStart(2, '0')).join('') }; };
   const uriFor = (owner, id, name) => 'file:///synthetic/' + encodeURIComponent(owner) + '/' + id + '/' + name;
+  const batchKey = (owner, id) => 'batch:' + JSON.stringify([owner, id]);
+  const createOriginal = async (owner, studentId, id = crypto.randomUUID()) => {
+    const data = image(), originalUri = uriFor(owner, id, 'original'), previewUri = uriFor(owner, id, 'preview.jpg');
+    const original = { schemaVersion: 1, originalId: id, studentId, ...(await info(data)), mime: 'image/png', width: 900, height: 1200,
+      uprightWidth: 900, uprightHeight: 1200, orientation: 1, originalUri, previewUri, createdAt: Date.now() };
+    store(sourceKey(owner, id), original); store('file:' + originalUri, data); store('file:' + previewUri, data); return original;
+  };
   const realFetch = window.fetch.bind(window);
   window.fetch = (input, init) => {
     const value = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
@@ -41,7 +48,8 @@ export function installSyntheticPhotoBridge({ api, initialToken = 'test-A', init
   window.androidBridge = {};
   window.Capacitor = {
     PluginHeaders: ['SessionVault', 'App', 'AppUpdater', 'Camera', 'AppSettings', ...(new URL(location.href).searchParams.has('legacy') ? [] : ['PhotoProcessing'])].map(name => ({ name, methods: [
-      ...['get', 'set', 'clear', 'removeListener', 'takePhoto', 'chooseFromGallery', 'importPhoto', 'getOriginal', 'listOriginals', 'process', 'deleteOriginal'].map(name => ({ name, rtype: 'promise' })), { name: 'addListener', rtype: 'callback' },
+      ...['get', 'set', 'clear', 'removeListener', 'takePhoto', 'chooseFromGallery', 'importPhoto', 'getOriginal', 'listOriginals', 'process', 'deleteOriginal',
+        'pickOriginalBatch', 'getOriginalBatch', 'listOriginalBatches', 'importBatchItem', 'cancelOriginalBatch', 'forgetOriginalBatch'].map(name => ({ name, rtype: 'promise' })), { name: 'addListener', rtype: 'callback' },
     ] })),
     convertFileSrc: uri => read('file:' + uri, image()),
     nativeCallback(plugin, method, args, callback) {
@@ -67,11 +75,35 @@ export function installSyntheticPhotoBridge({ api, initialToken = 'test-A', init
       if (plugin !== 'PhotoProcessing') return {};
       if (method === 'importPhoto') {
         if (missingSourceUris.includes(args.uri)) throw new Error('合成测试：相机缓存文件已丢失');
-        const data = image(), id = crypto.randomUUID(), originalUri = uriFor(args.owner, id, 'original'), previewUri = uriFor(args.owner, id, 'preview.jpg');
-        const original = { schemaVersion: 1, originalId: id, studentId: args.studentId, ...(await info(data)), mime: 'image/png', width: 900, height: 1200,
-          uprightWidth: 900, uprightHeight: 1200, orientation: 1, originalUri, previewUri, createdAt: Date.now() };
-        store(sourceKey(args.owner, id), original); store('file:' + originalUri, data); store('file:' + previewUri, data);
-        return original;
+        return createOriginal(args.owner, args.studentId);
+      }
+      if (method === 'pickOriginalBatch') {
+        if (albumCount > args.limit) throw new Error('选择数量超过剩余名额');
+        const batch = { schemaVersion: 1, batchId: crypto.randomUUID(), studentId: args.studentId, purpose: args.purpose, state: 'ready', limit: args.limit, createdAt: Date.now(),
+          items: Array.from({ length: albumCount }, (_, index) => ({ index, originalId: crypto.randomUUID(), status: 'pending' })) };
+        store(batchKey(args.owner, batch.batchId), batch); return batch;
+      }
+      if (method === 'listOriginalBatches') {
+        return { batches: Object.keys(localStorage).filter(key => key.startsWith('host-test:batch:')).flatMap(key => {
+          const [owner] = JSON.parse(key.slice('host-test:batch:'.length)), batch = JSON.parse(localStorage.getItem(key));
+          return owner === args.owner && batch.studentId === args.studentId && (!args.purpose || batch.purpose === args.purpose) ? [batch] : [];
+        }) };
+      }
+      if (['getOriginalBatch', 'importBatchItem', 'forgetOriginalBatch', 'cancelOriginalBatch'].includes(method)) {
+        if (batchMutation) throw new Error('PHOTO_BUSY');
+        const key = batchKey(args.owner, args.batchId), batch = read(key, null);
+        if (!batch || batch.studentId !== args.studentId) throw new Error('Wrong batch scope');
+        if (method === 'getOriginalBatch') return batch;
+        if (method === 'forgetOriginalBatch') {
+          if (!['completed', 'cancelled'].includes(batch.state)) throw new Error('Batch not complete');
+          batchMutation = true;
+          try { await new Promise(resolve => setTimeout(resolve, 5)); localStorage.removeItem('host-test:' + key); return {}; }
+          finally { batchMutation = false; }
+        }
+        if (method === 'cancelOriginalBatch') { batch.state = 'cancelled'; store(key, batch); return batch; }
+        const item = batch.items[args.index], original = await createOriginal(args.owner, args.studentId, item.originalId);
+        item.status = 'imported'; if (batch.items.every(item => item.status === 'imported')) batch.state = 'completed';
+        store(key, batch); return { batch, original };
       }
       if (method === 'getOriginal') {
         const original = read(sourceKey(args.owner, args.originalId), null); if (!original) throw new Error('No original in this account'); return original;
@@ -102,6 +134,7 @@ export function installSyntheticPhotoBridge({ api, initialToken = 'test-A', init
     },
   };
   window.hostPhotoTest = {
+    album: count => { albumCount = count; },
     delay: ms => { processingDelay = ms; },
     back: () => { for (const listener of listeners.values()) if (listener.plugin === 'App' && listener.name === 'backButton') listener.callback({ canGoBack: false }); },
     switchAccount: letter => { store('vault', JSON.stringify({ base: api, token: 'test-' + letter })); location.reload(); },
