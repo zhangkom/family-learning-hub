@@ -7,14 +7,24 @@ import { fileURLToPath } from 'node:url';
 import { auditPermissions } from './audit-apk-permissions.mjs';
 
 // Read-only public verification. Signing keys and production credentials are never needed.
-const [version, batch, javaHome] = process.argv.slice(2);
+const [version, batch, javaHome, publishedDeltasPath] = process.argv.slice(2);
 assert.match(version || '', /^\d+\.\d+\.\d+$/);
-assert.ok(batch && javaHome, 'Usage: node verify-public-release.mjs VERSION BATCH_DIRECTORY JAVA_HOME');
+assert.ok(batch && javaHome, 'Usage: node verify-public-release.mjs VERSION BATCH_DIRECTORY JAVA_HOME [PUBLISHED_DELTAS_JSON]');
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 const output = join(root, 'outputs/android/download-check', version);
 const json = path => JSON.parse(readFileSync(path, 'utf8').replace(/^\uFEFF/, ''));
 const expected = json(join(root, 'outputs/android', `apk-verification-${version}.json`));
-const privateDeltas = json(join(resolve(batch), 'deltas.json')).deltas;
+const frozenDeltaManifest = json(join(resolve(batch), 'deltas.json'));
+const selectedDeltaManifest = publishedDeltasPath ? json(resolve(publishedDeltasPath)) : frozenDeltaManifest;
+assert.deepEqual(selectedDeltaManifest.target, frozenDeltaManifest.target);
+const privateDeltas = selectedDeltaManifest.deltas;
+assert.ok(Array.isArray(privateDeltas) && privateDeltas.length >= 1 && privateDeltas.length <= 4,
+  'Published updates must honor the existing clients\' four-delta limit');
+assert.equal(new Set(privateDeltas.map(item => item.fromVersionCode)).size, privateDeltas.length);
+for (const delta of privateDeltas) {
+  assert.deepEqual(delta, frozenDeltaManifest.deltas.find(item => item.fromVersionCode === delta.fromVersionCode),
+    'Publication selection must match frozen evidence exactly');
+}
 const base = 'https://123.207.232.151/family-learning/';
 const downloads = base + 'downloads/android/';
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
