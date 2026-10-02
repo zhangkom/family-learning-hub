@@ -1,4 +1,4 @@
-# 私有照片云盘 API v1（开发中，未上线）
+# 私有照片云盘 API v1
 
 前缀 `/family-learning/api/mobile/v1`，全部云盘接口要求现有 Bearer 登录并沿用 CORS。云盘独立于 scans、错题和模型任务，上传不触发 AI。服务端类型见 `lib/cloud-photos.ts`。
 
@@ -45,4 +45,4 @@ CloudPhoto 字段：`id,batchId,studentId,clientRequestId,originalName,mimeType,
 
 正常成功、错误和取消都会清理本次临时上传。进程被强制终止可能遗留 `temp/cloud-photos/<UUID>` 或 `data/<家庭哈希>/cloud-photos/.pending-<UUID>`；运维只可在确认没有相关上传进程后清理这些暂存目录，不能按年龄删除正式 UUID 原件目录。原件目录发布后、数据库提交前的意外退出，可由相同上传ID和相同字节重试恢复回执。
 
-2026-10-02 开发前只读检查：腾讯可用39,156,809,728字节，既有 Nginx `client_max_body_size 9m` 不适合新云盘；正式发布时仅本工程上调为 `33m`，旧 scans 服务端8MiB限制保持不变。云盘采用流式临时文件接收与独立图片子进程，临时文件位于工程 `temp/cloud-photos`，部署时给服务增加该目录的专用可写绑定。此记录不代表将来仍有同样空间；上传及部署分别重查。尚未发布新后台。
+2026-10-02 11:56（北京时间）已上线后台 `2665722`。仅本工程 Nginx 上调为 `33m` 并关闭请求体代理缓存，旧 scans 服务端8MiB限制保持不变。云盘采用流式临时文件接收与独立图片子进程；工程 `temp/cloud-photos` 已配置服务专用可写绑定和0700权限。上传逐次重查剩余空间。Windows/Linux各170项测试、同生产身份384MiB内存限制下的32MiB/3200万像素原图、30冷缩略图、备份恢复及887旧后台兼容验证通过。详见 [0.3.0发布记录](030发布记录.md)。

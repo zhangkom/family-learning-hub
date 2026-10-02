@@ -4,16 +4,16 @@
 
 ## 当前交付（2026-10-02）
 
-- 固定版本：[知燃 AI 0.2.9 release / 7f713df](https://123.207.232.151/family-learning/downloads/android/family-learning-0.2.9-release-7f713df.apk)
+- 固定版本：[知燃 AI 0.3.0 release / 9e5f2d7](https://123.207.232.151/family-learning/downloads/android/family-learning-0.3.0-release-9e5f2d7.apk)
 - 最新版本：[latest.apk](https://123.207.232.151/family-learning/downloads/android/latest.apk)
 - 公开元数据：[latest.json](https://123.207.232.151/family-learning/downloads/android/latest.json)
-- APK 源码 `7f713df37c522fb87cd61f6205a213ad77921ba5`，versionCode 11，6,727,093 字节。
-- SHA-256：`1bb719213e1ff1ebee8334635fa12474427ef63173bff779051fdee4c7ea179b`。
-- 后台保持 `887ee6c4148b6e5e9dd7de7c76bcede66b459ab5`，本轮仅发布客户端。
+- APK源码 `9e5f2d7fce2afa9c2ea8a8a5d1919c36b8c69d56`，versionCode12，6,740,457字节。
+- SHA-256：`ec9e2828ab71b66e86952ac801d8516138dd9af9293abac041a611168f4cfd27`。
+- 后台 `2665722b32e5b3265b6e7d6d4c027a204c5ee17f` 已先于APK上线。
 
-照片调整的上方预览即时显示旋转90°，原片/放大查看同方向；提亮阴影改为同排按钮并生成处理预览，四按钮在小屏全部可见；重新生成失败后可以继续调整四角。code10/9/8/7 均提供直达 code11 的补丁，完整包回退保留。详见 [0.2.9 发布记录](029发布记录.md)。
+拍照/相册每批最多100张；图片云盘支持原图保存、顺序上传/失败恢复、预览及下载，按当前孩子归档。单张最多32MiB/3200万像素，支持JPEG/PNG/WebP，不自动调用AI或同步相册。保留照片调整及“我的 → 账号设置”。公开code11/10/9/8直达12的四条补丁，节省约47.797%；code7及更早版本下载完整包。详见 [0.3.0发布记录](030发布记录.md)。
 
-这是家庭试用包，0.2.9 真机覆盖/增量升级与实拍尚待验收。用户此前在红米 Turbo3 使用 0.2.6 完成手动框选与分析，不代表本版已验收。0.2.0 至 0.2.8 沿用长期发布签名，可直接覆盖升级，无需卸载；0.1.0 调试版升级前应确认本机草稿已上传，再卸载旧版。历史固定下载地址继续保留。
+沿用长期发布签名，可覆盖相同签名的旧版，无需卸载；0.1.0调试版需先确认本机草稿已保存。历史固定下载地址保留。自动化、真实接口及公网下载/正式Java重建验证已通过，0.3.0真机拍照、SAF保存、覆盖/增量升级仍待设备验收。
 
 0.2.2 新增更新入口与系统安装引导，详见 [安卓更新发布记录](安卓更新发布记录.md)。0.2.3 更名为“知燃 AI”，更新图标、首页和权限说明，详见 [知燃 AI 安卓发布记录](知燃AI安卓发布记录.md)。0.2.0、0.2.1、0.2.2 均可使用原签名覆盖升级。
 
@@ -21,7 +21,7 @@
 
 0.2.7 记住同一照片中用户已选的科目，后续新框题自动沿用，仍可逐题修改，并修复删除题目后的科目提示。从 0.2.6/code8 和 0.2.5/code7 均可直接增量升级，后台仍为 9bf7515。详见 [0.2.7 发布记录](同图科目与027发布记录.md)。
 
-0.2.8 引入人工确认的候选题框、处理照片上传与恢复，以及后台逐次模型审计。该后台本轮保持不变，历史记录见 [0.2.8 发布记录](028发布记录.md)。
+0.2.8 引入人工确认的候选题框、处理照片上传与恢复，以及后台逐次模型审计。历史记录见 [0.2.8 发布记录](028发布记录.md)。
 
 ## 文件与配置位置
 
@@ -64,7 +64,7 @@ sudo python3 "$P/runtime/tools/publish-apk.py" \
 
 公开 `latest.json` 保留 `app,version,channel,commit,publishedAt,fileName,downloadUrl,bytes,sha256,notes`，新增整数 `versionCode` 和简短中文字符串 `changelog`。客户端以 `versionCode` 与本机版本比较；`downloadUrl` 指向固定版本 APK，下载后可核对字节数及 SHA-256。目前没有最低版本字段或强制更新规则。
 
-自 0.2.3 起，新建版本清单的 `app` 展示名称为 `知燃 AI`，当前为 0.2.7 / versionCode 9，清单含 fromVersionCode 8 和 7 两条可选 `deltas`。已有登记条目仍使用原元数据，历史固定 APK 和版本 JSON 不改名、不改内容；URL 结构、包名及长期签名保持不变。后续也只有收到完成验证的签名 APK 和对应源码归档后才运行发布工具并切换 latest。
+自 0.2.3 起，新建版本清单的 `app` 展示名称为 `知燃 AI`，当前为0.3.0 / versionCode12，清单含fromVersionCode11、10、9、8四条可选 `deltas`。已有登记条目仍使用原元数据，历史固定 APK 和版本 JSON 不改名、不改内容；URL 结构、包名及长期签名保持不变。后续也只有收到完成验证的签名 APK 和对应源码归档后才运行发布工具并切换 latest。
 
 该地址使用 `Cache-Control: no-store`；安卓 Origin `https://localhost` 可 GET/HEAD/OPTIONS，响应带精确的 `Access-Control-Allow-Origin` 及 `Vary: Origin`。其他来源不获得允许跨来源读取的头，无 Origin 的普通读取保持正常；公开文件仍限已有精确文件名，不开放工程目录。
 
