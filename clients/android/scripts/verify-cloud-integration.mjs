@@ -67,7 +67,7 @@ try {
   assert.equal(photos.length, 100); assert.equal(new Set(photos.map(photo => photo.id)).size, 100);
   assert.ok(photos.every(photo => photo.studentId === student.id && photo.sha256 === sha256 && photo.size === png.length));
   const scans = await (await fetch(`${api}/scans?studentId=${student.id}`, { headers })).json(); assert.equal(scans.scans.length, 0);
-  await page.locator('.cloud-grid').scrollIntoViewIfNeeded(); await page.locator('.cloud-photo').first().locator('img').waitFor();
+  await page.locator('.cloud-photo').first().scrollIntoViewIfNeeded(); await page.locator('.cloud-photo').first().locator('img').waitFor();
   const downloaded = page.waitForEvent('download'); await button('下载原图').first().click(); const download = await downloaded;
   assert.equal(createHash('sha256').update(await readFile(await download.path())).digest('hex'), sha256);
   const photo = photos[0];
