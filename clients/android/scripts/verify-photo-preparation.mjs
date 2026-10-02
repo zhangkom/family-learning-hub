@@ -27,7 +27,7 @@ const scope = (owner, studentId) => page.evaluate(v => window.photoFixture.switc
 const makePreview = async () => { await button('生成预览').click(); await button('确认使用处理图').waitFor(); await page.waitForFunction(() => ![...document.querySelectorAll('button')].find(b => b.textContent === '确认使用处理图').disabled); };
 try {
   await open();
-  assert.equal(await page.getByLabel('轻微提亮阴影').isChecked(), false);
+  assert.equal(await button('提亮阴影').getAttribute('aria-pressed'), 'false');
   assert.equal(await button('确认使用处理图').isEnabled(), false);
   await button('调整四角').click();
   const svg = page.getByLabel('原片四角调整区域'), rect = await svg.boundingBox();
@@ -43,14 +43,14 @@ try {
   await page.touchscreen.tap(rect.x + rect.width / 2 - 900 * fit * .4, rect.y + rect.height / 2 - 1200 * fit * .4);
   const moved = (await svg.locator('polygon').getAttribute('points')).split(' ')[0].split(',').map(Number);
   assert.ok(Math.abs(moved[0] / 900 - .1) < .01 && Math.abs(moved[1] / 1200 - .1) < .01);
-  await button('顺时针转 90°').click(); await page.getByLabel('轻微提亮阴影').check();
-  await makePreview();
+  await button('顺时针转 90°').click(); await button('提亮阴影').click();
+  await page.waitForFunction(() => ![...document.querySelectorAll('button')].find(b => b.textContent === '确认使用处理图').disabled);
   const calls = await page.evaluate(() => window.photoFixture.log.prepares);
   assert.equal(calls[0].options.quarterTurns, 1); assert.equal(calls[0].options.enhancement, 'light');
   assert.ok(calls[0].options.corners[0] > 0);
   assert.match(await page.locator('.photo-prep-quality').innerText(), /可能模糊/);
   await page.getByText('放大检查细节', { exact: true }).click();
-  assert.equal(await page.getByAltText('可滑动查看的放大照片').isVisible(), true);
+  assert.equal(await page.getByRole('img', { name: '可滑动查看的放大照片', exact: true }).isVisible(), true);
   await page.getByText('放大检查细节', { exact: true }).click();
   await page.screenshot({ path: path.join(out, 'prepared-mobile.png'), fullPage: true });
   await button('顺时针转 90°').click();
