@@ -10,6 +10,7 @@ export type Student = {
   createdAt: string;
 };
 export type StudentOverview = {
+  learningSessionCount?: number; independentRetestCount?: number;
   scanCount: number; questionCount: number; wrongQuestionCount: number; needsReviewCount: number; cloudPhotoCount: number;
 };
 export type StudentOverviewReply = { students: (Student & { overview?: StudentOverview })[]; unassignedScanCount?: number };

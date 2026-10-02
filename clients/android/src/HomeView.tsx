@@ -1,3 +1,5 @@
+import type { LearningMode } from '../../../lib/learning-session';
+import { learningProgress, useLearningHistory } from './learning-history';
 import { useState, type ReactNode } from 'react';
 import { Camera, ChevronRight, Cloud, FileImage, ImagePlus, Plus, RefreshCw, UserRound } from 'lucide-react';
 import { BottomNavigation, type HomePage } from './BottomNavigation';
@@ -21,6 +23,7 @@ type Props = {
   libraryMode: LibraryMode; onLibraryMode: (mode: LibraryMode) => void;
   studentOverview: StudentOverviewReply | null; overviewError: string; onRefreshOverview: () => void;
   onSelect: (id: string) => void; onCapture: (source: 'camera' | 'gallery') => void;
+  learningRevision: number; onLearn: (mode: LearningMode, source?: { scanId: string; questionId: string }, sessionId?: string) => void;
   lastViewed?: { scanId: string; questionId?: string };
   onRefresh: () => void; onOpenScan: (scan: Scan, questionId?: string) => void; onLogout: () => void;
   onAddStudent: (name: string, grade: string) => Promise<boolean>;
@@ -38,6 +41,8 @@ export function HomeView(props: Props) {
   const student = students.find((s) => s.id === selected);
   const pending = localDrafts.filter((d) => d.studentId === selected);
   const pendingCount = pending.length + (props.processedCount || 0);
+  const learning = useLearningHistory(props.api, selected, props.learningRevision);
+  const continuing = [...learning.rows].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).find(item => item.job || item.passedCount < item.taskCount || !item.independentRetest || (item.retestDueAt && new Date(item.retestDueAt).getTime() <= Date.now()));
   const previous = records.find(record => record.id === props.lastViewed?.scanId);
   const nextScan = previous || records[0];
   const nextQuestion = previous?.questions.find(question => question.id === props.lastViewed?.questionId);
@@ -71,8 +76,9 @@ export function HomeView(props: Props) {
       {notice && <output className="notice">{notice}</output>}
 
       {tab === 'home' && <div className="home-content">
-        <LearningModules onReview={() => { props.onLibraryMode('wrong'); navigate('library'); }} onKnowledge={() => { props.onLibraryMode('knowledge'); navigate('library'); }} />
+        <LearningModules onPractice={() => props.onLearn('practice')} onChallenge={() => props.onLearn('challenge')} onReview={() => { props.onLibraryMode('wrong'); navigate('library'); }} onKnowledge={() => { props.onLibraryMode('knowledge'); navigate('library'); }} />
         {!student ? <section className="home-empty"><h2>先建一个孩子的学习档案</h2><p>一家多个孩子，资料分别保存。</p><button className="primary" onClick={addStudent}><Plus size={17} />添加第一名学生</button></section>
+          : continuing ? <section className="learning-continue" aria-label="继续学习"><div><strong>{continuing.mode === 'practice' ? '接着练习' : '继续突破'}</strong><small>{continuing.source.subject} · {learningProgress(continuing)}</small></div><button onClick={() => props.onLearn(continuing.mode, undefined, continuing.id)}>继续学习 <ChevronRight size={16} /></button></section>
           : <section className="learning-continue" aria-label="继续学习">
             <div><strong>{previous ? '接着上次学' : nextScan ? '从最近资料开始' : '从第一道题开始'}</strong><small>{nextScan ? nextQuestion ? `${nextQuestion.subject || '待选科目'} · 第 ${nextQuestion.number || '1'} 题` : `${nextScan.originalName} · ${statusNames[nextScan.status]}` : refreshing ? '正在读取学习资料…' : '拍照或选图，留下自己的学习记录。'}</small></div>
             {nextScan && <button onClick={() => props.onOpenScan(nextScan, nextQuestion?.id)}>继续学习 <ChevronRight size={16} /></button>}
@@ -91,7 +97,7 @@ export function HomeView(props: Props) {
 
       {tab === 'library' && <>
         <div className="section-line library-heading"><div><h1>题目</h1></div><button disabled={refreshing || !student} onClick={props.onRefresh}><RefreshCw size={17} className={refreshing ? 'spin' : ''} />刷新</button></div>
-        {student ? <QuestionLibrary key={`${props.owner}|${student.id}`} api={props.api} owner={props.owner} records={records} mode={props.libraryMode} onMode={props.onLibraryMode} onOpen={props.onOpenScan} renderScan={scanCard} refreshing={refreshing} /> : <div className="empty"><p>先添加学生档案，题目会按孩子分别整理。</p><button className="primary" onClick={addStudent}>添加学生</button></div>}
+        {student ? <QuestionLibrary key={`${props.owner}|${student.id}`} api={props.api} owner={props.owner} learning={learning.rows} onLearn={props.onLearn} records={records} mode={props.libraryMode} onMode={props.onLibraryMode} onOpen={props.onOpenScan} renderScan={scanCard} refreshing={refreshing} /> : <div className="empty"><p>先添加学生档案，题目会按孩子分别整理。</p><button className="primary" onClick={addStudent}>添加学生</button></div>}
       </>}
 
       {tab === 'me' && <div className="profile-page">
@@ -103,6 +109,7 @@ export function HomeView(props: Props) {
             return <button key={s.id} className={`student-profile-card ${selected === s.id ? 'active' : ''}`} onClick={() => { props.onSelect(s.id); props.onLibraryMode('wrong'); navigate('library'); }}>
               <div className="student-profile-title"><span className={`avatar tone-${index % 3}`}>{s.name.slice(0, 1)}</span><span><strong>{s.name}</strong><small>{s.grade || '年级未填写'}</small></span>{selected === s.id && <em>当前</em>}</div>
               <div className="student-profile-stats"><span><strong>{stats?.wrongQuestionCount ?? '—'}</strong><small>道错题</small></span><span><strong>{stats?.scanCount ?? '—'}</strong><small>张题目照片</small></span><span><strong>{stats?.needsReviewCount ?? '—'}</strong><small>张待校对</small></span></div>
+              {stats?.learningSessionCount !== undefined && <p>练习与突破 {stats.learningSessionCount} 组 · 独立复测通过 {stats.independentRetestCount ?? 0} 组</p>}
               <p>{stats ? `已整理 ${stats.questionCount} 道题 · 云盘保存 ${stats.cloudPhotoCount} 张` : props.overviewError ? '统计暂不可用' : '正在读取学习记录…'}<ChevronRight size={14} /></p>
             </button>;
           })}</div>

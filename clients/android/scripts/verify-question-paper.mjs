@@ -73,7 +73,8 @@ try {
       if (url.pathname.endsWith('latest.json')) return route.fulfill({ status: 503, body: '{}' });
       if (url.href === api + '/setup') return send({ enabled: true, registrationEnabled: true });
       if (url.href === api + '/session/login') return send({ token: 'synthetic', user: { id: 'paper-family', username: '题卡合成验收' }, expiresAt: Date.now() + 999999 });
-      if (url.pathname.endsWith('/students')) return send({ students: [{ id: 'a', name: '合成学生甲', createdAt: now }, { id: 'b', name: '合成学生乙', createdAt: now }] });
+      if (url.pathname.endsWith('/learning-sessions')) return send({ sessions: [], more: false, enabled: true });
+    if (url.pathname.endsWith('/students')) return send({ students: [{ id: 'a', name: '合成学生甲', createdAt: now }, { id: 'b', name: '合成学生乙', createdAt: now }] });
       if (url.pathname.endsWith('/scans')) { if (delayStudent && url.searchParams.get('studentId') === 'b') await new Promise(resolve => setTimeout(resolve, 500)); return send({ scans: url.searchParams.get('studentId') === 'a' ? [scan] : [], recognition: false }); }
       if (url.href === api + '/scans/paper-a') return send({ scan });
       if (url.href === api + '/scans/paper-a/file') { requests.cloudImages++; return route.fulfill({ contentType: 'image/jpeg', body: Buffer.from(photo.data.split(',')[1], 'base64') }); }

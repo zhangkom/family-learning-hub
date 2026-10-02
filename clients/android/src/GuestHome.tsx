@@ -63,7 +63,7 @@ export function GuestHome({
       </header>
       <main className={`dashboard guest-dashboard ${page === 'home' ? 'home-dashboard' : 'guest-secondary'}`}>
         {page === 'home' && <>
-        <LearningModules onReview={() => onAuth('login', '错题本')} onKnowledge={() => onAuth('login', '知识点归纳')} />
+        <LearningModules onPractice={() => onAuth('login', '融会贯通')} onChallenge={() => onAuth('login', '破茧成蝶')} onReview={() => onAuth('login', '错题本')} onKnowledge={() => onAuth('login', '知识点归纳')} />
         <section className="learning-continue"><div><strong>从一道题，开始积累</strong><small>登录后按孩子保存与整理。</small></div><button onClick={() => onAuth('login')}>开始学习</button></section>
         <nav className="learning-tools" aria-label="添加学习资料">
           <button onClick={() => onAuth('login', '拍照收题')}><Camera size={22} /><span>拍照收题</span></button>

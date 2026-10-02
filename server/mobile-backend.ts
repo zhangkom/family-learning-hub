@@ -18,6 +18,7 @@ import {
   type FamilyUser,
 } from './family-backend';
 import { getFamilyStore, type FamilyStore } from './family-store';
+import { learningResponse } from './learning-sessions';
 import { studentOverview } from './student-overview';
 import { listScans, readScanFile } from './scan-files';
 import {
@@ -165,6 +166,7 @@ async function dispatch(
   user: FamilyUser,
 ) {
   const method = request.method;
+  if (parts[0] === 'learning-sessions') return learningResponse(request, parts, store, user.id);
   const present = (record: ScanRecord) => ({ ...mobileScan(record),
     analysis: analysisProgress(store, user.id, record.id, recognitionEnabled()) });
   if (['cloud-photos', 'cloud-photo-batches'].includes(parts[0]))
@@ -348,6 +350,7 @@ async function handle(
         registrationEnabled: registrationEnabled(),
         processedPhotoMetadataVersion: 1,
         questionReviewVersion: 1,
+        learningSessionVersion: 1,
         cloudPhotos: CLOUD_PHOTO_CAPABILITY,
       });
     } else if (!web && parts.join('/') === 'session/register') {

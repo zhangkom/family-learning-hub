@@ -1,3 +1,4 @@
+import type { LearningMode } from '../../../lib/learning-session';
 import { useEffect, useRef, useState } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { App as NativeApp } from '@capacitor/app';
@@ -29,6 +30,7 @@ type Props = {
   selectedQuestionId?: string;
   onBack: () => void;
   onUpdate: (scan: Scan) => void;
+  onLearn: (mode: LearningMode, scan: Scan, questionId: string) => void;
 };
 export function Review({
   api,
@@ -38,7 +40,7 @@ export function Review({
   recognitionEnabled,
   selectedQuestionId,
   onBack,
-  onUpdate,
+  onUpdate, onLearn,
 }: Props) {
   const draftId = `${owner}|${initial.id}`;
   // A scan's uploaded image is immutable. Polling analysis revisions must not reread/redecode it.
@@ -621,10 +623,38 @@ export function Review({
                 <QuestionPaper question={question} questions={questions} original={originalQuestionId === question.id}
                   image={image && imageSize ? { url: image, ...imageSize } : undefined} />
               </section>
+              <label className="confirm-check">
+                <input
+                  type="checkbox"
+                  checked={question.confirmed}
+                  disabled={
+                    !question.prompt.trim() ||
+                    !question.regions.length ||
+                    question.answerSteps.some(
+                      (s) =>
+                        s.uncertain ||
+                        s.author === 'unknown' ||
+                        !s.regionIds.length ||
+                        !s.text.trim(),
+                    )
+                  }
+                  onChange={(e) =>
+                    update(question.id, { confirmed: e.target.checked })
+                  }
+                />
+                这道题的条件、区域和可见作答已核对
+              </label>
+              <p className="hint">
+                进入练习前请核对题干、题框和原作答；需要修改时展开下方“核对题干和原作答”。
+              </p>
+              {dirty && <button disabled={busy || conflict || hasPendingAnalysis} onClick={() => void save()}>保存这次校对</button>}
+              <div className="question-learning-actions"><button disabled={dirty || busy || conflict || hasPendingAnalysis || !question.confirmed} onClick={() => onLearn('practice', scan, question.id)}>举一反三</button><button disabled={dirty || busy || conflict || hasPendingAnalysis || !question.confirmed} onClick={() => onLearn('challenge', scan, question.id)}>难题突破</button></div>
+              {dirty && <p className="hint">保存校对后可进入练习与突破。</p>}
               {dirty && question.tutoring?.result && <p className="hint">请先保存题框或文字修改，再核对分析。</p>}
               <TutoringResult question={question} progress={scan.analysis} disabled={dirty || busy || conflict || hasPendingAnalysis || !draftReady}
                 onReview={reviewAnalysis} onReanalyze={() => void collect(true)} canReanalyze={validQuestion && recognitionEnabled} />
-              <details className="manual-review"><summary>补充题干和我的作答（选填）</summary>
+              {!question.prompt.trim() && question.tutoring?.result?.transcribedPrompt && <button disabled={busy || conflict || hasPendingAnalysis} onClick={() => update(question.id, { prompt: question.tutoring!.result!.transcribedPrompt })}>采用识别题干，再校对</button>}
+              <details className="manual-review"><summary>核对题干和原作答</summary>
               <div className="field-row">
                 <label>
                   题号
@@ -666,6 +696,7 @@ export function Review({
               <label>
                 完整题干
                 <textarea
+                  aria-label="完整题干"
                   rows={4}
                   value={question.prompt}
                   placeholder="核对条件、选项和单位，不清楚的地方先保留待确认"
@@ -673,6 +704,10 @@ export function Review({
                     update(question.id, { prompt: e.target.value })
                   }
                 />
+              </label>
+              <label>
+                知识点（用逗号分隔）
+                <input key={question.id + JSON.stringify(question.knowledgePoints)} defaultValue={question.knowledgePoints.join('，')} onBlur={e => { const points = [...new Set(e.target.value.split(/[,，、]/).map(value => value.trim()).filter(Boolean))].slice(0, 20); if (JSON.stringify(points) !== JSON.stringify(question.knowledgePoints)) update(question.id, { knowledgePoints: points }); }} placeholder="例如：匀速直线运动、路程计算" />
               </label>
               <label>
                 配图说明
@@ -954,30 +989,6 @@ export function Review({
                   合并内容与步骤
                 </button>
               </details>
-              <label className="confirm-check">
-                <input
-                  type="checkbox"
-                  checked={question.confirmed}
-                  disabled={
-                    !question.prompt.trim() ||
-                    !question.regions.length ||
-                    question.answerSteps.some(
-                      (s) =>
-                        s.uncertain ||
-                        s.author === 'unknown' ||
-                        !s.regionIds.length ||
-                        !s.text.trim(),
-                    )
-                  }
-                  onChange={(e) =>
-                    update(question.id, { confirmed: e.target.checked })
-                  }
-                />
-                这道题的条件、区域和可见作答已核对
-              </label>
-              <p className="hint">
-                每个步骤需关联上传图区域并完成校对；未完成时，可以先保存草稿。
-              </p>
               </details>
             </>
           )}

@@ -1,3 +1,5 @@
+import { sessionSummary } from '../lib/learning-session';
+import { publicLearning } from './learning-sessions';
 import type { FamilyStore } from './family-store';
 import { listScans } from './scan-files';
 import { questionsOf } from './mobile-service';
@@ -5,7 +7,7 @@ import { questionsOf } from './mobile-service';
 // Counts only: keep photo bytes and question bodies out of the profile response.
 export async function studentOverview(store: FamilyStore, accountId: string) {
   const students = store.students(accountId).map(student => ({ ...student, overview: {
-    scanCount: 0, questionCount: 0, wrongQuestionCount: 0, needsReviewCount: 0, cloudPhotoCount: 0,
+    learningSessionCount: 0, independentRetestCount: 0, scanCount: 0, questionCount: 0, wrongQuestionCount: 0, needsReviewCount: 0, cloudPhotoCount: 0,
   } }));
   const byId = new Map(students.map(student => [student.id, student]));
   let unassignedScanCount = 0;
@@ -23,6 +25,11 @@ export async function studentOverview(store: FamilyStore, accountId: string) {
   for (const row of store.db.prepare('SELECT student_id, COUNT(*) AS total FROM cloud_photos WHERE account_id=? AND NOT EXISTS (SELECT 1 FROM cloud_photo_replacements WHERE old_id=cloud_photos.id) GROUP BY student_id').all(accountId)) {
     const student = byId.get(String(row.student_id));
     if (student) student.overview.cloudPhotoCount = Number(row.total);
+  }
+  for (const row of store.db.prepare('SELECT student_id,body FROM learning_sessions WHERE account_id=?').all(accountId)) {
+    const student = byId.get(String(row.student_id)); if (!student) continue;
+    student.overview.learningSessionCount++;
+    if (sessionSummary(publicLearning(JSON.parse(String(row.body)))).independentRetest) student.overview.independentRetestCount++;
   }
   return { students, unassignedScanCount };
 }

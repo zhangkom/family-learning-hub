@@ -226,7 +226,7 @@ def main():
         if args.delta_manifest and public.get('deltas', []) != deltas:
             raise RuntimeError('Refusing to change immutable release delta metadata')
     else:
-        public = dict(app='知燃 AI', version=args.version, channel=args.channel, commit=args.commit,
+        public = dict(app='知识棱镜AI', version=args.version, channel=args.channel, commit=args.commit,
                       publishedAt=datetime.now(timezone.utc).isoformat(), fileName=name,
                       downloadUrl=URL_ROOT + name, bytes=len(content), sha256=sha(content), notes=args.notes,
                       versionCode=args.version_code, changelog=args.changelog)

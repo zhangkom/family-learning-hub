@@ -2627,3 +2627,47 @@ button.learning-module:hover:not(:disabled) { border-color:var(--module-color); 
 /* Capacitor supplies safe-area variables on Android WebViews that need them. */
 :root{--app-safe-top:max(env(safe-area-inset-top,0px),var(--safe-area-inset-top,0px));--app-safe-bottom:max(env(safe-area-inset-bottom,0px),var(--safe-area-inset-bottom,0px))}
 #root{padding-top:var(--app-safe-top);padding-left:max(env(safe-area-inset-left,0px),var(--safe-area-inset-left,0px));padding-right:max(env(safe-area-inset-right,0px),var(--safe-area-inset-right,0px))}
+.learning-hub { max-width:780px; margin:0 auto; padding:calc(12px + var(--app-safe-top)) 20px calc(28px + var(--app-safe-bottom)); }
+.learning-hub-header { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:20px; }
+.learning-hub-header > span { color:#416293; font-size:14px; padding:8px 12px; background:#eaf0fc; border-radius:18px; }
+.learning-hub h1 { margin:0; font-size:25px; }
+.learning-hub h2 { font-size:18px; margin:0 0 12px; }
+.learning-hub .hint { line-height:1.7; }
+.learning-hub > .section-line { margin-bottom:18px; }
+.learning-source-line { display:flex; align-items:center; justify-content:space-between; gap:12px; border-radius:16px; background:#eaf0fc; padding:14px; }
+.learning-source-line > div { min-width:0; }
+.learning-source-line small { display:block; font-size:12px; color:#5c6d86; margin-top:5px; }
+.learning-source-line button { font-size:12px; padding:8px 10px; flex-shrink:0; }
+.learning-context { margin:12px 0; color:#4d5e78; font-size:13px; }
+.learning-context > summary { min-height:44px; padding:12px 0; cursor:pointer; }
+.learning-context p { white-space:pre-wrap; overflow-wrap:anywhere; }
+.learning-job, .learning-retest { margin:16px 0; border:1px solid #d4e1f1; background:#eef5ff; padding:16px; border-radius:16px; }
+.learning-job p, .learning-retest p { font-size:13px; color:#5c6d86; line-height:1.7; margin:8px 0; }
+.learning-task-list { display:grid; gap:16px; margin:16px 0; }
+.learning-task { margin:0; min-width:0; }
+.learning-task .question-card-heading strong { font-size:15px; }
+.learning-task .question-card-heading { gap:8px; flex-wrap:wrap; }
+.learning-task label, .learning-start label { display:flex; flex-direction:column; gap:8px; font-size:13px; margin:16px 0 12px; }
+.learning-task textarea, .learning-start textarea { width:100%; resize:vertical; min-height:110px; font-size:16px; line-height:1.65; border-radius:12px; border:1px solid #ced9e9; padding:12px; }
+.learning-hints { background:#fff7e7; border-radius:12px; padding:10px 13px; margin:12px 0; }
+.learning-hints p, .learning-attempts p, .learning-solution p { white-space:pre-wrap; overflow-wrap:anywhere; font-size:14px; line-height:1.8; margin:6px 0 12px; }
+.learning-hints strong { font-size:12px; color:#8b651e; }
+.learning-hint-button { font-size:12px; color:#865f21; }
+.learning-attempts { margin:14px 0; }
+.learning-attempts details, .learning-solution { background:#f4f7fc; border-radius:12px; padding:10px 12px; margin-top:8px; }
+.learning-attempts summary, .learning-solution summary { font-size:13px; min-height:32px; cursor:pointer; padding:6px 0; }
+.learning-attempts .learning-answer { padding:8px 10px; background:white; border-left:2px solid #bccded; }
+.learning-history, .learning-source-picker { margin:20px 0; }
+.learning-history-item, .learning-source-option { display:flex; width:100%; text-align:left; justify-content:space-between; gap:10px; padding:14px; margin:8px 0; border-radius:14px; }
+.learning-history-item > span, .learning-source-option > span { min-width:0; flex:1; }
+.learning-history-item strong, .learning-source-option strong { display:block; font-size:14px; }
+.learning-history-item small, .learning-source-option small { display:block; font-size:12px; color:#5f7088; line-height:1.7; margin-top:5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.learning-filters { display:flex; gap:8px; margin-bottom:12px; }
+.learning-filters input { min-width:0; flex:1; font-size:14px; }
+.learning-filters select { width:90px; font-size:13px; }
+.learning-start .full { margin:12px 0; }
+.learning-ai-note { font-size:12px; }
+.question-learning-actions { display:flex; gap:8px; flex-wrap:wrap; margin:14px 0 8px; }
+.question-learning-actions button { flex:1; font-size:12px; padding:8px 10px; min-height:44px; color:#365ca7; }
+.question-learning-history { display:flex; width:100%; justify-content:space-between; font-size:12px; padding:9px 6px; color:#5d6f89; background:transparent; border:0; text-align:left; }
+@media(max-width:380px) { .learning-hub { padding-left:14px; padding-right:14px; } .learning-task { padding:14px; } }

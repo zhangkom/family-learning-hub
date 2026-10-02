@@ -18,7 +18,7 @@ export function PermissionInfo() {
     <p>拍照后先保存在本机，确认上传后才发送到家庭服务器。云盘保存原图，不自动启动 AI 识别。相机或系统选择器自己的权限由系统管理。</p>
     {Capacitor.isNativePlatform() && <button type="button" onClick={async () => {
       try { setError(''); await openAppSettings(); }
-      catch { setError('未能打开系统设置。请在手机设置 → 应用管理 → 知燃 AI 中查看。'); }
+      catch { setError('未能打开系统设置。请在手机设置 → 应用管理 → 知识棱镜AI 中查看。'); }
     }}>查看系统应用设置</button>}
     {error && <p role="alert">{error}</p>}
   </details>;

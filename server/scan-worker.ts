@@ -1,9 +1,10 @@
 import { setTimeout } from 'node:timers/promises';
 import { getFamilyStore } from './family-store';
 import { runNextJob } from './scan-jobs';
+import { runNextLearningJob } from './learning-jobs';
 
 const store = getFamilyStore();
-let stopping = false;
+let stopping = false, learningFirst = false;
 process.on('SIGTERM', () => {
   stopping = true;
 });
@@ -13,7 +14,9 @@ process.on('SIGINT', () => {
 try {
   while (!stopping) {
     try {
-      if (!(await runNextJob(store))) await setTimeout(1000);
+      learningFirst = !learningFirst;
+      const worked = learningFirst ? await runNextLearningJob(store) || await runNextJob(store) : await runNextJob(store) || await runNextLearningJob(store);
+      if (!worked) await setTimeout(1000);
     } catch (e) {
       console.error(
         'Scan worker failed:',

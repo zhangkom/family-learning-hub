@@ -51,7 +51,7 @@ assert.equal(metadata.status, 200);
 assert.equal(metadata.headers.get('access-control-allow-origin'), 'https://localhost');
 assert.match(metadata.headers.get('cache-control') || '', /no-store/);
 const manifest = await metadata.json();
-assert.equal(manifest.app, '知燃 AI');
+assert.equal(manifest.app, '知识棱镜AI');
 for (const key of ['version', 'versionCode', 'bytes', 'commit']) assert.equal(manifest[key], expected[key], key);
 assert.equal(manifest.sha256.toLowerCase(), expected.sha256.toLowerCase());
 const name = `family-learning-${version}-release-${expected.commit.slice(0, 7)}.apk`;
@@ -68,6 +68,7 @@ const badging = run(join(sdk, 'aapt.exe'), ['dump', 'badging', apk]);
 assert.match(badging, /package: name='cn\.familylearning\.study'/);
 assert.ok(badging.includes(`versionCode='${expected.versionCode}'`));
 assert.ok(badging.includes(`versionName='${version}'`));
+assert.ok(badging.includes("application-label:'知识棱镜AI'"));
 const java = join(javaHome, 'bin/java.exe');
 const signer = run(java, ['-jar', join(sdk, 'lib/apksigner.jar'), 'verify', '--verbose', '--print-certs', apk]);
 assert.ok(signer.toLowerCase().includes(expected.certificateSha256.toLowerCase()));
@@ -104,6 +105,7 @@ const setupResponse = await fetch(base + 'api/mobile/v1/setup', { signal: AbortS
 assert.equal(setupResponse.status, 200);
 const setup = await setupResponse.json(); assert.equal(setup.enabled, true); assert.equal(setup.registrationEnabled, true);
 assert.equal(setup.processedPhotoMetadataVersion, 1);
+if (expected.versionCode >= 19) assert.equal(setup.learningSessionVersion, 1);
 if (expected.versionCode >= 14) assert.equal(setup.questionReviewVersion, 1);
 if (expected.versionCode >= 12) {
   assert.equal(setup.cloudPhotos?.version, 1);
@@ -115,7 +117,7 @@ const account = await fetch(base + 'account', { signal: AbortSignal.timeout(2000
 const result = { version, versionCode: expected.versionCode, commit: expected.commit, app: manifest.app,
   resolvedUrl: manifest.downloadUrl, bytes: bytes.length, sha256: sha(bytes), certificateSha256: expected.certificateSha256,
   tlsVerified: true, signatureVerified: true, actualPackageVersionVerified: true, updateCorsVerified: true, metadataNoStore: true,
-  setupStatus: setupResponse.status, processedPhotoMetadataVersion: setup.processedPhotoMetadataVersion, questionReviewVersion: setup.questionReviewVersion, cloudPhotos: setup.cloudPhotos, websiteStatus: account.status,
+  setupStatus: setupResponse.status, processedPhotoMetadataVersion: setup.processedPhotoMetadataVersion, questionReviewVersion: setup.questionReviewVersion, learningSessionVersion: setup.learningSessionVersion, cloudPhotos: setup.cloudPhotos, websiteStatus: account.status,
   checkedAt: new Date().toISOString(), productionWrites: false, nativeDeviceTested: false, deltas, ...permissions };
 writeFileSync(join(output, 'verification.json'), JSON.stringify(result, null, 2));
 console.log(JSON.stringify(result, null, 2));

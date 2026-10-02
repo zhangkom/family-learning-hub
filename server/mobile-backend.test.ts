@@ -182,8 +182,8 @@ describe('mobile authentication and students', () => {
     const response = await call('students?overview=1');
     expect(response.status).toBe(200);
     const data = await response.json() as unknown as { students: { id: string; overview: Record<string, number> }[]; unassignedScanCount: number };
-    expect(data.students.find(item => item.id === first.id)?.overview).toEqual({ scanCount: 2, questionCount: 4, wrongQuestionCount: 2, needsReviewCount: 1, cloudPhotoCount: 2 });
-    expect(data.students.find(item => item.id === second.id)?.overview).toEqual({ scanCount: 1, questionCount: 2, wrongQuestionCount: 1, needsReviewCount: 1, cloudPhotoCount: 0 });
+    expect(data.students.find(item => item.id === first.id)?.overview).toEqual({ learningSessionCount: 0, independentRetestCount: 0, scanCount: 2, questionCount: 4, wrongQuestionCount: 2, needsReviewCount: 1, cloudPhotoCount: 2 });
+    expect(data.students.find(item => item.id === second.id)?.overview).toEqual({ learningSessionCount: 0, independentRetestCount: 0, scanCount: 1, questionCount: 2, wrongQuestionCount: 1, needsReviewCount: 1, cloudPhotoCount: 0 });
     expect(data.students.find(item => item.id === 'dabao')?.overview.scanCount).toBe(1);
     expect(data.unassignedScanCount).toBe(1);
     expect(JSON.stringify(data)).not.toMatch(/secret.png|private-photo|2\+3/);

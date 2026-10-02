@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { Image as ImageIcon, FileText, ChevronRight } from 'lucide-react';
 import type { Question, Scan } from './types';
@@ -32,8 +32,8 @@ export function QuestionPaper({ question, questions, image, original }: {
   </div>;
 }
 
-export function QuestionCard({ scan, question, images, onOpen }: {
-  scan: Scan; question: Question; images: QuestionImages; onOpen: () => void;
+export function QuestionCard({ scan, question, images, onOpen, actions }: {
+  scan: Scan; question: Question; images: QuestionImages; onOpen: () => void; actions?: ReactNode;
 }) {
   const ref = useRef<HTMLElement>(null);
   const size = useRef<{ width: number; height: number } | undefined>(undefined);
@@ -64,6 +64,7 @@ export function QuestionCard({ scan, question, images, onOpen }: {
     {hasRegions && nearby && state.status === 'error' && <div className="paper-image-unavailable"><p>{Capacitor.getPlatform() === 'android' ? '本机题图暂不可用' : '题图暂时无法读取'}</p>
       <button type="button" onClick={() => images.retry(scan.id)}>重试读取</button>
       {Capacitor.getPlatform() === 'android' && <button type="button" onClick={() => images.retry(scan.id, true)}>从云端读取这张题图</button>}</div>}
+    {actions}
     <footer className="question-card-footer"><small>{summary}</small><button type="button" onClick={onOpen}>题目详情 <ChevronRight size={15} /></button></footer>
   </article>;
 }

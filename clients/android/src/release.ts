@@ -1,7 +1,7 @@
 import { version, androidVersionCode } from '../package.json';
 
 export const appVersion = version;
-export const appName = '知燃 AI';
+export const appName = '知识棱镜AI';
 export const appVersionCode = androidVersionCode;
 export const familyWebsite = 'https://123.207.232.151/family-learning/';
 export const updateManifestUrl = `${familyWebsite}downloads/android/latest.json`;

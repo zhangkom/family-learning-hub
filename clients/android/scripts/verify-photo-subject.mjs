@@ -31,6 +31,7 @@ await (async()=> {
   if(path==='/setup') return send({enabled:true,registrationEnabled:true});
   if(path==='/session/login') return send({token:'synthetic-only',user:{id:'design-qa-family',username:'设计验收合成家庭'},expiresAt:Date.now()+9999999});
   if(path==='/students') return send({students});
+  if(path==='/learning-sessions') return send({sessions:[],more:false,enabled:true});
   if(path==='/scans') return send({scans:scans.filter(s=>s.studentId===u.searchParams.get('studentId')),recognition:true});
   const s=scans.find(s=>path.startsWith('/scans/'+s.id));
   if(s && path.endsWith('/file')) return route.fulfill({contentType:'image/svg+xml',body:fixture});

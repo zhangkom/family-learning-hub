@@ -38,6 +38,7 @@ try {
     if (url.pathname.endsWith('latest.json')) return route.fulfill({ status: 503, body: '{}' });
     if (url.href === api + '/setup') return send({ enabled: true, registrationEnabled: true, cloudPhotos: { version: 1, nameConflictVersion: 1, maxBatchItems: Number.MAX_SAFE_INTEGER, maxFileBytes: 33554432, mimeTypes: ['image/png','image/jpeg','image/webp'], recommendedConcurrency: 1 } });
     if (url.href === api + '/session') return send({ user: { id: 'A', username: '取消选图合成验收' } });
+    if (url.pathname.endsWith('/learning-sessions')) return send({ sessions: [], more: false, enabled: true });
     if (url.pathname.endsWith('/students')) return send({ students: [{ id: 'student-a', name: '合成学生甲', createdAt: new Date().toISOString() }] });
     if (url.pathname.endsWith('/scans')) return send({ scans: [], recognition: false });
     if (url.pathname.endsWith('/cloud-photos') && request.method() === 'GET') return send({ photos: [], storage: { usedBytes: 0, limitBytes: 2147483648 } });

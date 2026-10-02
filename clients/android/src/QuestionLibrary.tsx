@@ -1,3 +1,5 @@
+import type { LearningMode, LearningSummary } from '../../../lib/learning-session';
+import { learningProgress } from './learning-history';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { BookOpen, ChevronRight, Layers } from 'lucide-react';
 import { type Scan, type Question } from './types';
@@ -17,8 +19,9 @@ export function collectKnowledge(items: Item[]) {
   }
   return [...groups.values()].sort((a, b) => b.items.length - a.items.length || a.name.localeCompare(b.name, 'zh-CN'));
 }
-export function QuestionLibrary({ api, owner, records, mode, onMode, onOpen, renderScan, refreshing }: {
+export function QuestionLibrary({ api, owner, records, mode, onMode, onOpen, renderScan, refreshing, onLearn, learning }: {
   api: FamilyApi; owner: string;
+  learning: LearningSummary[]; onLearn: (mode: LearningMode, source?: { scanId: string; questionId: string }, sessionId?: string) => void;
   records: Scan[]; mode: LibraryMode; onMode: (mode: LibraryMode) => void;
   onOpen: (scan: Scan, questionId?: string) => void; renderScan: (scan: Scan) => ReactNode; refreshing: boolean;
 }) {
@@ -37,7 +40,10 @@ export function QuestionLibrary({ api, owner, records, mode, onMode, onOpen, ren
   const visibleWrong = wrong.filter(item => activeSubject === '全部' || (item.question.subject || '待选科目') === activeSubject);
   const knowledge = collectKnowledge(visible);
   function questionCard({ scan, question }: Item) {
-    return <QuestionCard key={`${scan.id}/${question.id}`} scan={scan} question={question} images={images} onOpen={() => onOpen(scan, question.id)} />;
+    return <QuestionCard key={`${scan.id}/${question.id}`} scan={scan} question={question} images={images} onOpen={() => onOpen(scan, question.id)} actions={<>
+      <div className="question-learning-actions"><button onClick={() => onLearn('practice', { scanId: scan.id, questionId: question.id })}>举一反三</button><button onClick={() => onLearn('challenge', { scanId: scan.id, questionId: question.id })}>难题突破</button></div>
+      {learning.filter(item => item.source.scanId === scan.id && item.source.questionId === question.id).slice(0, 2).map(item => <button className="question-learning-history" key={item.id} onClick={() => onLearn(item.mode, undefined, item.id)}>{item.mode === 'practice' ? '变式练习' : '难题突破'} · {learningProgress(item)} <ChevronRight size={13} /></button>)}
+    </>} />;
   }
   return <div className="question-library">
     <p className="learning-totals" aria-label="题目概览">{wrong.length} 道错题 · {all.length} 道题 · {collectKnowledge(all).length} 个知识点</p>

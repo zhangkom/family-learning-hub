@@ -48,7 +48,8 @@ await page.route('**/*', async (route) => {
   if (url.href === `${site}downloads/android/latest.json`) return send({ version, versionCode: androidVersionCode, channel: 'release', bytes: 7000000, sha256: 'a'.repeat(64), downloadUrl: `${site}downloads/android/family-learning-${version}-release-1234567.apk`, notes: '合成版本' });
   if (url.href === `${api}/setup`) return send({ enabled: true, needsSetup: false });
   if (url.href === `${api}/session/login`) return send({ token: 'synthetic-token', user: { id: 'synthetic-family', username: '测试家庭' }, expiresAt: Date.now() + 60000 });
-  if (url.pathname.endsWith('/students')) return send({ students: students.map((student, index) => ({ ...student, overview: { scanCount: index ? 0 : 20, questionCount: index ? 0 : 3, wrongQuestionCount: index ? 0 : 2, needsReviewCount: index ? 0 : 10, cloudPhotoCount: index ? 8 : 45 } })) });
+  if (url.pathname.endsWith('/learning-sessions')) return send({ sessions: [], more: false, enabled: true });
+    if (url.pathname.endsWith('/students')) return send({ students: students.map((student, index) => ({ ...student, overview: { scanCount: index ? 0 : 20, questionCount: index ? 0 : 3, wrongQuestionCount: index ? 0 : 2, needsReviewCount: index ? 0 : 10, cloudPhotoCount: index ? 8 : 45 } })) });
   if (url.pathname.endsWith('/scans') && request.method() === 'GET') return send({ scans: url.searchParams.get('studentId') === 'student-a' ? scans : [], recognition: true });
   errors.push(`Unexpected request ${url.pathname}`);
   return route.abort('blockedbyclient');
@@ -62,7 +63,7 @@ try {
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
   await page.screenshot({ path: 'test-results/guest-learning-320.png', fullPage: true });
   await page.getByRole('navigation', { name: '账户' }).getByRole('button', { name: '登录', exact: true }).click();
-  await page.getByText(`知燃 AI ${version} · 家庭试用版`, { exact: true }).waitFor();
+  await page.getByText(`知识棱镜AI ${version} · 家庭试用版`, { exact: true }).waitFor();
   const noSensitiveRequests = async () => {
     assert.deepEqual(await page.evaluate(() => window.nativeCalls.filter(({ plugin, method }) =>
       plugin === 'Camera' || plugin === 'AppSettings' || ['install', 'openInstallSettings'].includes(method))), []);
@@ -75,8 +76,8 @@ try {
   await noSensitiveRequests();
   assert.equal(await page.locator('.learning-continue button').count(), 1);
   assert.equal(await page.locator('.learning-module').count(), 4);
-  assert.equal(await page.locator('article.learning-module').count(), 2);
-  assert.equal(await page.locator('button.learning-module').count(), 2);
+  assert.equal(await page.locator('article.learning-module').count(), 0);
+  assert.equal(await page.locator('button.learning-module').count(), 4);
   for (const viewport of [{ width: 320, height: 740 }, { width: 360, height: 740 }, { width: 390, height: 844 }, { width: 768, height: 1024 }]) {
     await page.setViewportSize(viewport);
     const measured = await page.evaluate(() => ({ width: innerWidth, height: innerHeight,

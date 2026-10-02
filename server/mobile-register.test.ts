@@ -103,6 +103,7 @@ describe('ordinary mobile family registration', () => {
       registrationEnabled: true,
       processedPhotoMetadataVersion: 1,
       questionReviewVersion: 1,
+      learningSessionVersion: 1,
       cloudPhotos: CLOUD_PHOTO_CAPABILITY,
     });
     vi.stubEnv('FAMILY_REGISTRATION_ENABLED', 'false');
@@ -170,6 +171,7 @@ describe('ordinary mobile family registration', () => {
       registrationEnabled: true,
       processedPhotoMetadataVersion: 1,
       questionReviewVersion: 1,
+      learningSessionVersion: 1,
       cloudPhotos: CLOUD_PHOTO_CAPABILITY,
     });
     expect((await mobile('session/login', credentials())).status).toBe(200);

@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">知燃 AI</string>
-    <string name="title_activity_main">知燃 AI</string>
+    <string name="app_name">知识棱镜AI</string>
+    <string name="title_activity_main">知识棱镜AI</string>
     <string name="package_name">cn.familylearning.study</string>
     <string name="custom_url_scheme">cn.familylearning.study</string>
 </resources>

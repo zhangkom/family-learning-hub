@@ -1,3 +1,4 @@
+import type { LearningSession, LearningSummary } from '../../../lib/learning-session';
 import type { Login, Question, Scan, Student, User, WrongBookItem, TutoringReviewInput } from './types';
 import type { CandidateReply } from './candidates';
 import type { StudentOverviewReply } from './types';
@@ -199,6 +200,18 @@ export class FamilyApi {
     if (!result) throw new ApiError('请先取得这道题的分析结果', 400);
     return this.request<{ scan: Scan }>(`/scans/${encodeURIComponent(scan.id)}/questions/${encodeURIComponent(questionId)}/analysis-review`,
       'POST', { revision: scan.revision, resultGeneratedAt: result.generatedAt, ...input });
+  }
+  learningSessions(studentId: string, offset = 0, signal?: AbortSignal) {
+    return this.request<{ sessions: LearningSummary[]; more: boolean; enabled: boolean }>(`/learning-sessions?studentId=${encodeURIComponent(studentId)}&offset=${offset}`, 'GET', undefined, signal);
+  }
+  learningSession(id: string, signal?: AbortSignal) {
+    return this.request<{ session: LearningSession }>(`/learning-sessions/${encodeURIComponent(id)}`, 'GET', undefined, signal);
+  }
+  createLearning(body: { requestId: string; studentId: string; scanId: string; questionId: string; revision: number; mode: 'practice' | 'challenge'; stuckPoint: string; initialWork: string }, signal?: AbortSignal) {
+    return this.request<{ session: LearningSession }>('/learning-sessions', 'POST', body, signal);
+  }
+  learningAction(session: LearningSession, action: 'hint' | 'solution' | 'attempt' | 'retry' | 'retest', body: Record<string, unknown>, signal?: AbortSignal) {
+    return this.request<{ session: LearningSession }>(`/learning-sessions/${encodeURIComponent(session.id)}/${action}`, 'POST', { ...body, revision: session.revision }, signal);
   }
   async image(id: string, signal?: AbortSignal) {
     const response = await fetch(
