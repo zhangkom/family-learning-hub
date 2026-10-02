@@ -133,7 +133,9 @@ import { PhotoPreparation, OriginalPhotoLibrary, importOriginal,
   onResume={original => openPreparation(original)} />;
 ```
 
-`PhotoPreparation` 支持整张图、原片四角点选/拖动/键盘微调、90°旋转、默认关闭的轻微提亮、原片与处理件对照、放大滚动检查、质量建议、显式生成和确认、取消保留。选择角始终在正向原片坐标中，旋转只作用于生成结果。账号、学生、原片 ID/hash 改变会同步重建整个会话；取消/卸载组件会丢弃迟到的异步结果，文件读取可取消。原生处理已开始后不会强杀线程，可能留下完整处理副本，原片不变；此时立即打开原片列表可能收到 `PHOTO_BUSY`，支持重试。
+`PhotoPreparation` 支持整张图、原片四角点选/拖动/键盘微调、90°旋转、默认关闭的轻微提亮、原片与处理件对照、放大滚动检查、质量建议、显式生成和确认、取消保留。0.2.9 将预览放在操作上方，旋转立即更新原片 SVG 和放大视图；连续四次回到原方向，原片文件不覆盖。保存的四角仍使用正向原片坐标，屏幕点选、拖动、键盘与角名称按当前方向逆映射；native 仅收到一次 `quarterTurns`，处理结果不再额外旋转。账号、学生、原片 ID/hash 改变会同步重建整个会话；取消/卸载组件会丢弃迟到的异步结果，文件读取可取消。原生处理已开始后不会强杀线程，可能留下完整处理副本，原片不变；此时立即打开原片列表可能收到 `PHOTO_BUSY`，支持重试。
+
+0.2.9 的整张照片、调整四角、旋转90°、提亮阴影为同排四等列按钮，最低52px触摸高度；320–768px检查均全部可见，无需横向寻找隐藏按钮。提亮按钮默认关闭，切换后调用现有 native 处理生成真实预览，不用 CSS 亮度滤镜代替输出。旋转及选区变更先使旧处理结果失效，加载真实处理图后才可确认；重新生成开始时返回原片视图，失败后仍可调角或重试。
 
 确认成功回调 `PhotoDelivery` 的两个字段用途不同：
 
@@ -186,7 +188,7 @@ $env:PHOTO_QA_OUTPUT = '<工程目录>/artifacts/qa/photo-preprocessing-host'
 node scripts/verify-photo-host.mjs
 ```
 
-宿主报告 `artifacts/qa/photo-preprocessing-host/host-result.json`，待提交/坏记录截图同目录。`scripts/synthetic-photo-bridge.mjs` 导出纯浏览器函数 `installSyntheticPhotoBridge({api,initialToken,initialUserId})`，可供总线程 `context.addInitScript` 复用；会话、原片和输出全为合成测试存储。默认生成 900×1200 PNG/JPEG，可联调真实后台的全图不旋转链路；桥不执行原生透视算法，不能证明几何、画质或红米表现。
+宿主报告 `artifacts/qa/photo-preprocessing-host/host-result.json`，待提交/坏记录截图同目录。`scripts/synthetic-photo-bridge.mjs` 导出纯浏览器函数 `installSyntheticPhotoBridge({api,initialToken,initialUserId})`，可供总线程 `context.addInitScript` 复用；会话、原片和输出全为合成测试存储。0.2.9 的宿主桥生成 900×1200 原片及实际旋转的 JPEG：90/270度输出1200×900，正逆矩阵同步；仅支持全图且不提亮，其他参数明确拒绝，避免提供失真的测试回执。真实本地后台已验证90度处理图上传、丢失回执后同版本重试、校对保留元数据、候选坐标尺寸与原片哈希。组件提亮/裁切交互由独立fixture覆盖；模拟桥不执行原生透视和提亮算法，不能证明真机画质或红米表现。
 
 ### 第三批后续：相机结果逐项恢复
 
