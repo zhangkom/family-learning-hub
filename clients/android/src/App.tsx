@@ -215,11 +215,12 @@ function Home({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useLayoutEffect(() => { live.current = true; return () => { live.current = false; scopeGeneration.current++; uploadAbort.current?.abort(); captureAbort.current?.abort(); }; }, []);
   const [homePage, setHomePage] = useState<HomePage>(initialPage);
-  const [libraryMode, setLibraryMode] = useState<LibraryMode>('wrong');
+  const [libraryMode, setLibraryMode] = useState<LibraryMode>('all');
   const [studentOverview, setStudentOverview] = useState<StudentOverviewReply | null>(null);
   const [overviewError, setOverviewError] = useState('');
   const [overviewRevision, setOverviewRevision] = useState(0);
   const [openQuestion, setOpenQuestion] = useState('');
+  const [lastViewed, setLastViewed] = useState<Record<string, { scanId: string; questionId?: string }>>({});
   const [students, setStudents] = useState<Student[]>([]),
     [selected, setSelected] = useState(readSetting(selectionKey(owner)));
   const [records, setRecords] = useState<Scan[]>([]),
@@ -257,6 +258,7 @@ function Home({
   function selectStudent(id: string) {
     if (id === activeStudent.current) return;
     scopeGeneration.current++; activeStudent.current = id; uploadAbort.current?.abort(); captureAbort.current?.abort();
+    setRecords([]);
     updateCollection(null); setPreparationBatch(null); setBatchProgress(null); setCloudOpen(false);
     setPreparing(null); setOriginalsOpen(false); setPhotoQueue([]); setPhotoQueueIssues([]); setCameraFailures([]); setBusy(false); setSelected(id);
   }
@@ -653,7 +655,7 @@ function Home({
       />
     );
   return <>
-    <HomeView username={auth.user.username} students={students} selected={selected} records={records}
+    <HomeView lastViewed={lastViewed[selected]} api={api} owner={owner} username={auth.user.username} students={students} selected={selected} records={records}
       studentOverview={studentOverview} overviewError={overviewError} onRefreshOverview={() => setOverviewRevision(value => value + 1)}
       onUpdateAccount={async (kind, value, currentPassword) => {
         const next = kind === 'username' ? await api.changeUsername(value, currentPassword) : await api.changePassword(value, currentPassword);
@@ -693,7 +695,7 @@ function Home({
           </div></div></article>)}</> : null}
       recognition={recognition} error={error || cameraRestoreError} notice={notice}
       onSelect={selectStudent} onCapture={(source) => void capture(source)} onRefresh={() => { void refresh(); try { refreshPhotoQueue(); } catch(e) { setError(message(e)); } }}
-      onOpenScan={(scan, questionId) => { setOpenQuestion(questionId || ''); setOpenScan(scan); }}
+      onOpenScan={(scan, questionId) => { setLastViewed(previous => ({ ...previous, [scan.studentId]: { scanId: scan.id, questionId } })); setOpenQuestion(questionId || ''); setOpenScan(scan); }}
       onLogout={() => void (async () => {
         try { setBusy(true); await api.logout(); await onLogout(); }
         catch (e) { setError(`退出未完成：${message(e)}`); }

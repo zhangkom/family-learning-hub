@@ -56,6 +56,11 @@ await page.route('**/*', async (route) => {
 try {
   mkdirSync('test-results', { recursive: true });
   await page.goto(client);
+  assert.equal(await page.locator('.learning-module').count(), 4);
+  assert.equal(await page.locator('.learning-module button').count(), 0);
+  await page.setViewportSize({ width: 320, height: 740 });
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  await page.screenshot({ path: 'test-results/guest-learning-320.png', fullPage: true });
   await page.getByRole('navigation', { name: '账户' }).getByRole('button', { name: '登录', exact: true }).click();
   await page.getByText(`知燃 AI ${version} · 家庭试用版`, { exact: true }).waitFor();
   const noSensitiveRequests = async () => {
@@ -66,29 +71,45 @@ try {
   await page.getByLabel('账号', { exact: true }).fill('test-family');
   await page.getByLabel('密码', { exact: true }).fill('synthetic-password');
   await page.getByRole('button', { name: '登录' }).click();
-  await page.locator('.home-record-card').first().waitFor();
+  await page.locator('.learning-continue button').waitFor();
   await noSensitiveRequests();
-  assert.equal(await page.locator('.home-record-card').count(), 1);
-  for (const viewport of [{ width: 390, height: 844 }, { width: 360, height: 740 }]) {
+  assert.equal(await page.locator('.learning-continue button').count(), 1);
+  assert.equal(await page.locator('.learning-module').count(), 4);
+  assert.equal(await page.locator('article.learning-module').count(), 2);
+  assert.equal(await page.locator('button.learning-module').count(), 2);
+  for (const viewport of [{ width: 320, height: 740 }, { width: 360, height: 740 }, { width: 390, height: 844 }, { width: 768, height: 1024 }]) {
     await page.setViewportSize(viewport);
     const measured = await page.evaluate(() => ({ width: innerWidth, height: innerHeight,
       scrollWidth: document.documentElement.scrollWidth, scrollHeight: document.documentElement.scrollHeight,
-      recentBottom: document.querySelector('.home-recent').getBoundingClientRect().bottom,
+      recentBottom: document.querySelector('.learning-tools').getBoundingClientRect().bottom,
+      modules: [...document.querySelectorAll('.learning-module')].map(node => ({ x: node.offsetLeft, y: node.offsetTop })),
+      tools: [...document.querySelectorAll('.learning-tools button')].map(node => node.offsetTop),
       navTop: document.querySelector('.bottom-nav').getBoundingClientRect().top }));
     geometry.push(measured);
+    assert.equal(measured.modules[0].y, measured.modules[1].y);
+    assert.equal(measured.modules[2].y, measured.modules[3].y);
+    assert.ok(measured.modules[2].y > measured.modules[0].y);
+    assert.equal(new Set(measured.tools).size, 1);
     assert.ok(measured.scrollWidth <= viewport.width, JSON.stringify(measured));
     assert.ok(measured.scrollHeight <= viewport.height + 1, `Home should fit one screen: ${JSON.stringify(measured)}`);
     assert.ok(measured.recentBottom <= measured.navTop, `Navigation covers content: ${JSON.stringify(measured)}`);
     await page.screenshot({ path: `test-results/home-${viewport.width}.png`, fullPage: true });
   }
-  await page.getByRole('button', { name: /查看全部/ }).click();
+  await page.getByRole('button', { name: /温故知新/ }).click();
+  await page.getByRole('region', { name: '错题本', exact: true }).waitFor();
+  assert.equal(await page.locator('.question-card').count(), 2);
+  await page.getByRole('navigation', { name: '主要页面' }).getByRole('button', { name: '首页', exact: true }).click();
+  await page.getByRole('button', { name: /知识星图/ }).click();
+  await page.getByRole('region', { name: '知识点归纳', exact: true }).waitFor();
+  assert.equal(await page.locator('.knowledge-card').count(), 2);
+  await page.getByRole('button', { name: '原题照片', exact: true }).click();
   assert.equal(await page.locator('.record-card').count(), 20);
   await page.getByRole('navigation', { name: '主要页面' }).getByRole('button', { name: '首页', exact: true }).click();
   await page.getByLabel('当前学生').selectOption('student-b');
-  await page.locator('.home-empty-records').waitFor();
+  await page.getByText('从第一道题开始', { exact: true }).waitFor();
   assert.equal(await page.locator('.record-card').count(), 0);
   await page.getByLabel('当前学生').selectOption('student-a');
-  await page.locator('.home-record-card').first().waitFor();
+  await page.locator('.learning-continue button').waitFor();
   await page.getByRole('button', { name: /拍照收题/ }).click();
   await page.getByText('系统相机未获允许。可以从相册选图，或在系统设置中检查相机的权限后重试。', { exact: true }).waitFor();
   await page.getByRole('button', { name: '返回首页', exact: true }).click();
@@ -146,6 +167,6 @@ try {
   assert.equal(calls.find(({ method }) => method === 'chooseFromGallery').args.mediaType, 0);
   assert.deepEqual(errors, []);
   writeFileSync('test-results/home-permission-verification.json', JSON.stringify({ version, checkedAt: new Date().toISOString(), syntheticOnly: true, nativeBridgeSimulated: true, nativeDeviceTested: false,
-    geometry, checks: ['no permissions at startup/login', 'camera only after tap', 'denial leaves gallery usable', 'cancel is not an error', 'selected image saves local draft', 'student isolation', 'no automatic install authorization', 'no privacy entry on My page', 'account actions grouped', 'distinct student overview cards', 'question library has no upload actions', 'home capped at one record; complete list on separate tab'] }, null, 2));
+    geometry, checks: ['no permissions at startup/login', 'camera only after tap', 'denial leaves gallery usable', 'cancel is not an error', 'selected image saves local draft', 'student isolation', 'no automatic install authorization', 'no privacy entry on My page', 'account actions grouped', 'distinct student overview cards', 'question library has no upload actions', 'two-by-two learning modules, two clearly marked in development', 'wrong-book and knowledge navigation', 'one-row capture/gallery/cloud tools', 'guest and signed-in layouts fit 320/360/390/768 widths'] }, null, 2));
   console.log('Compact home and permission timing passed using synthetic API/native bridge. Not a physical-device test.');
 } finally { await browser.close(); }

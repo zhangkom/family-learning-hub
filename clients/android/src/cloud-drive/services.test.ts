@@ -12,6 +12,28 @@ const api = new FamilyApi('https://123.207.232.151/family-learning/api/mobile/v1
 const photo = { id: '22222222-2222-4222-8222-222222222222', originalName: '合成.png', mimeType: 'image/png', size: 12, sha256: 'a'.repeat(64) } as CloudPhoto;
 beforeEach(() => { for (const mock of Object.values(bridge)) mock.mockReset(); });
 describe('native cloud adapter contract', () => {
+  it('acknowledges an empty cancelled selection so it does not block subsequent recovery', async () => {
+    bridge.pickOriginals.mockResolvedValue({ batchId: 'cancelled', originals: [], failures: [], cancelled: true, selectedCount: 0 });
+    const result = await createDriveServices(api).pick!(scope, 200, signal, false, true);
+    expect(result.cancelled).toBe(true); expect(result.items).toEqual([]);
+    await result.acknowledge!(); expect(bridge.forgetOriginalBatch).toHaveBeenCalledWith(scope.owner, scope.studentId, 'cancelled');
+  });
+  it('keeps interrupted selections with unread photos for explicit continuation', async () => {
+    bridge.pickOriginals.mockResolvedValue({ batchId: 'interrupted', originals: [], failures: [], cancelled: true, selectedCount: 5 });
+    const result = await createDriveServices(api).pick!(scope, 200, signal, false, true);
+    expect(result.acknowledge).toBeUndefined(); expect(bridge.forgetOriginalBatch).not.toHaveBeenCalled();
+  });
+  it('skips only empty cancelled legacy batches and recovers the next unfinished selection', async () => {
+    bridge.listOriginalBatches.mockResolvedValue({ batches: [
+      { batchId: 'cancelled-old', studentId: scope.studentId, purpose: 'cloud-original', state: 'cancelled', createdAt: 1, items: [] },
+      { batchId: 'pending', studentId: scope.studentId, purpose: 'cloud-original', state: 'ready', createdAt: 2, items: [{ originalId: original.originalId }] },
+    ] });
+    bridge.resumeOriginalBatch.mockResolvedValue({ batchId: 'pending', originals: [original], failures: [], cancelled: false, selectedCount: 1 });
+    const result = await createDriveServices(api).recover!(scope, 200, signal);
+    expect(bridge.forgetOriginalBatch).toHaveBeenCalledTimes(1);
+    expect(bridge.forgetOriginalBatch).toHaveBeenCalledWith(scope.owner, scope.studentId, 'cancelled-old');
+    expect(result.items[0].id).toBe(original.originalId);
+  });
   it('picks metadata with cloud purpose and acknowledges only when caller persists it', async () => {
     bridge.pickOriginals.mockResolvedValue({ batchId: 'batch-a', originals: [original], failures: [], cancelled: false });
     const result = await createDriveServices(api).pick!(scope, 100, signal);

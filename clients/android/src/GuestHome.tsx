@@ -1,10 +1,12 @@
 import {
   Camera,
+  Cloud,
   ImagePlus,
   Layers,
   UserRound,
 } from 'lucide-react';
 import { useEffect } from 'react';
+import { LearningModules } from './LearningModules';
 import { Capacitor } from '@capacitor/core';
 import { App as NativeApp } from '@capacitor/app';
 import { BottomNavigation, type HomePage } from './BottomNavigation';
@@ -61,36 +63,13 @@ export function GuestHome({
       </header>
       <main className={`dashboard guest-dashboard ${page === 'home' ? 'home-dashboard' : 'guest-secondary'}`}>
         {page === 'home' && <>
-        <section className="home-capture guest-capture">
-          <div className="home-capture-heading">
-            <h1>添加题目</h1>
-            <p>拍照或选图，登录后按孩子保存。</p>
-          </div>
-          <div className="home-capture-actions">
-            <button
-              type="button"
-              className="capture-primary"
-              onClick={() => onAuth('login', '拍照收题')}
-            >
-              <Camera size={26} />
-              <span>
-                <strong>拍照收题</strong>
-                <small>题目与手写过程</small>
-              </span>
-            </button>
-            <button
-              type="button"
-              className="capture-secondary"
-              onClick={() => onAuth('login', '相册选图')}
-            >
-              <ImagePlus size={23} />
-              <span>
-                <strong>相册选图</strong>
-                <small>从已有照片导入</small>
-              </span>
-            </button>
-          </div>
-        </section>
+        <LearningModules onReview={() => onAuth('login', '错题本')} onKnowledge={() => onAuth('login', '知识点归纳')} />
+        <section className="learning-continue"><div><strong>从一道题，开始积累</strong><small>登录后按孩子保存与整理。</small></div><button onClick={() => onAuth('login')}>开始学习</button></section>
+        <nav className="learning-tools" aria-label="添加学习资料">
+          <button onClick={() => onAuth('login', '拍照收题')}><Camera size={22} /><span>拍照收题</span></button>
+          <button onClick={() => onAuth('login', '相册选图')}><ImagePlus size={22} /><span>相册选图</span></button>
+          <button onClick={() => onAuth('login', '图片云盘')}><Cloud size={22} /><span>图片云盘</span></button>
+        </nav>
         </>}
         {page === 'library' && <>
           <div className="section-line library-heading"><div><h1>题目</h1></div></div>

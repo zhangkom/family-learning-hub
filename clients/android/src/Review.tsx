@@ -18,6 +18,7 @@ import {
 } from './regions';
 import { subjects, statusNames, type Subject, type Question, type Region, type Scan, type TutoringReviewInput } from './types';
 import { AnalysisStatus } from './AnalysisStatus';
+import { QuestionPaper } from './QuestionPaper';
 
 type Props = {
   api: FamilyApi;
@@ -66,6 +67,7 @@ export function Review({
   const [suggestions, setSuggestions] = useState<Question[] | null>(null);
   const [finding, setFinding] = useState(false);
   const [imageSize, setImageSize] = useState<{ width: number; height: number }>();
+  const [originalQuestionId, setOriginalQuestionId] = useState('');
   const candidateRequest = useRef(0), localEdits = useRef(0);
   useEffect(() => () => { candidateRequest.current++; }, [draftId]);
   const question = questions.find((q) => q.id === selected);
@@ -612,6 +614,13 @@ export function Review({
             </div>
           ) : (
             <>
+              <section className="question-card review-question-paper" aria-label="当前题目原题">
+                <header className="question-card-heading"><div><span className="paper-number">{question.number || questions.indexOf(question) + 1}.</span><span className="subject-tag">{question.subject || '待选科目'}</span></div>
+                  <button className="question-original-toggle" type="button" aria-pressed={originalQuestionId === question.id}
+                    onClick={() => setOriginalQuestionId(originalQuestionId === question.id ? '' : question.id)}>{originalQuestionId === question.id ? '整理版' : '原图'}</button></header>
+                <QuestionPaper question={question} questions={questions} original={originalQuestionId === question.id}
+                  image={image && imageSize ? { url: image, ...imageSize } : undefined} />
+              </section>
               {dirty && question.tutoring?.result && <p className="hint">请先保存题框或文字修改，再核对分析。</p>}
               <TutoringResult question={question} progress={scan.analysis} disabled={dirty || busy || conflict || hasPendingAnalysis || !draftReady}
                 onReview={reviewAnalysis} onReanalyze={() => void collect(true)} canReanalyze={validQuestion && recognitionEnabled} />

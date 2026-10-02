@@ -49,7 +49,7 @@ const logIn = async () => {
   await button('登录').click(); await page.getByLabel('账号', { exact: true }).fill(config.username); await page.getByLabel('密码', { exact: true }).fill(config.password);
   await page.locator('form').getByRole('button', { name: '登录', exact: true }).click(); await page.getByLabel('当前学生').selectOption(student.id);
 };
-const openDrive = async () => { await page.getByRole('button', { name: /^批量上传图片/ }).click(); await button('选择图片').waitFor({ state: 'visible' }); };
+const openDrive = async () => { await page.getByRole('button', { name: '图片云盘', exact: true }).click(); await button('选择图片').waitFor({ state: 'visible' }); };
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64');
 const sha256 = createHash('sha256').update(png).digest('hex');
 try {
@@ -68,7 +68,7 @@ try {
   assert.deepEqual(uniqueBatches.map(batch => batch.expectedCount), [500]);
   await page.reload(); await logIn(); await openDrive();
   await page.waitForFunction(() => document.querySelectorAll('.cloud-job-completed').length === 499 && document.querySelectorAll('.cloud-job-failed').length === 1);
-  await button('继续上传 / 重试').click();
+  await button('中断续传').click();
   await page.waitForFunction(() => document.querySelectorAll('.cloud-job-completed').length === 500);
   assert.equal(attempts, 501); assert.equal(receipts.at(-1).id, lostReceipt.id);
   const photos = []; let cursor;
@@ -141,12 +141,12 @@ try {
     }
     await nativePage.getByRole('navigation', { name: '主要页面' }).getByRole('button', { name: '首页', exact: true }).click();
   }
-  await nativePage.getByRole('button', { name: /^批量上传图片/ }).click();
+  await nativePage.getByRole('button', { name: '图片云盘', exact: true }).click();
   for (const width of [320, 390, 768]) {
     await nativePage.setViewportSize({ width, height: 740 });
     const boxes = await nativePage.locator('.cloud-pick-actions button').evaluateAll(buttons => buttons.map(button => { const r = button.getBoundingClientRect(); return { top: r.top, bottom: r.bottom, height: r.height, width: r.width }; }));
-    assert.equal(boxes.length, 3); assert.ok(boxes.every(b => b.height >= 44 && b.bottom <= 740));
-    assert.ok(Math.max(...boxes.map(b => b.top)) - Math.min(...boxes.map(b => b.top)) < 1, 'Three picker buttons must share one row');
+    assert.equal(boxes.length, 2); assert.ok(boxes.every(b => b.height >= 44 && b.bottom <= 740));
+    assert.ok(Math.max(...boxes.map(b => b.top)) - Math.min(...boxes.map(b => b.top)) < 1, 'Two picker buttons must share one row');
     assert.equal(await nativePage.evaluate(() => document.documentElement.scrollWidth <= innerWidth && document.documentElement.scrollHeight <= innerHeight + 1), true, `Empty cloud page should fit ${width}`);
     layoutChecks.push({ width, pickerButtonsSameRow: true, emptyDriveFitsOneScreen: true });
     await nativePage.screenshot({ path: path.join(out, `cloud-compact-${width}.png`), fullPage: true });
@@ -163,7 +163,7 @@ try {
   assert.equal(nativeReceipts.length, 0, 'Selection must not upload automatically');
   const names = await nativePage.locator('.cloud-job strong').allTextContents();
   assert.ok(names.every(name => name.startsWith('IMG_') && name.endsWith('.png')));
-  await nativePage.reload(); await nativePage.getByLabel('当前学生').waitFor(); await nativePage.getByRole('button', { name: /^批量上传图片/ }).click();
+  await nativePage.reload(); await nativePage.getByLabel('当前学生').waitFor(); await nativePage.getByRole('button', { name: '图片云盘', exact: true }).click();
   await nativePage.getByRole('button', { name: '开始上传', exact: true }).click();
   await nativePage.waitForFunction(() => document.querySelectorAll('.cloud-job-completed').length === 6);
   assert.deepEqual(nativeReceipts.map(photo => photo.originalName).sort((a, b) => a.localeCompare(b)), [...names].sort((a, b) => a.localeCompare(b)));
@@ -180,11 +180,10 @@ try {
   await nativePage.getByRole('button', { name: '相册选择', exact: true }).click();
   await nativePage.waitForFunction(() => document.querySelector('[aria-label="上传完成数量"]')?.textContent === '0/5');
   assert.equal(await nativePage.locator('.cloud-job').count(), 4);
-  await nativePage.getByRole('button', { name: '开始上传', exact: true }).click();
+  await nativePage.getByRole('button', { name: '上传已导入照片', exact: true }).click();
   await nativePage.waitForFunction(() => document.querySelector('[aria-label="上传完成数量"]')?.textContent === '4/5');
-  await nativePage.getByRole('button', { name: '继续读取', exact: true }).click();
+  await nativePage.getByRole('button', { name: '中断续传', exact: true }).click();
   await nativePage.waitForFunction(() => document.querySelectorAll('.cloud-job').length === 5);
-  await nativePage.getByRole('button', { name: '开始上传', exact: true }).click();
   await nativePage.waitForFunction(() => document.querySelector('[aria-label="上传完成数量"]')?.textContent === '5/5' && !document.querySelector('.cloud-actions'));
   assert.equal(nativeReceipts.length, 11); assert.equal(new Set(nativeReceipts.map(p => p.id)).size, 11);
   // Insets injected by Capacitor protect the top controls on Android.

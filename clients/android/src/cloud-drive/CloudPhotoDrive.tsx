@@ -94,7 +94,7 @@ function DriveSession({ api, owner, studentId, studentLabel, onClose, onOpenOrig
     setRecoveryAction(result.discardRecovery ? { run: result.discardRecovery } : null);
     if (!rejected.length && !result.failures.length) await result.acknowledge?.();
     if (!live.current || signal.aborted) return;
-    setNotice(result.cancelled && !accepted.length ? '已暂停读取，可点“恢复上次”继续。' : accepted.length ? `已选 ${result.selectedCount ?? result.items.length} 张，本次加入 ${added} 张。` : '没有新的图片需要加入');
+    setNotice(result.cancelled && !accepted.length ? result.selectedCount ? '已暂停读取，可点“中断续传”继续。' : '已取消选图，可以重新选择。' : accepted.length ? `已选 ${result.selectedCount ?? result.items.length} 张，本次加入 ${added} 张。` : recovering ? '没有未完成的选图，可以直接重新选择。' : '没有新的图片需要加入');
     setError([...result.failures, ...rejected].join('；'));
   }
   async function select(recover = false, folderRange = false, albumRange = false) {
@@ -107,6 +107,7 @@ function DriveSession({ api, owner, studentId, studentLabel, onClose, onOpenOrig
       const result = recover ? await services.recover?.({ owner, studentId }, 2147483647, signal, progress) : await services.pick?.({ owner, studentId }, 2147483647, signal, folderRange, albumRange, progress);
       if (!result) throw new Error('此设备暂不支持此选图方式');
       await addPicked(result, recover);
+      return !signal.aborted;
     } catch (e) { if (live.current && !signal.aborted) setError(message(e)); }
     finally {
       if (live.current && !signal.aborted) {
@@ -125,6 +126,13 @@ function DriveSession({ api, owner, studentId, studentLabel, onClose, onOpenOrig
   async function start(id?: string) {
     if (locked) return; setError(''); setNotice('');
     await queueRef.current?.start(id);
+    if (live.current) await refresh();
+  }
+  async function continueInterrupted() {
+    if (locked) return;
+    const recovered = await select(true);
+    if (!recovered || !live.current || controller.current?.signal.aborted) return;
+    await queueRef.current?.start();
     if (live.current) await refresh();
   }
   async function remove(id: string) {
@@ -154,23 +162,22 @@ function DriveSession({ api, owner, studentId, studentLabel, onClose, onOpenOrig
       <div className="cloud-pick-actions">
         <button type="button" className="cloud-primary" disabled={locked || !limits} onClick={() => void select(false, false, true)}>{picking ? '读取中…' : services.native ? '相册选择' : '选择图片'}</button>
         {services.native && <button type="button" disabled={locked || !limits} onClick={() => void select(false, true)}>文件夹范围</button>}
-        {services.recover && <button type="button" disabled={locked} onClick={() => void select(true)}>恢复上次</button>}
       </div>
       <input ref={input} type="file" multiple accept={limits?.mimeTypes.join(',') || 'image/jpeg,image/png,image/webp'} aria-label="选择云盘图片文件" hidden onChange={e => { const files = Array.from(e.currentTarget.files || []); e.currentTarget.value = ''; if (files.length) void filesSelected(files); }} />
       {services.native && <p className="cloud-hint">相册里点第一张，滚动后点最后一张，即可选中整段。</p>}
       <div className="cloud-secondary-actions">
         {services.native && <button type="button" disabled={locked || !limits} onClick={() => void select()}>系统相册多选</button>}
         {onOpenOriginals && <button type="button" disabled={locked} onClick={onOpenOriginals}>从本机照片收题</button>}
-        <details className="cloud-help"><summary>选图说明</summary><p>相册范围选择按照片时间由新到旧，首次使用需授权读取照片；文件夹范围按文件名排序。只导入确认的图片，点“开始上传”后才发送到云盘，不自动分析。</p><p>{limits ? `支持 JPEG、PNG、WebP；单张最多 ${sizeLabel(limits.maxFileBytes)}。` : '正在读取云盘限制…'}</p></details>
+        <details className="cloud-help"><summary>选图说明</summary><p>相册范围选择按照片时间由新到旧，首次使用需授权读取照片；文件夹范围按文件名排序。只导入确认的图片，点“开始上传”后才发送到云盘，不自动分析。</p><p>未确认就返回，下次重新选择。确认后若中断，会显示“中断续传”：继续导入并上传未完成的照片，已成功上传的会跳过。</p><p>{limits ? `支持 JPEG、PNG、WebP；单张最多 ${sizeLabel(limits.maxFileBytes)}。` : '正在读取云盘限制…'}</p></details>
       </div>
     </div>
     {(error || queue.error) && <p role="alert" className="cloud-error">{error || queue.error}</p>}{notice && <output className="cloud-notice">{notice}</output>}
     {picking && importProgress && <output className="cloud-notice">正在保存到本机 {importProgress.imported}/{importProgress.total}{importProgress.failed ? `，${importProgress.failed} 张需重试` : ''}</output>}
-    {!picking && pendingImports > 0 && <output className="cloud-error cloud-import-warning">还有 {pendingImports} 张所选照片未加入上传队列。<button type="button" disabled={locked} onClick={() => void select(true)}>继续读取</button></output>}
+    {!picking && pendingImports > 0 && <output className="cloud-error cloud-import-warning">还有 {pendingImports} 张所选照片未导入。<button type="button" disabled={locked} onClick={() => void continueInterrupted()}>中断续传</button></output>}
     {recoveryAction && <button type="button" disabled={locked} onClick={() => void discardRecovery()}>忽略这批未导入项，保留原片</button>}
     {!!totalSelected && <section className="cloud-panel" aria-labelledby="cloud-queue-title"><div className="cloud-section-heading"><h3 id="cloud-queue-title">{waiting || pendingImports ? '本机待上传' : '上传记录'}</h3><span aria-label="上传完成数量">{uploadCount}/{totalSelected}</span></div>
         <div className="cloud-progress"><progress max={totalSelected} value={uploadCount} aria-label="全部图片上传进度" /></div>
-        {(waiting > 0 || queue.running) && <div className="cloud-actions"><button type="button" className="cloud-primary" disabled={locked || !waiting || !limits} onClick={() => void start()}>{queue.jobs.some(job => job.status === 'failed' || job.status === 'paused') ? '继续上传 / 重试' : '开始上传'}</button>
+        {(waiting > 0 || queue.running) && <div className="cloud-actions"><button type="button" className="cloud-primary" disabled={locked || !waiting || !limits} onClick={() => void start()}>{pendingImports ? '上传已导入照片' : queue.jobs.some(job => job.status === 'failed' || job.status === 'paused') ? '中断续传' : '开始上传'}</button>
           {queue.running && <button type="button" onClick={() => queueRef.current?.stop()}>停止继续上传</button>}</div>}
         {waiting > 0 && <p className="cloud-hint">离开页面会暂停后续上传，可回来继续。</p>}
         {photos.storage && bytesWaiting > photos.storage.limitBytes - photos.storage.usedBytes && <p className="cloud-error">本批原图大小超过家庭云盘剩余空间，部分图片可能无法上传。</p>}

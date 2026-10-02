@@ -114,7 +114,7 @@ try {
   await page.getByLabel('当前学生').waitFor();
   const isolatedStudentId = await page.getByLabel('当前学生').inputValue();
   assert.notEqual(isolatedStudentId, uploadedStudentId);
-  await page.locator('.home-empty-records').waitFor();
+  await page.getByText('从第一道题开始', { exact: true }).waitFor();
   assert.equal(
     await page.getByRole('button', { name: /真实接口合成作业/ }).count(),
     0,
@@ -122,7 +122,7 @@ try {
   await page.getByLabel('当前学生').selectOption(uploadedStudentId);
   await page.getByRole('button', { name: /真实接口合成作业/ }).waitFor();
   await page.getByLabel('当前学生').selectOption(isolatedStudentId);
-  await page.locator('.home-empty-records').waitFor();
+  await page.getByText('从第一道题开始', { exact: true }).waitFor();
   await page.getByRole('navigation', { name: '主要页面' }).getByRole('button', { name: '我的', exact: true }).click();
   await page.getByRole('button', { name: '退出登录' }).click();
   await page.getByRole('button', { name: '登录' }).waitFor();

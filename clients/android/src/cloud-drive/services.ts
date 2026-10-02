@@ -26,7 +26,8 @@ async function nativeBridge() {
 }
 function fromNative(result: BatchResult, scope: CloudScope, bridge: NativeBridge): PickResult {
   if (result.originals.some(photo => photo.studentId !== scope.studentId)) throw new Error('原图所属孩子不匹配');
-  return { cancelled: result.cancelled, selectedCount: result.selectedCount, ...(result.batchId && !result.cancelled && !result.failures.length && (result.selectedCount === undefined || result.selectedCount === result.originals.length) ? { acknowledge: () => bridge.forgetOriginalBatch(scope.owner, scope.studentId, result.batchId) } : {}),
+  const cancelledEmpty = result.cancelled && result.selectedCount === 0 && !result.originals.length && !result.failures.length;
+  return { cancelled: result.cancelled, selectedCount: result.selectedCount, ...(result.batchId && (cancelledEmpty || !result.cancelled && !result.failures.length && (result.selectedCount === undefined || result.selectedCount === result.originals.length)) ? { acknowledge: () => bridge.forgetOriginalBatch(scope.owner, scope.studentId, result.batchId) } : {}),
     ...(result.batchId && result.failures.length ? { discardRecovery: () => discardBatch(bridge, scope, result.batchId) } : {}),
     failures: result.failures.map(f => `第 ${f.index + 1} 张未导入：${f.message}`), items: result.originals.map(original => ({
     id: original.originalId, name: originalPhotoName(original),
@@ -83,7 +84,12 @@ export function createDriveServices(api: FamilyApi, resolveName?: ResolveName): 
         const { batches } = await bridge.listOriginalBatches(scope.owner, scope.studentId, 'cloud-original');
         signal.throwIfAborted();
         if (batches.some(batch => batch.studentId !== scope.studentId || batch.purpose !== 'cloud-original')) throw new Error('上次选图记录所属孩子不匹配');
-        const batch = batches.sort((a, b) => a.createdAt - b.createdAt)[0];
+        const ordered = batches.sort((a, b) => a.createdAt - b.createdAt);
+        // Old empty cancellations must not repeatedly hide the real unfinished selection.
+        for (const empty of ordered.filter(batch => batch.state === 'cancelled' && batch.items?.length === 0)) {
+          await bridge.forgetOriginalBatch(scope.owner, scope.studentId, empty.batchId); signal.throwIfAborted();
+        }
+        const batch = ordered.find(batch => !(batch.state === 'cancelled' && batch.items?.length === 0));
         if (!batch) return { items: [], failures: [] };
         if (batch.state === 'selecting') return { items: [], failures: ['上次系统相册尚未返回，请完成选择；也可忽略这次未完成的选图。'], discardRecovery: () => discardBatch(bridge, scope, batch.batchId) };
         return fromNative(await bridge.resumeOriginalBatch(scope.owner, scope.studentId, batch.batchId, { signal, purpose: 'cloud-original', ...progressOption(progress) }), scope, bridge);
