@@ -4,6 +4,7 @@ import { Capacitor } from '@capacitor/core';
 import { App as NativeApp } from '@capacitor/app';
 import { fullPage, pointerToImage, preparePhoto, previewUrl, type OriginalPhoto, type PreparedPhoto, type Quad } from './index';
 import { validateQuad } from './geometry';
+import { displayToSource, rotatedPreview, sourceCorner, sourceToDisplay, type QuarterTurns } from './preview-geometry';
 import { buildPhotoDelivery, savePhotoDelivery, type PhotoDelivery } from './delivery';
 import './photo-preparation.css';
 
@@ -35,7 +36,8 @@ export function PhotoPreparation(props: PhotoPreparationProps) {
 
 function PreparationSession({ owner, studentId, studentLabel, original, onConfirm, onCancel, services = defaults }: PhotoPreparationProps) {
   const [manual, setManual] = useState(false), [corners, setCorners] = useState<Quad>(fullPage), [corner, setCorner] = useState(0);
-  const [turns, setTurns] = useState<0 | 1 | 2 | 3>(0), [light, setLight] = useState(false);
+  const [turns, setTurns] = useState<QuarterTurns>(0), [light, setLight] = useState(false);
+  const w = original.uprightWidth, h = original.uprightHeight, display = rotatedPreview(w, h, turns);
   const [prepared, setPrepared] = useState<PreparedPhoto | null>(null), [view, setView] = useState<'original' | 'prepared'>('original');
   const [busy, setBusy] = useState(false), [error, setError] = useState(''), [seen, setSeen] = useState(false);
   const [handedOff, setHandedOff] = useState(false);
@@ -56,10 +58,10 @@ function PreparationSession({ owner, studentId, studentLabel, original, onConfir
   useLayoutEffect(() => {
     const element = stage.current;
     if (!element) return;
-    const resize = () => { const r = element.getBoundingClientRect(); setScale(Math.max(.001, Math.min(r.width / original.uprightWidth, r.height / original.uprightHeight))); };
+    const resize = () => { const r = element.getBoundingClientRect(); setScale(Math.max(.001, Math.min(r.width / display.width, r.height / display.height))); };
     resize(); const observer = new ResizeObserver(resize); observer.observe(element);
     return () => observer.disconnect();
-  }, [original.uprightWidth, original.uprightHeight, view]);
+  }, [display.width, display.height, view]);
   function invalidate() { lifecycle.current.sequence++; setPrepared(null); setSeen(false); setHandedOff(false); setView('original'); setError(''); }
   function changeCorner(index: number, point: readonly [number, number]) {
     const next = [...corners]; next[index * 2] = point[0]; next[index * 2 + 1] = point[1];
@@ -69,14 +71,14 @@ function PreparationSession({ owner, studentId, studentLabel, original, onConfir
   function pointer(event: PointerEvent<SVGSVGElement>, index: number) {
     if (!manual || busy) return;
     const point = pointerToImage(event.clientX, event.clientY, event.currentTarget.getBoundingClientRect(),
-      { width: original.uprightWidth, height: original.uprightHeight });
-    if (point) changeCorner(index, point);
+      { width: display.width, height: display.height });
+    if (point) changeCorner(index, displayToSource(point, turns));
   }
-  async function process() {
+  async function process(enhancement: 'none' | 'light' = light ? 'light' : 'none') {
     const life = lifecycle.current, ticket = ++life.sequence;
     setBusy(true); setError(''); setPrepared(null); setSeen(false); setHandedOff(false);
     try {
-      const result = await services.prepare(owner, original, { corners: manual ? corners : fullPage, quarterTurns: turns, enhancement: light ? 'light' : 'none' });
+      const result = await services.prepare(owner, original, { corners: manual ? corners : fullPage, quarterTurns: turns, enhancement });
       if (!life.live || ticket !== life.sequence) return;
       if (result.studentId !== studentId || result.originalId !== original.originalId || result.sourceSha256 !== original.sha256)
         throw new Error('处理结果与当前学生的原片不匹配');
@@ -98,45 +100,50 @@ function PreparationSession({ owner, studentId, studentLabel, original, onConfir
     finally { if (life.live && ticket === life.sequence) setBusy(false); }
   }
   function cancel() { const life = lifecycle.current; life.live = false; life.sequence++; life.abort.abort(); onCancel(); }
-  const w = original.uprightWidth, h = original.uprightHeight;
   return <section className="photo-prep" aria-labelledby="photo-prep-title">
     <header><div><p className="photo-prep-kicker">上传前整理</p><h2 id="photo-prep-title">把题目拍清楚</h2></div><span className="photo-prep-student">{studentLabel || '当前学生'}</span></header>
     <p className="photo-prep-intro">保留题干、选项、公式和作答痕迹。先看效果，再确认使用。</p>
-    <fieldset disabled={busy} className="photo-prep-tools"><legend>照片调整</legend>
-      <div className="photo-prep-row"><button type="button" aria-pressed={!manual} onClick={() => { invalidate(); setManual(false); }}>整张照片</button>
-        <button type="button" aria-pressed={manual} onClick={() => { invalidate(); setManual(true); }}>调整四角</button>
-        <button type="button" onClick={() => { invalidate(); setTurns(((turns + 1) % 4) as 0 | 1 | 2 | 3); }}>顺时针转 90°</button></div>
-      <label className="photo-prep-check"><input type="checkbox" checked={light} onChange={e => { invalidate(); setLight(e.target.checked); }} />轻微提亮阴影</label>
-      <p className="photo-prep-hint">{turns ? `结果将顺时针旋转 ${turns * 90}°。` : '保持原方向。'}{light ? '请对比细字和彩色批注是否保留。' : '提亮默认关闭。'}</p>
-    </fieldset>
     <div className="photo-prep-row photo-prep-tabs"><button type="button" aria-pressed={view === 'original'} onClick={() => setView('original')}>查看原片</button>
       <button type="button" disabled={!prepared} aria-pressed={view === 'prepared'} onClick={() => setView('prepared')}>查看处理结果</button></div>
+    <p className="photo-prep-hint photo-prep-preview-caption">{view === 'prepared' && prepared ? '处理图预览 · 请检查文字和边缘' :
+      `原片预览 · ${turns ? `顺时针 ${turns * 90}°` : '原方向'}${prepared ? '' : ' · 生成处理图后可确认'}`}</p>
     <div className="photo-prep-stage">
       {view === 'prepared' && prepared ? <img key={prepared.outputId} src={services.preview(prepared)} alt="处理后的题目照片"
         onLoad={() => setSeen(true)} onError={() => { setSeen(false); setError('预览加载失败，请重新生成。'); }} /> :
-        <svg ref={stage} viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="xMidYMid meet" aria-label="原片四角调整区域"
+        <svg ref={stage} viewBox={`0 0 ${display.width} ${display.height}`} preserveAspectRatio="xMidYMid meet" aria-label="原片四角调整区域"
           className={manual ? 'photo-prep-editable' : ''}
           onPointerDown={e => { if (!manual || busy) return; dragging.current = corner; e.currentTarget.setPointerCapture(e.pointerId); pointer(e, corner); }}
           onPointerMove={e => { if (dragging.current !== null) pointer(e, dragging.current); }}
           onPointerUp={() => { dragging.current = null; }} onPointerCancel={() => { dragging.current = null; }}>
-          <image href={services.preview(original)} width={w} height={h} />
+          <g className="photo-prep-source" transform={display.transform}><image href={services.preview(original)} width={w} height={h} />
           {manual && <><polygon points={[0,1,2,3].map(i => `${corners[2*i]*w},${corners[2*i+1]*h}`).join(' ')} fill="rgba(27,113,97,.08)" stroke="#0a715e" strokeWidth={2/scale} />
-            {[0,1,2,3].map(i => <g key={i} role="button" tabIndex={busy ? -1 : 0} aria-label={`移动${cornerNames[i]}角`} aria-disabled={busy}
+            {[0,1,2,3].map(i => <g key={i} role="button" tabIndex={busy ? -1 : 0} aria-label={`移动${cornerNames[(i + turns) % 4]}角`} aria-disabled={busy}
               onPointerDown={e => { if (busy) return; e.stopPropagation(); setCorner(i); dragging.current = i; stage.current?.setPointerCapture(e.pointerId); }}
               onKeyDown={e => { if (busy || !['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key)) return; e.preventDefault();
                 const dx = e.key === 'ArrowLeft' ? -.005 : e.key === 'ArrowRight' ? .005 : 0;
                 const dy = e.key === 'ArrowUp' ? -.005 : e.key === 'ArrowDown' ? .005 : 0;
-                changeCorner(i, [Math.max(0, Math.min(1, corners[i*2]+dx)), Math.max(0, Math.min(1, corners[i*2+1]+dy))]); }}>
+                const point = sourceToDisplay([corners[i*2], corners[i*2+1]], turns);
+                changeCorner(i, displayToSource([Math.max(0, Math.min(1, point[0]+dx)), Math.max(0, Math.min(1, point[1]+dy))], turns)); }}>
               <circle cx={corners[2*i]*w} cy={corners[2*i+1]*h} r={22/scale} fill="transparent" />
               <circle cx={corners[2*i]*w} cy={corners[2*i+1]*h} r={(i === corner ? 9 : 7)/scale} fill="white" stroke="#0a715e" strokeWidth={3/scale} />
-            </g>)}</>}
+            </g>)}</>}</g>
         </svg>}
     </div>
+    <fieldset disabled={busy} className="photo-prep-tools"><legend>照片调整</legend>
+      <div className="photo-prep-row photo-prep-toolstrip"><button type="button" aria-pressed={!manual} onClick={() => { invalidate(); setManual(false); }}>整张照片</button>
+        <button type="button" aria-pressed={manual} onClick={() => { invalidate(); setManual(true); }}>调整四角</button>
+        <button type="button" onClick={() => { invalidate(); setTurns(((turns + 1) % 4) as QuarterTurns); }}>顺时针转 90°</button>
+        <button type="button" aria-pressed={light} onClick={() => { const next = !light; invalidate(); setLight(next); void process(next ? 'light' : 'none'); }}>提亮阴影</button></div>
+      <p className="photo-prep-hint">{busy ? '正在生成真实处理预览…' : light ? '提亮已开启；请对比细字和彩色批注。' : '提亮已关闭。'}原片文件始终保留。</p>
+    </fieldset>
     <details className="photo-prep-detail" key={`${view}:${prepared?.outputId || 'original'}`}><summary>放大检查细节</summary><div>
-      <img src={services.preview(view === 'prepared' && prepared ? prepared : original)} alt="可滑动查看的放大照片" />
+      {view === 'prepared' && prepared ? <img src={services.preview(prepared)} alt="可滑动查看的放大照片" /> :
+        <svg width={display.width} height={display.height} viewBox={`0 0 ${display.width} ${display.height}`} role="img" aria-label="可滑动查看的放大照片">
+          <g transform={display.transform}><image href={services.preview(original)} width={w} height={h} /></g>
+        </svg>}
     </div><p className="photo-prep-hint">在照片上滑动，检查文字、公式和四周边缘。</p></details>
     {manual && view === 'original' && <div className="photo-prep-corners"><p>选一个角，再在原片上点选或拖动；保留题目四周的空白。</p>
-      <div className="photo-prep-row">{cornerNames.map((name, i) => <button key={name} type="button" disabled={busy} aria-pressed={corner === i} onClick={() => setCorner(i)}>{name}</button>)}</div></div>}
+      <div className="photo-prep-row">{cornerNames.map((name, i) => <button key={name} type="button" disabled={busy} aria-pressed={corner === sourceCorner(i, turns)} onClick={() => setCorner(sourceCorner(i, turns))}>{name}</button>)}</div></div>}
     {prepared && <div className="photo-prep-quality" role="status"><p>请放大检查小字、根号、角标和批注，确认没有裁掉内容。</p>
       {prepared.quality.warnings.map(code => <p key={code}>{tips[code]}</p>)}</div>}
     {error && <p className="photo-prep-error" role="alert">{error}</p>}
