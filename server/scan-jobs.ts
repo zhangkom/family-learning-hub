@@ -23,6 +23,7 @@ import {
   type TutoringResult,
 } from '../lib/mobile';
 import type { ScanRecord } from '../lib/scans';
+import { ANALYSIS_LEASE_MS, MAX_ANALYSIS_ATTEMPTS } from '../lib/analysis';
 
 export function enqueueRecognition(
   store: FamilyStore,
@@ -153,7 +154,7 @@ export function enqueueExplanation(
       status: 'queued',
       error: undefined,
       structuredQuestions: questionsOf(current).map((q) =>
-        q.id === questionId ? { ...q, tutoring: { status: 'queued' } } : q,
+        q.id === questionId ? { ...q, tutoring: { ...q.tutoring, status: 'queued', error: undefined } } : q,
       ),
     };
     writeStoredScan(store, owner, next, 'enqueue-question-explanation');
@@ -184,7 +185,7 @@ function withTutoring(
 ) {
   return questionId
     ? questionsOf(record).map((q) =>
-        q.id === questionId ? { ...q, tutoring } : q,
+        q.id === questionId ? { ...q, tutoring: tutoring.result ? tutoring : { ...q.tutoring, error: undefined, ...tutoring } } : q,
       )
     : record.structuredQuestions;
 }
@@ -224,7 +225,7 @@ export function claimJob(
         .run(row.id);
       return null;
     }
-    if (Number(row.attempts) >= 3) {
+    if (Number(row.attempts) >= MAX_ANALYSIS_ATTEMPTS) {
       const error = '识别多次中断，原件已保存，请手动整理或重试';
       store.db
         .prepare(
@@ -264,7 +265,7 @@ export function claimJob(
       .prepare(
         "UPDATE scan_jobs SET status='processing',attempts=?,lease_until=?,lease_token=?,revision=? WHERE id=?",
       )
-      .run(attempts, now + 180000, token, next.revision, row.id);
+      .run(attempts, now + ANALYSIS_LEASE_MS, token, next.revision, row.id);
     return {
       id: String(row.id),
       token,
@@ -308,7 +309,7 @@ export function finishJob(
       (record.studentId || record.child || 'dabao') !== job.studentId
     )
       return false;
-    const retry = Boolean(failure?.retry && job.attempts < 3);
+    const retry = Boolean(failure?.retry && job.attempts < MAX_ANALYSIS_ATTEMPTS);
     const next: ScanRecord = failure
       ? {
           ...record,
@@ -426,7 +427,7 @@ export async function runNextJob(
       retry,
     });
     outcome = applied
-      ? retry && job.attempts < 3
+      ? retry && job.attempts < MAX_ANALYSIS_ATTEMPTS
         ? 'retry_queued'
         : 'failed'
       : 'discarded';

@@ -33,6 +33,9 @@ import { setWrongBook, wrongBookItems } from './question-learning';
 import { candidateRegions } from './candidate-regions';
 import { CLOUD_PHOTO_CAPABILITY } from '../lib/cloud-photos';
 import { cloudPhotoResponse } from './cloud-photos';
+import { analysisProgress } from './analysis-progress';
+import { reviewTutoring } from './tutoring-review';
+import type { ScanRecord } from '../lib/scans';
 
 const hash = (s: string) => createHash('sha256').update(s).digest('hex');
 const codes: Record<number, string> = {
@@ -161,6 +164,8 @@ async function dispatch(
   user: FamilyUser,
 ) {
   const method = request.method;
+  const present = (record: ScanRecord) => ({ ...mobileScan(record),
+    analysis: analysisProgress(store, user.id, record.id, recognitionEnabled()) });
   if (['cloud-photos', 'cloud-photo-batches'].includes(parts[0]))
     return cloudPhotoResponse(request, parts, store, user.id);
   if (parts.length === 1 && parts[0] === 'wrong-book') {
@@ -214,13 +219,13 @@ async function dispatch(
           (s) =>
             !s.deletedAt && (s.studentId || s.child || 'dabao') === studentId,
         )
-        .map(mobileScan);
+        .map(present);
       return json({ scans, recognition: recognitionEnabled() });
     }
     if (method !== 'POST') throw new HttpError(405, '请求方式不支持');
     const result = await uploadMobileScan(request, store, user.id);
     return json(
-      { scan: mobileScan(result.record) },
+      { scan: present(result.record) },
       result.created ? 201 : 200,
     );
   }
@@ -228,21 +233,22 @@ async function dispatch(
   if (
     parts.length === 5 &&
     parts[2] === 'questions' &&
-    ['wrong-book', 'explain'].includes(parts[4])
+    ['wrong-book', 'explain', 'analysis-review'].includes(parts[4])
   ) {
     if (method !== 'POST') throw new HttpError(405, '请求方式不支持');
     if (!store.allow(`question-action:${user.id}`, 60, 60000))
       throw new HttpError(429, '操作过于频繁，请稍后再试');
-    const body = await readJson(request, 8192);
+    const body = await readJson(request, parts[4] === 'analysis-review' ? 65536 : 8192);
+    if (parts[4] === 'analysis-review') return json({ scan: present(await reviewTutoring(store, user.id, record.id, parts[3], body)) });
     if (parts[4] === 'wrong-book')
       return json({
-        scan: mobileScan(
+        scan: present(
           await setWrongBook(store, user.id, record.id, parts[3], body),
         ),
       });
     return json(
       {
-        scan: mobileScan(
+        scan: present(
           enqueueExplanation(
             store,
             user.id,
@@ -256,7 +262,7 @@ async function dispatch(
     );
   }
   if (parts.length === 2 && method === 'GET')
-    return json({ scan: mobileScan(record) });
+    return json({ scan: present(record) });
   if (parts.length !== 3) throw new HttpError(404, '接口不存在');
   if (parts[2] === 'candidate-regions' && method === 'POST') {
     const body = await readJson(request, 8192);
@@ -285,7 +291,7 @@ async function dispatch(
     const body = await readJson(request, 8192);
     return json(
       {
-        scan: mobileScan(
+        scan: present(
           enqueueRecognition(store, user.id, record.id, body.revision),
         ),
       },
@@ -297,7 +303,7 @@ async function dispatch(
       throw new HttpError(429, '保存过于频繁，请稍后再试');
     const body = await readJson(request, 2 * 1024 * 1024);
     return json({
-      scan: mobileScan(await reviewMobileScan(store, user.id, record.id, body)),
+      scan: present(await reviewMobileScan(store, user.id, record.id, body)),
     });
   }
   throw new HttpError(405, '请求方式不支持');
@@ -339,6 +345,7 @@ async function handle(
         needsSetup: familyNeedsSetup(store),
         registrationEnabled: registrationEnabled(),
         processedPhotoMetadataVersion: 1,
+        questionReviewVersion: 1,
         cloudPhotos: CLOUD_PHOTO_CAPABILITY,
       });
     } else if (!web && parts.join('/') === 'session/register') {

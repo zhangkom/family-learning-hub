@@ -2669,6 +2669,11 @@ summary:focus-visible {
 .tutoring-result h3 { font-size: 15px; margin: 22px 0 10px; }
 .tutoring-result p, .tutoring-result li { font-size: 14px; line-height: 1.75; overflow-wrap: anywhere; }
 .analysis-text { white-space: pre-wrap; }
+.analysis-progress { display: grid; gap: 6px; padding: 12px; margin: 12px 0; border-radius: 12px; background: #edf4ff; color: #204e87; }
+.analysis-progress small { font-size: 12px; }
+.analysis-review { border-top: 1px solid #dce4f2; margin-top: 20px; padding-top: 6px; }
+.analysis-review .button-row { flex-wrap: wrap; margin: 12px 0; }
+.analysis-review > .primary { width: 100%; justify-content: center; white-space: normal; margin-top: 12px; }
 .evidence-author { font-size: 12px; color: #526584; }
 .stale-analysis { color: #5f6c82; }
 .library-modes { display: flex; gap: 8px; margin: 18px 0; }

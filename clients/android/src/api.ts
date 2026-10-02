@@ -1,4 +1,4 @@
-import type { Login, Question, Scan, Student, User, WrongBookItem } from './types';
+import type { Login, Question, Scan, Student, User, WrongBookItem, TutoringReviewInput } from './types';
 import type { CandidateReply } from './candidates';
 import type { PhotoDelivery } from './photo-processing/delivery';
 import { verifyProcessedReceipt } from './photo-processing/receipt';
@@ -185,6 +185,14 @@ export class FamilyApi {
   explain(scan: Scan, questionId: string) {
     return this.request<{ scan: Scan }>(`/scans/${encodeURIComponent(scan.id)}/questions/${encodeURIComponent(questionId)}/explain`,
       'POST', { revision: scan.revision });
+  }
+  async reviewAnalysis(scan: Scan, questionId: string, input: TutoringReviewInput) {
+    const setup = await this.request<{ questionReviewVersion?: number }>('/setup');
+    if (setup.questionReviewVersion !== 1) throw new ApiError('家庭服务需要升级后才能保存分析核对，当前结果仍保留', 503);
+    const result = scan.questions.find(q => q.id === questionId)?.tutoring?.result;
+    if (!result) throw new ApiError('请先取得这道题的分析结果', 400);
+    return this.request<{ scan: Scan }>(`/scans/${encodeURIComponent(scan.id)}/questions/${encodeURIComponent(questionId)}/analysis-review`,
+      'POST', { revision: scan.revision, resultGeneratedAt: result.generatedAt, ...input });
   }
   async image(id: string, signal?: AbortSignal) {
     const response = await fetch(

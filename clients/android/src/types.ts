@@ -1,4 +1,6 @@
 import type { PreparedPhoto } from './photo-processing';
+import type { AnalysisProgress, TutoringReview } from '../../../lib/analysis';
+export type { AnalysisProgress, AnalysisIssue, TutoringReviewInput } from '../../../lib/analysis';
 export type PhotoProcessingMetadata = Omit<PreparedPhoto, 'uri'>;
 export type User = { id: string; username: string };
 export type Student = {
@@ -32,6 +34,7 @@ export type Question = {
   tutoring?: {
     status: 'queued' | 'processing' | 'needs_review' | 'failed' | 'stale';
     error?: string;
+    review?: TutoringReview;
     result?: {
       transcribedPrompt: string;
       referenceAnswer: string;
@@ -57,6 +60,7 @@ export type Question = {
   explanation?: string;
 };
 export type Scan = {
+  analysis?: AnalysisProgress;
   sourceKind?: 'processed-photo' | 'original';
   processing?: PhotoProcessingMetadata;
   id: string;

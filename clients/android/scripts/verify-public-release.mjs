@@ -104,6 +104,7 @@ const setupResponse = await fetch(base + 'api/mobile/v1/setup', { signal: AbortS
 assert.equal(setupResponse.status, 200);
 const setup = await setupResponse.json(); assert.equal(setup.enabled, true); assert.equal(setup.registrationEnabled, true);
 assert.equal(setup.processedPhotoMetadataVersion, 1);
+if (expected.versionCode >= 14) assert.equal(setup.questionReviewVersion, 1);
 if (expected.versionCode >= 12) {
   assert.equal(setup.cloudPhotos?.version, 1);
   assert.equal(setup.cloudPhotos.maxBatchItems, expected.versionCode >= 13 ? 200 : 100);
@@ -113,7 +114,7 @@ const account = await fetch(base + 'account', { signal: AbortSignal.timeout(2000
 const result = { version, versionCode: expected.versionCode, commit: expected.commit, app: manifest.app,
   resolvedUrl: manifest.downloadUrl, bytes: bytes.length, sha256: sha(bytes), certificateSha256: expected.certificateSha256,
   tlsVerified: true, signatureVerified: true, actualPackageVersionVerified: true, updateCorsVerified: true, metadataNoStore: true,
-  setupStatus: setupResponse.status, processedPhotoMetadataVersion: setup.processedPhotoMetadataVersion, cloudPhotos: setup.cloudPhotos, websiteStatus: account.status,
+  setupStatus: setupResponse.status, processedPhotoMetadataVersion: setup.processedPhotoMetadataVersion, questionReviewVersion: setup.questionReviewVersion, cloudPhotos: setup.cloudPhotos, websiteStatus: account.status,
   checkedAt: new Date().toISOString(), productionWrites: false, nativeDeviceTested: false, deltas, ...permissions };
 writeFileSync(join(output, 'verification.json'), JSON.stringify(result, null, 2));
 console.log(JSON.stringify(result, null, 2));

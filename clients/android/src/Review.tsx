@@ -16,7 +16,8 @@ import {
   removeQuestion,
   removeRegion,
 } from './regions';
-import { subjects, statusNames, type Subject, type Question, type Region, type Scan } from './types';
+import { subjects, statusNames, type Subject, type Question, type Region, type Scan, type TutoringReviewInput } from './types';
+import { AnalysisStatus } from './AnalysisStatus';
 
 type Props = {
   api: FamilyApi;
@@ -39,6 +40,8 @@ export function Review({
   onUpdate,
 }: Props) {
   const draftId = `${owner}|${initial.id}`;
+  // A scan's uploaded image is immutable. Polling analysis revisions must not reread/redecode it.
+  const reviewPhoto = useRef(initial).current;
   const subjectKey = photoSubjectKey(owner, initial.studentId, initial.id);
   const [photoSubject, setPhotoSubject] = useState<Subject | undefined>(() =>
     readPhotoSubject(subjectKey, initial.questions || []));
@@ -114,7 +117,7 @@ export function Review({
     const abort = new AbortController();
     let url = '';
     setLocalImageMissing(false);
-    void loadReviewImage(api, owner, initial, allowCloudImage, abort.signal)
+    void loadReviewImage(api, owner, reviewPhoto, allowCloudImage, abort.signal)
       .then(({ file, source }) => {
         url = URL.createObjectURL(file);
         if (!abort.signal.aborted) { setImage(url); setImageSource(source); }
@@ -130,7 +133,7 @@ export function Review({
       abort.abort();
       if (url) URL.revokeObjectURL(url);
     };
-  }, [api, owner, initial, allowCloudImage]);
+  }, [api, owner, reviewPhoto, allowCloudImage]);
   useEffect(() => {
     if (!draftReady || dirty || (!hasPendingAnalysis && !['queued', 'processing'].includes(scan.status)))
       return;
@@ -289,6 +292,19 @@ export function Review({
       mutation.current = false;
       setBusy(false);
     }
+  }
+  async function reviewAnalysis(input: TutoringReviewInput) {
+    if (!question || dirty || busy || conflict || hasPendingAnalysis) return false;
+    mutation.current = true; setBusy(true); setError('');
+    try {
+      const next = (await api.reviewAnalysis(scan, question.id, input)).scan;
+      await accept(next);
+      setNotice(input.status === 'confirmed' ? '已记录你对这份分析的核对。' : '核对意见已保存，尚未再次调用 AI。可按校对内容重新分析。');
+      return true;
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 409) setConflict(true);
+      setError((e as Error).message); return false;
+    } finally { mutation.current = false; setBusy(false); }
   }
   async function recognize() {
     setBusy(true);
@@ -517,6 +533,7 @@ export function Review({
         </div>
       )}
       {scan.error && <p className="hint">{scan.error}</p>}
+      {scan.analysis && !scan.analysis.questionId && <AnalysisStatus progress={scan.analysis} />}
       {suggestions ? <fieldset className="candidate-fieldset" disabled={!draftReady || busy || conflict}>
         <CandidatePicker image={image} suggestions={suggestions} existing={questions}
           defaultSubject={newQuestionSubject} onAdopt={acceptCandidates}
@@ -597,7 +614,9 @@ export function Review({
             </div>
           ) : (
             <>
-              <TutoringResult question={question} />
+              {dirty && question.tutoring?.result && <p className="hint">请先保存题框或文字修改，再核对分析。</p>}
+              <TutoringResult question={question} progress={scan.analysis} disabled={dirty || busy || conflict || hasPendingAnalysis || !draftReady}
+                onReview={reviewAnalysis} onReanalyze={() => void collect(true)} canReanalyze={validQuestion && recognitionEnabled} />
               <details className="manual-review"><summary>补充题干和我的作答（选填）</summary>
               <div className="field-row">
                 <label>

@@ -18,6 +18,7 @@ import { cropQuestionImage } from './question-crop';
 import { validateTutoringResult } from './model-gateway';
 import type { MobileScan, Question, TutoringResult } from '../lib/mobile';
 import { HttpError } from './family-backend';
+import { analysisProgress } from './analysis-progress';
 
 let directory: string,
   store: FamilyStore,
@@ -129,6 +130,17 @@ async function enqueue(scan: MobileScan) {
 }
 async function get(scan: MobileScan) {
   return (await (await call(`scans/${scan.id}`)).json()).scan;
+}
+async function completed() {
+  let scan = await enqueue(await mark(await review(await upload())));
+  const job = claimJob(store)!;
+  expect(finishJob(store, job, undefined, undefined, Date.now(), result())).toBe(true);
+  scan = await get(scan); return scan;
+}
+function analysisReview(scan: MobileScan, values: Record<string, unknown>, auth = token, questionId = 'q1') {
+  return call(`scans/${scan.id}/questions/${questionId}/analysis-review`, 'POST', {
+    revision: scan.revision, resultGeneratedAt: scan.questions.find(q => q.id === questionId)?.tutoring?.result?.generatedAt, ...values,
+  }, auth);
 }
 beforeEach(async () => {
   mkdirSync('work', { recursive: true });
@@ -390,6 +402,80 @@ describe('selected question learning', () => {
         readFileSync(join(scanDirectory('family-a', scan.id), 'original')),
       ),
     ).toBe(digest(png));
+  });
+
+  it('reports only this family task stage, retry time and attempts without disclosing lease data', async () => {
+    let scan = await enqueue(await mark(await review(await upload())));
+    expect(scan.analysis).toMatchObject({ questionId: 'q1', phase: 'queued', attempts: 0, maxAttempts: 3 });
+    const job = claimJob(store)!;
+    scan = await get(scan);
+    expect(scan.analysis).toMatchObject({ phase: 'processing', startedAt: job.startedAt, attempts: 1 });
+    expect(JSON.stringify(scan.analysis)).not.toContain(job.token);
+    expect(JSON.stringify(scan.analysis)).not.toContain(job.id);
+    expect(analysisProgress(store, 'family-b', scan.id, true)).toBeUndefined();
+    expect((await call(`scans/${scan.id}`, 'GET', undefined, otherToken)).status).toBe(404);
+    const now = Date.now(); finishJob(store, job, undefined, { message: 'synthetic timeout', retry: true }, now);
+    scan = await get(scan);
+    expect(scan.analysis).toMatchObject({ phase: 'retry_wait', attempts: 1, retryAt: now + 15000 });
+    expect(analysisProgress(store, 'family-a', scan.id, true, now + 15001)?.phase).toBe('queued');
+    vi.stubEnv('FAMILY_RECOGNITION_ENABLED', 'false'); expect((await get(scan)).analysis?.phase).toBe('paused');
+  });
+
+  it('records human confirmation separately, keeps raw output, rejects forged or stale reviews', async () => {
+    let scan = await completed(); const raw = scan.questions[0].tutoring!.result;
+    expect((await analysisReview(scan, { status: 'confirmed' }, otherToken)).status).toBe(404);
+    expect((await analysisReview(scan, { status: 'confirmed', resultGeneratedAt: 'old' })).status).toBe(409);
+    expect((await analysisReview(scan, { status: 'confirmed', referenceAnswer: 'forged' })).status).toBe(400);
+    const response = await analysisReview(scan, { status: 'confirmed' }); expect(response.status).toBe(200);
+    const stale = scan; scan = (await response.json()).scan;
+    expect(scan.questions[0].tutoring).toMatchObject({ status: 'needs_review', result: raw, review: { status: 'confirmed', resultGeneratedAt: raw!.generatedAt } });
+    expect(scan.questions[0].confirmed).toBe(false);
+    expect((await analysisReview(stale, { status: 'confirmed' })).status).toBe(409);
+    scan = await review(scan, [{ ...scan.questions[0], tutoring: { ...scan.questions[0].tutoring!, review: { status: 'flagged', issue: 'solution', reviewedAt: 'forged', resultGeneratedAt: 'forged' } } }]);
+    expect(scan.questions[0].tutoring?.review?.status).toBe('confirmed');
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('keeps corrections and earlier output through retries, sends corrected context, resets review for the new answer', async () => {
+    let scan = await completed(); const raw = scan.questions[0].tutoring!.result;
+    const response = await analysisReview(scan, { status: 'flagged', issue: 'recognition', correctedPrompt: '速度2 m/s，时间4 s，求路程。', note: '时间应为4秒，图中字迹容易误认' });
+    expect(response.status).toBe(200); scan = (await response.json()).scan;
+    expect(scan.questions[0]).toMatchObject({ prompt: '速度2 m/s，时间4 s，求路程。', answerSteps: [], tutoring: { status: 'stale', result: raw, review: { status: 'flagged' } } });
+    expect(fetch).not.toHaveBeenCalled(); expect(store.db.prepare('SELECT count(*) n FROM scan_jobs').get()?.n).toBe(1);
+    expect((await analysisReview(scan, { status: 'confirmed' })).status).toBe(409);
+    scan = await enqueue(scan); expect(scan.questions[0].tutoring?.result).toEqual(raw);
+    const first = claimJob(store)!; scan = await get(scan);
+    expect(scan.questions[0].tutoring?.review?.issue).toBe('recognition');
+    expect((await analysisReview(scan, { status: 'flagged', issue: 'solution', note: 'check' })).status).toBe(409);
+    finishJob(store, first, undefined, { message: 'temporary', retry: true }); scan = await get(scan);
+    expect(scan.questions[0].tutoring?.result).toEqual(raw);
+    store.db.prepare("UPDATE scan_jobs SET available_at=0 WHERE status='queued'").run();
+    vi.mocked(fetch).mockResolvedValue(Response.json({ choices: [{ finish_reason: 'stop', message: { content: JSON.stringify({ questions: [{ ...draft(), transcribedPrompt: '速度2 m/s，时间4 s，求路程。', referenceAnswer: '8 m' }] }) } }] }));
+    await runNextJob(store); scan = await get(scan);
+    const body = vi.mocked(fetch).mock.calls[0][1]?.body;
+    expect(typeof body).toBe('string');
+    const sent = JSON.parse(body as string);
+    expect(sent.messages[1].content[0].text).toContain('correctedPrompt');
+    expect(sent.messages[1].content[0].text).toContain('时间4 s');
+    expect(sent.messages[1].content[0].text).toContain('时间应为4秒');
+    expect(sent.messages[1].content[0].text).not.toContain('6 m');
+    expect(scan.questions[0].tutoring).toMatchObject({ status: 'needs_review', result: { referenceAnswer: '8 m', needsReview: true } });
+    expect(scan.questions[0].tutoring?.review).toBeUndefined(); expect(scan.analysis).toBeUndefined();
+    expect(digest(readFileSync(join(scanDirectory('family-a', scan.id), 'original')))).toBe(digest(png));
+  });
+
+  it('validates issue details and invalidates child analyses when shared parent text is corrected', async () => {
+    let scan = await completed();
+    for (const values of [ { status: 'flagged', issue: 'unsupported', note: 'x' }, { status: 'flagged', issue: 'recognition', correctedPrompt: '' },
+      { status: 'flagged', issue: 'solution' }, { status: 'flagged', issue: 'incomplete', note: 'x'.repeat(2001) } ])
+      expect((await analysisReview(scan, values)).status).toBe(400);
+    scan = await review(scan, [scan.questions[0], { ...question('物理'), id: 'q2', parentQuestionId: 'q1', regions: [{ ...question().regions[0], id: 'r2' }] }]);
+    const response = await call(`scans/${scan.id}/questions/q2/explain`, 'POST', { revision: scan.revision }); expect(response.status).toBe(202);
+    const job = claimJob(store)!; finishJob(store, job, undefined, undefined, Date.now(), result()); scan = await get(scan);
+    expect(scan.questions[1].tutoring?.status).toBe('needs_review');
+    const saved = await analysisReview(scan, { status: 'flagged', issue: 'recognition', correctedPrompt: '更正后的共同条件' });
+    expect(saved.status).toBe(200); scan = (await saved.json()).scan;
+    expect(scan.questions[1].tutoring?.status).toBe('stale');
   });
 
   it('does not accept forged server fields; keeps real marks and marks earlier results stale after editing', async () => {

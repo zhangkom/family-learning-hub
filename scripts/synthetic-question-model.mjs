@@ -14,6 +14,11 @@ globalThis.fetch = async (url, options) => {
   const request = JSON.parse(options.body);
   if (!request.messages?.[0]?.content?.includes('单题辅导助手'))
     throw new Error('This fixture supports selected-question tutoring only');
+  const delay = Number(process.env.FAMILY_SYNTHETIC_MODEL_DELAY_MS || 0);
+  if (!Number.isInteger(delay) || delay < 0 || delay > 30000)
+    throw new Error('Invalid synthetic delay');
+  if (delay) await new Promise(resolve => setTimeout(resolve, delay));
+  const corrected = request.messages[1].content[0].text.includes('"correctedPrompt"');
   return Response.json({
     choices: [
       {
@@ -23,9 +28,9 @@ globalThis.fetch = async (url, options) => {
             questions: [
               {
                 transcribedPrompt:
-                  '合成测试题：物体以 2 m/s 匀速运动 3 s，求路程。',
-                referenceAnswer: '6 m',
-                explanation: '合成模型：由 s=vt，得到 s=2×3=6 m。请核对原题。',
+                  corrected ? '合成测试题：物体以 2 m/s 匀速运动 4 s，求路程。' : '合成测试题：物体以 2 m/s 匀速运动 3 s，求路程。',
+                referenceAnswer: corrected ? '8 m' : '6 m',
+                explanation: corrected ? '合成模型：由 s=vt，得到 s=2×4=8 m。请核对原题。' : '合成模型：由 s=vt，得到 s=2×3=6 m。请核对原题。',
                 answerEvidence: [],
                 errorHypotheses: [],
                 uncertainties: ['这是隔离测试响应，不是真实模型解答'],

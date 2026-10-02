@@ -60,6 +60,7 @@ describe('first-family setup from Android', () => {
       needsSetup: true,
       registrationEnabled: false,
       processedPhotoMetadataVersion: 1,
+      questionReviewVersion: 1,
       cloudPhotos: CLOUD_PHOTO_CAPABILITY,
     });
     vi.stubEnv('FAMILY_DATA_DIR', '');
@@ -112,6 +113,7 @@ describe('first-family setup from Android', () => {
       needsSetup: false,
       registrationEnabled: false,
       processedPhotoMetadataVersion: 1,
+      questionReviewVersion: 1,
       cloudPhotos: CLOUD_PHOTO_CAPABILITY,
     });
     expect((await mobile('session/setup', details('another'))).status).toBe(

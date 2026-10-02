@@ -1,5 +1,6 @@
 import type { LearningSubject } from './learning';
 import { scanSubjects } from './scans';
+import type { AnalysisProgress, TutoringReview } from './analysis';
 
 export type TutoringResult = {
   transcribedPrompt: string;
@@ -72,6 +73,7 @@ export type Question = {
     status: 'queued' | 'processing' | 'needs_review' | 'failed' | 'stale';
     result?: TutoringResult;
     error?: string;
+    review?: TutoringReview;
   };
   number: string;
   prompt: string;
@@ -87,6 +89,7 @@ export type Question = {
   explanation?: string;
 };
 export type MobileScan = {
+  analysis?: AnalysisProgress;
   sourceKind?: 'processed-photo';
   processing?: import('./photo-processing').PhotoProcessing;
   id: string;
