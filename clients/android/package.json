@@ -1,7 +1,7 @@
 {
   "name": "family-learning-android",
-  "version": "0.3.8",
-  "androidVersionCode": 20,
+  "version": "0.3.9",
+  "androidVersionCode": 21,
   "private": true,
   "type": "module",
   "engines": {
@@ -13,7 +13,8 @@
     "build": "tsc --noEmit && vite build",
     "test": "vitest run",
     "android:sync": "npm run build && cap sync android",
-    "android:open": "cap open android"
+    "android:open": "cap open android",
+    "icons": "node scripts/build-launcher-icons.mjs"
   },
   "dependencies": {
     "@capacitor/android": "8.5.2",

@@ -1,0 +1,17 @@
+{
+  "foregroundLayerDp": 108,
+  "safeZoneDp": 66,
+  "legacyDensities": 5,
+  "masks": [
+    "rounded-square",
+    "circle"
+  ],
+  "previewSizes": [
+    192,
+    64,
+    48,
+    32
+  ],
+  "monochromeLayer": true,
+  "nativeDeviceTested": false
+}
