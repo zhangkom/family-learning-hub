@@ -23,19 +23,21 @@ function result(sources: WeaknessMaterial[], subject = '数学', dimensionId = '
 const calculation = (sources: WeaknessMaterial[]) => abilityAxes(report(sources), result(sources)).find(a => a.id === 'calculation')!;
 
 describe('per-subject ability evidence', () => {
-  it('provides six defined dimensions and grade-specific learning emphases for all six subjects', () => {
-    expect(abilitySubjects).toHaveLength(6);
+  it('provides six defined dimensions and grade-specific learning emphases for all seven subjects', () => {
+    expect(abilitySubjects).toHaveLength(7);
     for (const subject of abilitySubjects) {
       expect(abilityDimensions[subject]).toHaveLength(6);
       expect(new Set(abilityDimensions[subject].map(d => d.id)).size).toBe(6);
       for (const grade of abilityGrades) expect(abilityGradeFocus[subject][grade].length).toBeGreaterThan(5);
     }
     expect(abilityDimensions.数学.map(d => d.label)).toEqual(['概念理解', '运算能力', '逻辑推理', '图形空间', '建模应用', '综合迁移']);
+    expect(abilityDimensions.语文.map(d => d.label)).toEqual(['语言积累', '语境理解', '文本分析', '鉴赏评价', '表达组织', '综合迁移']);
+    expect(abilityProfile('语文', '高二').gradeFocus).toContain('古文');
     expect(normalizedAbilityGrade('八年级下')).toBe('初二'); expect(normalizedAbilityGrade('高二（1）班')).toBe('高二');
     expect(abilityProfile('数学').gradeFocus).toContain('待核对');
   });
   it('renders explicit unknown templates before analysis instead of zero or fabricated high scores', () => {
-    const empty = emptyAbilityAxes('', '初二'); expect(empty).toHaveLength(36);
+    const empty = emptyAbilityAxes('', '初二'); expect(empty).toHaveLength(42);
     expect(empty.every(a => a.score === null && a.confidence === 'insufficient' && a.evidenceCount === 0)).toBe(true);
     expect(emptyAbilityAxes('物理', '八年级')).toHaveLength(6);
     expect(calculation([material(1), material(2)])).toMatchObject({ score: null, evidenceCount: 0, sourceCount: 0 });
@@ -61,7 +63,7 @@ describe('per-subject ability evidence', () => {
   });
   it('keeps cross-subject axes separate and does not apply unrelated source evidence', () => {
     const sources = [material(1), material(2), material(3, '物理')]; sources[0].studentEvidence = [attempt(1), attempt(2)]; sources[2].studentEvidence = [attempt(3), attempt(4), attempt(5)];
-    const axes = abilityAxes(report(sources, ''), result(sources)); expect(axes).toHaveLength(36);
+    const axes = abilityAxes(report(sources, ''), result(sources)); expect(axes).toHaveLength(42);
     expect(axes.find(a => a.subject === '数学' && a.id === 'calculation')).toMatchObject({ score: null, evidenceCount: 2 });
     expect(axes.find(a => a.subject === '物理' && a.id === 'calculation')).toMatchObject({ score: null, evidenceCount: 0 });
     expect(axes.filter(a => a.id !== 'calculation').every(a => a.evidenceCount === 0)).toBe(true);

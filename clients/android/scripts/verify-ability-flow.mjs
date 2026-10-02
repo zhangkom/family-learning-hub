@@ -140,14 +140,14 @@ try {
   checks.push('Three distinct photos uploaded through HTTP; two mathematics and one physics questions individually confirmed and collected through the UI');
   await nav('首页').click(); await nav('题目').click(); await libraryTabs().getByRole('button', { name: '错题本', exact: true }).click();
   const filters = page.getByRole('navigation', { name: '按科目筛选错题' });
-  assert.deepEqual(await filters.getByRole('button').allTextContents(), ['全部', '数学', '英语', '地理', '物理', '化学', '生物']);
+  assert.deepEqual(await filters.getByRole('button').allTextContents(), ['全部', '数学', '语文', '英语', '地理', '物理', '化学', '生物']);
   const displayedPrompts = () => page.locator('.wrong-book .paper-prompt').allTextContents();
   assert.deepEqual(await displayedPrompts(), [...fixtures].reverse().map(f => f.prompt));
   await filters.getByRole('button', { name: '数学', exact: true }).click(); assert.deepEqual(await displayedPrompts(), [fixtures[1].prompt, fixtures[0].prompt]);
   await page.getByLabel('错题排序').selectOption('oldest'); assert.deepEqual(await displayedPrompts(), fixtures.slice(0, 2).map(f => f.prompt));
   await filters.getByRole('button', { name: '全部', exact: true }).click(); assert.deepEqual(await displayedPrompts(), fixtures.map(f => f.prompt));
   await filters.getByRole('button', { name: '物理', exact: true }).click(); assert.deepEqual(await displayedPrompts(), [fixtures[2].prompt]);
-  checks.push('Six subjects plus All retain upload ordering; subject filtering and oldest/newest sorting do not reshuffle unrelated items');
+  checks.push('Seven supported subjects plus All retain upload ordering; subject filtering and oldest/newest sorting do not reshuffle unrelated items');
   await openGraph();
   await page.getByText('数学 · 2 道错题', { exact: true }).waitFor();
   const initial = await request(`/weakness-reports?studentId=${student.id}&subject=${encodeURIComponent('数学')}`);

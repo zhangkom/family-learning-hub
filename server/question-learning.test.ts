@@ -701,6 +701,18 @@ describe('selected question learning', () => {
     warn.mockRestore();
   });
 
+  it('accepts Chinese-language photos, preserves their wrong-book subject and processes a tutoring receipt', async () => {
+    const chinese = { ...question('语文'), prompt: '解释“学而时习之”的“习”。', knowledgePoints: ['文言实词'], confirmed: true };
+    let scan = await mark(await review(await upload('语文'), [chinese]));
+    expect(scan.subject).toBe('语文'); expect(scan.questions[0].subject).toBe('语文');
+    expect((await (await call(`wrong-book?studentId=${student}`)).json()).items).toMatchObject([{ subject: '语文', question: { subject: '语文', prompt: chinese.prompt } }]);
+    scan = await enqueue(scan); const job = claimJob(store)!;
+    const teaching = { ...result(), transcribedPrompt: chinese.prompt, referenceAnswer: '温习、实践所学内容', explanation: '结合“学”与“时”理解词语含义。' };
+    expect(finishJob(store, job, undefined, undefined, Date.now(), teaching)).toBe(true);
+    scan = await get(scan); expect(scan.questions[0].tutoring!.result!.referenceAnswer).toBe(teaching.referenceAnswer);
+    expect(scan.questions[0].subject).toBe('语文');
+  });
+
   it('keeps independent per-question subjects in one photograph and validates review conflicts', async () => {
     const q2 = {
       ...question('数学'),

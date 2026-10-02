@@ -59,14 +59,14 @@ afterEach(() => { store.close(); vi.unstubAllEnvs(); vi.unstubAllGlobals(); expe
 describe('weakness analysis API and persistent worker', () => {
   it('analyzes real wrong-book inputs once and returns evidence links without internal model material', async () => {
     const m = await overview(); expect(m.materials).toMatchObject({ total: 2, selected: 2, needsReview: 0 });
-    expect(m.axes).toHaveLength(36); expect(m.axes.every(a => a.score === null)).toBe(true);
+    expect(m.axes).toHaveLength(42); expect(m.axes.every(a => a.score === null)).toBe(true);
     const body = { studentId: student, requestId: randomUUID(), materialVersion: m.materials.version };
     const report = (await ok('weakness-reports', 'POST', body)).report;
     expect((await ok('weakness-reports', 'POST', body)).report.id).toBe(report.id);
     expect((await call('weakness-reports', 'POST', { ...body, subject: '物理' })).status).toBe(409);
     expect(await runNextWeaknessJob(store, analyze)).toBe(true); expect(await runNextWeaknessJob(store, analyze)).toBe(false);
     const done = (await get(report)).report; expect(done.status).toBe('ready'); expect(done.stale).toBe(false);
-    expect(done.result!.axes).toHaveLength(36); expect(done.result!.axes.every(a => a.score === null)).toBe(true);
+    expect(done.result!.axes).toHaveLength(42); expect(done.result!.axes.every(a => a.score === null)).toBe(true);
     expect(done.result!.focuses[0]).toMatchObject({ basis: 'wrong_question_pattern', needsReview: true });
     expect(done.result!.focuses[0].evidence.map(e => e.sourceId)).toEqual(done.sources.map(s => s.id));
     expect(done).not.toHaveProperty('input'); expect(done).not.toHaveProperty('jobId'); expect(analyze).toHaveBeenCalledTimes(1);
@@ -98,6 +98,22 @@ describe('weakness analysis API and persistent worker', () => {
     update([question(1), question(2)]); const r = await start('数学');
     store.db.prepare('UPDATE students SET grade=? WHERE account_id=? AND id=?').run('初二', 'a', student);
     m = await overview('数学'); expect(m.axes).toHaveLength(6); expect(m.axes[0].grade).toBe('初二'); expect((await get(r)).report.stale).toBe(true);
+  });
+  it('provides Chinese-language axes and analyzes only a same-subject pair without borrowing other subjects', async () => {
+    const first = { ...question(1, '语文'), prompt: '结合语境解释“学而时习之”的“习”。', knowledgePoints: ['文言实词'] };
+    update([first, question(2, '物理')]);
+    let m = await overview('语文'); expect(m.axes.map(a => a.label)).toEqual(['语言积累', '语境理解', '文本分析', '鉴赏评价', '表达组织', '综合迁移']);
+    expect(m.materials.selected).toBe(1);
+    expect((await call('weakness-reports', 'POST', { requestId: randomUUID(), studentId: student, subject: '语文', materialVersion: m.materials.version })).status).toBe(400);
+    update([first, { ...question(3, '语文'), prompt: '结合语境解释“温故而知新”的“故”。', knowledgePoints: ['文言实词'] }, question(2, '物理')]);
+    const r = await start('语文'); expect(r.coverage.total).toBe(2);
+    await runNextWeaknessJob(store, async report => validateWeaknessResult([{ summary: '这些已收录古文错题共同涉及词义与语境，建议待核对。',
+      focuses: [{ title: '联系上下文辨析文言实词', subject: '语文', dimensionId: 'context', knowledgePoints: ['文言实词', '语境推断'], priority: 'high', basis: 'wrong_question_pattern',
+        reason: '两题都要求联系语境解释文言词义，可以作为共同练习方向。', practiceDirection: '先解释上下文，再比较候选词义并用原句验证。',
+        evidence: report.sources.map(s => ({ sourceId: s.id, kind: 'question', quote: s.prompt, reason: '题干要求根据语境解释实词。' })) }], limitations: ['仅有题干不能确定实际错因。'] }], report));
+    m = await overview('语文'); expect(m.report!.result!.axes).toHaveLength(6);
+    expect(m.report!.result!.axes.every(a => a.subject === '语文' && a.score === null)).toBe(true);
+    expect(m.report!.result!.focuses[0].dimensionId).toBe('context');
   });
   it('shows explicit coverage rather than silently truncating a large library', async () => {
     update(Array.from({ length: 34 }, (_, i) => question(i + 1)));

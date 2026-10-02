@@ -83,7 +83,7 @@ export type Scan = {
   error?: string;
 };
 export type Login = { token: string; user: User; expiresAt: number | string };
-export const subjects = ['数学', '英语', '地理', '物理', '化学', '生物'] as const;
+export const subjects = ['数学', '语文', '英语', '地理', '物理', '化学', '生物'] as const;
 export type Subject = (typeof subjects)[number];
 export type WrongBookItem = { scanId: string; studentId: string; subject: string; source: string; question: Question };
 export const statusNames: Record<Scan['status'], string> = {

@@ -4,6 +4,7 @@ import type { Question } from './mobile';
 import type { PhotoProcessing } from './photo-processing';
 export const scanSubjects: LearningSubject[] = [
   '数学',
+  '语文',
   '英语',
   '地理',
   '物理',

@@ -5,6 +5,7 @@ import type { PracticeSheet } from '@/lib/practice';
 
 const subjectTone: Record<LearningSubject, string> = {
   数学: 'subject-math',
+  语文: 'subject-english',
   英语: 'subject-english',
   地理: 'subject-math',
   物理: 'subject-physics',

@@ -61,6 +61,12 @@ describe('wrong-question loop', () => {
     expect(parseStoredWrongQuestions('broken json')).toEqual([]);
   });
 
+  it('preserves Chinese-language wrong questions when reading saved learning data', () => {
+    const entry = createWrongQuestion({ questionId: 'classical-1', subject: '语文', knowledgePoint: '文言实词', prompt: '解释“学而时习之”的“习”。',
+      answer: '温习、实践所学内容', learnerAnswer: '仅指预习', source: '已核对古文练习', now: new Date('2026-10-02T08:00:00Z') });
+    expect(parseStoredWrongQuestions(JSON.stringify([entry]))).toEqual([entry]);
+  });
+
   it('accepts a valid stored wrong question and limits stored string lists', () => {
     const entry = createWrongQuestion({
       questionId: 'safe-1',
