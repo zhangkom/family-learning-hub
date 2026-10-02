@@ -20,12 +20,12 @@ globalThis.fetch = async (url, options) => {
   const contextText = request.messages[1].content[0].text;
   const context = () => JSON.parse(contextText.slice(contextText.indexOf('\n') + 1));
   const reply = questions => Response.json({ choices: [{ finish_reason: 'stop', message: { content: JSON.stringify({ questions }) } }] });
-  if (guide.includes('薄弱点依据核验老师')) return reply([{ approved: true, reason: '隔离合成模型：引用与补强方向一致' }]);
+  if (guide.includes('薄弱点依据核验老师')) return reply([{ approved: true, rejectionCode: 'none', reason: '隔离合成模型：引用与补强方向一致' }]);
   if (guide.includes('薄弱点分析助手')) {
     const input = context(), bySubject = new Map();
     for (const source of input.sources) { const group = bySubject.get(source.subject) || []; group.push(source); bySubject.set(source.subject, group); }
-    const focuses = [...bySubject.values()].filter(group => group.length >= 2).map(group => ({
-      title: '从题目条件提取已知量并建立关系', subject: group[0].subject, priority: 'high', basis: 'wrong_question_pattern',
+    const focuses = [...bySubject.values()].filter(group => group.length >= 2).slice(0, 2).map(group => ({
+      title: '从题目条件提取已知量并建立关系', subject: group[0].subject, priority: 'medium', basis: 'wrong_question_pattern',
       dimensionId: input.profiles.find(profile => profile.subject === group[0].subject)?.dimensions.find(d => d.id === 'modeling')?.id || input.profiles.find(profile => profile.subject === group[0].subject)?.dimensions[0]?.id,
       knowledgePoints: ['已知条件与数量关系'],
       reason: '这些已收录错题共同要求根据已知条件建立数量关系，建议作为待核对的补强方向。',

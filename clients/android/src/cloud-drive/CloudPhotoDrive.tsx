@@ -33,10 +33,12 @@ function DriveSession({ api, owner, studentId, studentLabel, onClose, onOpenOrig
   }), []);
   const services = useMemo(() => supplied || createDriveServices(api, resolveName), [api, supplied, resolveName]);
   const [queue, setQueue] = useState<QueueSnapshot>({ jobs: [], running: false });
-  const [ready, setReady] = useState(false), [limits, setLimits] = useState<CloudLimits | null>(null);
+  const [initialization, setInitialization] = useState<'loading' | 'failed' | 'ready'>('loading');
+  const [initializationAttempt, setInitializationAttempt] = useState(0), [initializationError, setInitializationError] = useState('');
+  const [limits, setLimits] = useState<CloudLimits | null>(null);
   const [error, setError] = useState(''), [notice, setNotice] = useState(''), [picking, setPicking] = useState(false);
   const [importProgress, setImportProgress] = useState<ImportProgress | null>(null), [pendingImportIds, setPendingImportIds] = useState<string[]>([]);
-  const [photos, setPhotos] = useState<CloudPage>({ photos: [] }), [listing, setListing] = useState(false);
+  const [photos, setPhotos] = useState<CloudPage>({ photos: [] }), [listing, setListing] = useState(false), [listError, setListError] = useState('');
   const [viewing, setViewing] = useState<CloudPhoto | null>(null), [downloading, setDownloading] = useState('');
   const [recoveryAction, setRecoveryAction] = useState<{ run: () => Promise<void> } | null>(null);
   const controller = useRef<AbortController | null>(null), queueRef = useRef<UploadQueue | null>(null), input = useRef<HTMLInputElement>(null);
@@ -45,7 +47,7 @@ function DriveSession({ api, owner, studentId, studentLabel, onClose, onOpenOrig
   useEffect(() => { const element = dialog.current; if (viewing && element && !element.open) element.showModal(); return () => element?.close(); }, [viewing]);
   const uploadCount = queue.jobs.filter(job => job.status === 'completed').length;
   const waiting = queue.jobs.length - uploadCount;
-  const locked = queue.running || picking || !ready;
+  const locked = queue.running || picking || initialization !== 'ready';
   const pendingImports = pendingImportIds.filter(id => !queue.jobs.some(job => job.id === id)).length;
   const totalSelected = queue.jobs.length + pendingImports;
   const refreshImports = useCallback(async () => {
@@ -56,23 +58,28 @@ function DriveSession({ api, owner, studentId, studentLabel, onClose, onOpenOrig
   }, [services, owner, studentId]);
   const refresh = useCallback(async (cursor?: string) => {
     const signal = controller.current?.signal; if (!live.current || !signal || signal.aborted) return;
-    const ticket = ++listTicket.current; setListing(true);
+    const ticket = ++listTicket.current; setListing(true); setListError('');
     try {
       const page = await services.list(studentId, cursor, signal);
       if (!live.current || signal.aborted || ticket !== listTicket.current) return;
       setPhotos(previous => ({ ...page, photos: cursor ? [...previous.photos, ...page.photos.filter(photo => !previous.photos.some(old => old.id === photo.id))] : page.photos }));
-    } catch (e) { if (live.current && !signal.aborted && ticket === listTicket.current) setError(message(e)); }
+    } catch (e) { if (live.current && !signal.aborted && ticket === listTicket.current) setListError(message(e)); }
     finally { if (live.current && ticket === listTicket.current) setListing(false); }
   }, [services, studentId]);
   useEffect(() => {
     live.current = true; const abort = new AbortController(); controller.current = abort;
+    setInitialization('loading'); setInitializationError('');
     const work = new UploadQueue({ owner, studentId }, store, services); queueRef.current = work;
     const unsubscribe = work.subscribe(() => { if (live.current && !abort.signal.aborted) setQueue(work.snapshot()); });
     void Promise.all([work.load(), services.limits(abort.signal), refreshImports()]).then(([, cap]) => {
-      if (live.current && !abort.signal.aborted) { setLimits(cap); setReady(true); void refresh(); }
-    }).catch(e => { if (live.current && !abort.signal.aborted) setError(message(e)); });
+      if (live.current && !abort.signal.aborted) { setLimits(cap); setInitialization('ready'); void refresh(); }
+    }).catch(e => { if (live.current && !abort.signal.aborted) { setInitializationError(message(e)); setInitialization('failed'); } });
     return () => { live.current = false; abort.abort(); work.dispose(); unsubscribe(); };
-  }, [owner, studentId, store, services, refresh, refreshImports]);
+  }, [owner, studentId, store, services, refresh, refreshImports, initializationAttempt]);
+  function retryInitialization() {
+    if (initialization !== 'failed' || queue.running || picking) return;
+    setInitialization('loading'); setInitializationError(''); setInitializationAttempt(value => value + 1);
+  }
   function close() { queueRef.current?.stop(); controller.current?.abort(); onClose(); }
   closeRef.current = () => { if (nameRequest) queueRef.current?.stop(); else if (viewing) setViewing(null); else close(); };
   useEffect(() => {
@@ -158,6 +165,8 @@ function DriveSession({ api, owner, studentId, studentLabel, onClose, onOpenOrig
     {nameRequest && <NameConflictDialog key={nameRequest.check.token + nameRequest.check.name} check={nameRequest.check} onChoose={nameRequest.choose} onCancel={() => queueRef.current?.stop()} />}
     <header className="cloud-header"><button type="button" onClick={close} aria-label="返回上一页">‹ 返回</button><span className="cloud-child">{studentLabel || '当前孩子'}</span></header>
     <div className="cloud-hero"><h2 id="cloud-drive-title">图片云盘</h2><p>备份原图，保留原文件名</p></div>
+    {initialization === 'loading' && <output className="cloud-loading">正在读取云盘与本机上传记录…</output>}
+    {initialization === 'failed' && <section role="alert" className="cloud-error cloud-init-error"><div><strong>图片云盘暂未就绪</strong><p>{initializationError}</p><p>本机上传记录保留，重新加载后可继续。</p></div><button type="button" onClick={retryInitialization}>重新加载</button></section>}
     <div className="cloud-select"><div className="cloud-select-heading"><h3>批量上传图片</h3></div>
       <div className="cloud-pick-actions">
         <button type="button" className="cloud-primary" disabled={locked || !limits} onClick={() => void select(false, false, true)}>{picking ? '读取中…' : services.native ? '相册选择' : '选择图片'}</button>
@@ -168,7 +177,7 @@ function DriveSession({ api, owner, studentId, studentLabel, onClose, onOpenOrig
       <div className="cloud-secondary-actions">
         {services.native && <button type="button" disabled={locked || !limits} onClick={() => void select()}>系统相册多选</button>}
         {onOpenOriginals && <button type="button" disabled={locked} onClick={onOpenOriginals}>从本机照片收题</button>}
-        <details className="cloud-help"><summary>选图说明</summary><p>相册范围选择按照片时间由新到旧，首次使用需授权读取照片；文件夹范围按文件名排序。只导入确认的图片，点“开始上传”后才发送到云盘，不自动分析。</p><p>未确认就返回，下次重新选择。确认后若中断，会显示“中断续传”：继续导入并上传未完成的照片，已成功上传的会跳过。</p><p>{limits ? `支持 JPEG、PNG、WebP；单张最多 ${sizeLabel(limits.maxFileBytes)}。` : '正在读取云盘限制…'}</p></details>
+        <details className="cloud-help"><summary>选图说明</summary><p>相册范围选择按照片时间由新到旧，首次使用需授权读取照片；文件夹范围按文件名排序。只导入确认的图片，点“开始上传”后才发送到云盘，不自动分析。</p><p>未确认就返回，下次重新选择。确认后若中断，会显示“中断续传”：继续导入并上传未完成的照片，已成功上传的会跳过。</p><p>{limits ? `支持 JPEG、PNG、WebP；单张最多 ${sizeLabel(limits.maxFileBytes)}。` : initialization === 'failed' ? '云盘限制尚未读取，请先重新加载。' : '正在读取云盘限制…'}</p></details>
       </div>
     </div>
     {(error || queue.error) && <p role="alert" className="cloud-error">{error || queue.error}</p>}{notice && <output className="cloud-notice">{notice}</output>}
@@ -193,7 +202,8 @@ function DriveSession({ api, owner, studentId, studentLabel, onClose, onOpenOrig
         <div className="cloud-photo-meta"><time>{new Date(photo.createdAt).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' })}</time><span>{sizeLabel(photo.size)}</span></div>
         <button type="button" disabled={!!downloading} onClick={() => void download(photo)}>{downloading === photo.id ? '正在保存…' : '下载原图'}</button>
       </article>)}</div>
-      {listing && <output className="cloud-empty">正在读取云图…</output>}{!listing && !photos.photos.length && <p className="cloud-empty">还没有云图。上传完成后会出现在这里。</p>}
+      {listError && <p role="alert" className="cloud-error">云图读取未完成：{listError}。可点“刷新”重试。</p>}
+      {listing && <output className="cloud-empty">正在读取云图…</output>}{initialization === 'ready' && !listing && !listError && !photos.photos.length && <p className="cloud-empty">还没有云图。上传完成后会出现在这里。</p>}
       {photos.nextCursor && <button type="button" disabled={listing} onClick={() => void refresh(photos.nextCursor || undefined)}>加载更多</button>}
     </section>
     {viewing && <dialog ref={dialog} className="cloud-modal" aria-label="云图预览" onCancel={e => { e.preventDefault(); setViewing(null); }}><div><header><h3>{viewing.originalName}</h3><button type="button" onClick={() => setViewing(null)}>关闭预览</button></header><PrivatePreview photo={viewing} services={services} /><p className="cloud-hint">这里显示预览图，下载会保留原始图片字节。</p><button type="button" disabled={!!downloading} onClick={() => void download(viewing)}>下载原图</button></div></dialog>}

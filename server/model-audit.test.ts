@@ -130,6 +130,18 @@ it('refuses a symlink audit root and never writes into its target', async () => 
   expect(readdirSync(elsewhere)).toEqual([]);
   expect(warn).toHaveBeenCalled();
 });
+it('records only a controlled weakness rejection category, never arbitrary review text or another job kind', async () => {
+  for (const [kind, code, expected] of [
+    ['weakness', 'source_conditions', 'source_conditions'],
+    ['weakness', 'private raw reason', undefined],
+    ['question', 'source_conditions', undefined],
+  ] as const) {
+    const value = { ...record(), kind, weaknessRejection: code, reason: 'private review content', prompt: 'private question content' };
+    expect(await writeAttemptAudit(value as AttemptAudit)).toBe(true);
+    const saved = JSON.parse(readFileSync(join(directory, 'model-audit', new Date(value.endedAt).toISOString().slice(0, 10), value.jobId + '-1.json'), 'utf8'));
+    expect(saved.weaknessRejection).toBe(expected); expect(JSON.stringify(saved)).not.toContain('private');
+  }
+});
 it('backs up and verifies immutable audit files beside the database without schema changes', async () => {
   const db = new FamilyStore(join(directory, 'family.sqlite'));
   const schema = db.db

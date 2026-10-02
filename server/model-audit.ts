@@ -10,6 +10,8 @@ import {
 import { isAbsolute, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 
+export const weaknessRejectionCodes = ['shared_evidence', 'source_conditions', 'unsupported_inference', 'dimension_mismatch', 'practice_scope', 'priority_overclaim', 'other'] as const;
+export type WeaknessRejectionCode = typeof weaknessRejectionCodes[number];
 export type ModelTrace = {
   provider?: string;
   requestedModel?: string;
@@ -21,6 +23,7 @@ export type ModelTrace = {
   cropMs?: number;
   httpMs?: number;
   parseValidationMs?: number;
+  weaknessRejection?: WeaknessRejectionCode;
 };
 export type ModelFailureCode =
   | 'UPSTREAM_AUTH'
@@ -191,6 +194,7 @@ export async function writeAttemptAudit(value: AttemptAudit): Promise<boolean> {
       attemptMs: rounded(value.attemptMs),
       outcome: value.outcome,
       ...(value.failureCode ? { failureCode: value.failureCode } : {}),
+      ...(value.kind === 'weakness' && weaknessRejectionCodes.includes(value.weaknessRejection!) ? { weaknessRejection: value.weaknessRejection } : {}),
       provider:
         typeof value.provider === 'string' &&
         /^[a-zA-Z0-9.-]{1,253}$/.test(value.provider)

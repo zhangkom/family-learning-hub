@@ -47,7 +47,7 @@ export function weaknessMaterials(store: FamilyStore, account: string, student: 
         if (!ancestor?.confirmed) unconfirmedParent = true;
         parent = ancestor?.parentQuestionId;
       }
-      const reason = !question.subject ? '请先选择科目' : !question.confirmed ? '请先核对并确认题干和作答' : !question.prompt.trim() || question.prompt.trim() === '待确认' ? '请补充已核对的完整题干' :
+      const reason = !question.subject ? '请先选择科目' : !question.confirmed ? '请先核对并确认题干与题框' : !question.prompt.trim() || question.prompt.trim() === '待确认' ? '请补充已核对的完整题干' :
         unconfirmedParent || context.parents.some(p => !p.prompt.trim() || p.prompt.trim() === '待确认') ? '请补充并确认共用题干条件' : '';
       if (reason) { pending.push({ scanId: scan.id, questionId: question.id, number: question.number, subject: question.subject || '', reason }); continue; }
       const reviewed = question.tutoring?.status === 'needs_review' && question.tutoring.review?.status === 'confirmed' &&

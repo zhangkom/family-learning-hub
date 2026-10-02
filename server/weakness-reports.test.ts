@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { join, resolve, sep } from 'node:path';
 import { FamilyStore } from './family-store';
 import { handleMobile } from './mobile-backend';
@@ -35,7 +35,7 @@ function update(questions: Question[], extra: Partial<ScanRecord> = {}) {
   writeStoredScan(store, 'a', scan, 'synthetic');
 }
 function resultFor(report: StoredWeakness, basis = 'wrong_question_pattern') {
-  return [{ summary: '基于错题分布的 AI 待核对学习建议，仍需结合实际作答核对。', focuses: [{ title: '代入条件与数量关系', subject: '数学', dimensionId: 'calculation', knowledgePoints: ['代入计算'], priority: 'high', basis,
+  return [{ summary: '基于错题分布的 AI 待核对学习建议，仍需结合实际作答核对。', focuses: [{ title: '代入条件与数量关系', subject: '数学', dimensionId: 'calculation', knowledgePoints: ['代入计算'], priority: basis === 'answer_evidence' ? 'high' : 'medium', basis,
     reason: '这些错题共同涉及把条件代入关系式，可优先练习。', practiceDirection: '写出已知条件并逐步代入，使用新条件独立复测。',
     evidence: report.input.slice(0, 2).map(source => ({ sourceId: source.id, kind: basis === 'answer_evidence' ? 'student_answer' : 'question', quote: basis === 'answer_evidence' ? source.studentEvidence[0]?.text : source.prompt, reason: '该题提供相同类型的代入条件。' })) }], limitations: ['仅分析选入的错题，结论需要核对。'] }];
 }
@@ -88,6 +88,7 @@ describe('weakness analysis API and persistent worker', () => {
     update([question(1), { ...question(2), confirmed: false }, { ...question(3), prompt: '' }]);
     const m = await overview(); expect(m.materials).toMatchObject({ total: 3, selected: 1, needsReview: 2, pendingMore: 0 });
     expect(m.materials.pendingSources.map(p => p.questionId)).toEqual(['q2', 'q3']);
+    expect(m.materials.pendingSources[0].reason).toBe('请先核对并确认题干与题框');
     expect((await call('weakness-reports', 'POST', { studentId: student, requestId: randomUUID(), materialVersion: version })).status).toBe(409);
     expect((await call('weakness-reports', 'POST', { studentId: student, requestId: randomUUID(), materialVersion: m.materials.version })).status).toBe(400);
   });
@@ -108,7 +109,7 @@ describe('weakness analysis API and persistent worker', () => {
     update([first, { ...question(3, '语文'), prompt: '结合语境解释“温故而知新”的“故”。', knowledgePoints: ['文言实词'] }, question(2, '物理')]);
     const r = await start('语文'); expect(r.coverage.total).toBe(2);
     await runNextWeaknessJob(store, async report => validateWeaknessResult([{ summary: '这些已收录古文错题共同涉及词义与语境，建议待核对。',
-      focuses: [{ title: '联系上下文辨析文言实词', subject: '语文', dimensionId: 'context', knowledgePoints: ['文言实词', '语境推断'], priority: 'high', basis: 'wrong_question_pattern',
+      focuses: [{ title: '联系上下文辨析文言实词', subject: '语文', dimensionId: 'context', knowledgePoints: ['文言实词', '语境推断'], priority: 'medium', basis: 'wrong_question_pattern',
         reason: '两题都要求联系语境解释文言词义，可以作为共同练习方向。', practiceDirection: '先解释上下文，再比较候选词义并用原句验证。',
         evidence: report.sources.map(s => ({ sourceId: s.id, kind: 'question', quote: s.prompt, reason: '题干要求根据语境解释实词。' })) }], limitations: ['仅有题干不能确定实际错因。'] }], report));
     m = await overview('语文'); expect(m.report!.result!.axes).toHaveLength(6);
@@ -226,6 +227,16 @@ describe('weakness model grounding', () => {
     expect(validateWeaknessResult(resultFor(saved), saved).focuses[0].basis).toBe('wrong_question_pattern');
     expect(validateWeaknessResult([{ summary: '共同方向证据不足', focuses: [], limitations: ['请补充同科目的其他错题与作答。'] }], saved).focuses).toEqual([]);
   });
+  it('limits prompt-only suggestions to two and rejects high priority without answer evidence', async () => {
+    const r = await start(), saved = weaknessById(store, 'a', r.id), response = resultFor(saved);
+    response[0].focuses[0].priority = 'high';
+    expect(() => validateWeaknessResult(response, saved)).toThrow('不能标为高优先级');
+    response[0].focuses[0].priority = 'medium';
+    response[0].focuses.push({ ...response[0].focuses[0], title: '条件与目标量的联系', priority: 'low' });
+    expect(validateWeaknessResult(response, saved).focuses).toHaveLength(2);
+    response[0].focuses.push({ ...response[0].focuses[0], title: '额外的泛化练习方向' });
+    expect(() => validateWeaknessResult(response, saved)).toThrow('最多保留两项');
+  });
   it('accepts narrowly stated abstentions and future prevention without treating them as observed errors', async () => {
     const r = await start(), saved = weaknessById(store, 'a', r.id), response = resultFor(saved);
     response[0].summary = '这是收录题目的待核对学习建议；无法确定学生是否出现计算错误。';
@@ -285,7 +296,16 @@ describe('weakness model grounding', () => {
       expect(context.sources).toEqual(saved.input); expect(JSON.stringify(body)).not.toContain('待确认笔迹仅供合成测试');
       const isReview = String(body.messages[0].content).includes('依据核验老师');
       expect(String(body.messages[0].content)).toContain('正确');
-      return Response.json({ choices: [{ finish_reason: 'stop', message: { content: JSON.stringify({ questions: isReview ? [{ approved: true, reason: '合成复核：仅共同考点建议，无个人错误判断。' }] : response }) } }] });
+      expect(String(body.messages[0].content)).toContain('精确交集');
+      expect(String(body.messages[0].content)).toContain('选择题选项是待判断的命题');
+      expect(String(body.messages[0].content)).toContain('不为覆盖六轴');
+      if (!isReview) {
+        const output = JSON.parse(String(body.messages[0].content).split('仅输出符合以下结构的 JSON，不要添加 Markdown 标记：')[1]).properties.questions.items.properties.focuses;
+        expect(output.maxItems).toBe(2);
+        expect(output.items.properties.priority.enum).toEqual(['medium', 'low']);
+        expect(output.items.properties.basis.enum).toEqual(['wrong_question_pattern']);
+      }
+      return Response.json({ choices: [{ finish_reason: 'stop', message: { content: JSON.stringify({ questions: isReview ? [{ approved: true, rejectionCode: 'none', reason: '合成复核：仅共同考点建议，无个人错误判断。' }] : response }) } }] });
     }));
     await runNextWeaknessJob(store);
     const done = (await get(r)).report;
@@ -299,12 +319,27 @@ describe('weakness model grounding', () => {
     response[0].focuses[0].practiceDirection = '避免计算错误。';
     const fetch = vi.fn(async (_url, options) => {
       const body = JSON.parse(options.body), isReview = String(body.messages[0].content).includes('依据核验老师');
-      return Response.json({ choices: [{ finish_reason: 'stop', message: { content: JSON.stringify({ questions: isReview ? [{ approved: false, reason: '合成复核拒绝：练习方向与证据关联不足。' }] : response }) } }] });
+      return Response.json({ choices: [{ finish_reason: 'stop', message: { content: JSON.stringify({ questions: isReview ? [{ approved: false, rejectionCode: 'shared_evidence', reason: '私有合成复核正文：只有第一题支持核心要求，第二题仅同章节。' }] : response }) } }] });
     });
     vi.stubGlobal('fetch', fetch); await runNextWeaknessJob(store);
     const failed = (await get(r)).report;
-    expect(fetch).toHaveBeenCalledTimes(2); expect(failed).toMatchObject({ status: 'failed', error: '分析依据未通过复核，请校对错题材料后重试' });
+    expect(fetch).toHaveBeenCalledTimes(2); expect(failed).toMatchObject({ status: 'failed', error: '分析依据未通过复核：部分建议缺少至少两道题的共同依据。原题已保留，可重试分析。' });
     expect(failed.result).toBeUndefined();
+    expect(JSON.stringify(failed)).not.toContain('私有合成复核正文');
+    const auditRoot = join(root, 'model-audit'), day = readdirSync(auditRoot)[0];
+    const audits = readdirSync(join(auditRoot, day)).map(name => JSON.parse(readFileSync(join(auditRoot, day, name), 'utf8')));
+    expect(audits).toHaveLength(1); expect(audits[0]).toMatchObject({ kind: 'weakness', failureCode: 'MODEL_OUTPUT', weaknessRejection: 'shared_evidence' });
+    expect(JSON.stringify(audits)).not.toContain('私有合成复核正文');
+  });
+  it('rejects unknown review categories without echoing model text or adding model calls', async () => {
+    const r = await start(), saved = weaknessById(store, 'a', r.id), trace = {};
+    const fetch = vi.fn(async (_url, options) => {
+      const body = JSON.parse(options.body), isReview = String(body.messages[0].content).includes('依据核验老师');
+      return Response.json({ choices: [{ finish_reason: 'stop', message: { content: JSON.stringify({ questions: isReview ? [{ approved: false, rejectionCode: '私有随意文本', reason: '私有复核原因' }] : resultFor(saved) }) } }] });
+    });
+    vi.stubGlobal('fetch', fetch);
+    await expect(analyzeWeakness(saved, trace)).rejects.toThrow('分析复核结构不完整');
+    expect(fetch).toHaveBeenCalledTimes(2); expect(trace).not.toHaveProperty('weaknessRejection');
   });
   it('accepts specific tentative error directions only with actual writing from at least two questions', async () => {
     update([1, 2].map(n => ({ ...question(n), answerSteps: [{ id: `s${n}`, order: 0, text: `x+4=${n}+4=4`, author: 'student', crossedOut: false, uncertain: false, regionIds: [] }] })));
@@ -317,7 +352,7 @@ describe('weakness model grounding', () => {
     let approved = true;
     vi.stubGlobal('fetch', vi.fn(async (_url, options) => {
       const body = JSON.parse(options.body); requests.push(body);
-      const response = String(body.messages[0].content).includes('依据核验老师') ? [{ approved, reason: '合成核验意见' }] : resultFor(saved);
+      const response = String(body.messages[0].content).includes('依据核验老师') ? [{ approved, rejectionCode: approved ? 'none' : 'other', reason: '合成核验意见' }] : resultFor(saved);
       return Response.json({ choices: [{ finish_reason: 'stop', message: { content: JSON.stringify({ questions: response }) } }] });
     }));
     expect((await analyzeWeakness(saved, {})).focuses).toHaveLength(1); expect(requests).toHaveLength(2);
