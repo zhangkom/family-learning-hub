@@ -64,6 +64,7 @@ const confirmPhoto = async () => {
 };
 try {
   await page.goto(origin); await waitHome(); await page.getByRole('button', { name: /拍照收题/ }).click();
+  await button('完成选择，逐张调整').click();
   await page.getByRole('heading', { name: '把题目拍清楚' }).waitFor();
   assert.equal(uploads.length, 0); await button('取消，保留原片').click(); await button('本机原片').click();
   await button('继续处理').waitFor(); assert.equal(await page.locator('.photo-library-card').count(), 1);
@@ -118,7 +119,7 @@ try {
   }, { api });
   await page.reload(); await waitHome(); await library(); await button('取消未完成的相机操作').click();
   assert.equal(await page.evaluate(() => localStorage.getItem('family-learning:pending-camera')), null);
-  await page.getByRole('button', { name: /拍照收题/ }).click(); await page.getByRole('heading', { name: '把题目拍清楚' }).waitFor();
+  await page.getByRole('button', { name: /拍照收题/ }).click(); await button('完成选择，逐张调整').click(); await page.getByRole('heading', { name: '把题目拍清楚' }).waitFor();
   const queueBeforeBack = await pendingCount();
   await page.evaluate(() => window.hostPhotoTest.delay(500)); await button('生成预览').click();
   await page.evaluate(() => window.hostPhotoTest.back()); await button('本机原片').waitFor(); await page.waitForTimeout(700);
@@ -126,7 +127,7 @@ try {
   await button('本机原片').click(); await page.locator('.photo-library-card').first().waitFor(); assert.equal(await page.locator('.photo-library-card').count(), 2);
   await page.evaluate(() => window.hostPhotoTest.back()); await button('本机原片').waitFor();
   checks.push('处理途中系统返回立即取消迟到入队，原片仍在；原片库系统返回退回资料页');
-  await page.getByRole('button', { name: /拍照收题/ }).click(); await page.getByRole('heading', { name: '把题目拍清楚' }).waitFor();
+  await page.getByRole('button', { name: /拍照收题/ }).click(); await button('完成选择，逐张调整').click(); await page.getByRole('heading', { name: '把题目拍清楚' }).waitFor();
   await page.evaluate(() => window.hostPhotoTest.delay(750)); await button('生成预览').click();
   await page.evaluate(() => window.hostPhotoTest.expire());
   await page.getByLabel('账号', { exact: true }).fill('B'); await page.getByLabel('密码', { exact: true }).fill('synthetic-password');
@@ -136,6 +137,7 @@ try {
   await button('本机原片').click(); await page.getByText('这位学生在本机还没有保存的原片。').waitFor(); await button('返回题目资料').click();
   checks.push('旧版本相机上下文可由原账号取消；未知坏相机记录不挡新拍摄；处理途中登录过期换账号不显示迟到结果');
   await page.goto(origin + '/?legacy=1'); await waitHome(); await page.getByRole('button', { name: /拍照收题/ }).click();
+  await button('完成选择，查看待上传').click();
   await button('确认并上传').waitFor(); assert.equal(await page.getByRole('heading', { name: '把题目拍清楚' }).count(), 0);
   await button('确认并上传').click(); await page.waitForFunction(() => document.querySelectorAll('.draft-card').length === 0);
   assert.equal(uploads.at(-1).processing, null);

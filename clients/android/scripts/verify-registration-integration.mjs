@@ -54,6 +54,7 @@ try {
     await page.getByRole('button', { name: /相册选图/ }).click();
     await (await chooser).setFiles({ name: `合成账号资料${i}.png`, mimeType: 'image/png',
       buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64') });
+    await page.getByRole('button', { name: '完成选择，查看待上传', exact: true }).click();
     const uploaded = page.waitForResponse((response) => response.url() === `${config.apiBase}/scans` && response.request().method() === 'POST');
     await page.getByRole('button', { name: '确认并上传', exact: true }).click();
     const uploadResponse = await uploaded;

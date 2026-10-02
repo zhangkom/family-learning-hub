@@ -61,6 +61,7 @@ try {
     mimeType: 'image/png',
     buffer: png,
   });
+  await page.getByRole('button', { name: '完成选择，查看待上传', exact: true }).click();
   await page.getByRole('button', { name: '确认并上传' }).click();
   await page.getByRole('button', { name: /真实接口合成作业/ }).waitFor();
   await page.getByRole('button', { name: /真实接口合成作业/ }).click();

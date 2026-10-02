@@ -6,7 +6,8 @@ import { BookOpen } from 'lucide-react';
 import { ApiError, FamilyApi, sessionExpiredEvent } from './api';
 import { session } from './session';
 import { drafts, listPhotoDeliveries, recoverPhotoDelivery, removePhotoDelivery, removeDamagedPhotoDelivery, type PhotoDeliveryRecord, type PhotoDeliveryIssue, type Draft } from './drafts';
-import { PhotoPreparation, OriginalPhotoLibrary, photoProcessingAvailable, importOriginal, previewUrl, type OriginalPhoto } from './photo-processing/public';
+import { PhotoPreparation, OriginalPhotoLibrary, photoProcessingAvailable, importOriginal, previewUrl, pickOriginals, listOriginalBatches, resumeOriginalBatch, forgetOriginalBatch, type OriginalPhoto } from './photo-processing/public';
+import { CloudPhotoDrive } from './cloud-drive/CloudPhotoDrive';
 import { activeCamera, beginCamera, cancelCamera, clearUnfinishedCamera, stageCamera, restoredCamera, listCameraResults, removeCameraResult, cameraResultEvent, type CameraResult } from './photo-processing/camera-handoff';
 import { Review } from './Review';
 import { type Scan, type Student } from './types';
@@ -18,6 +19,8 @@ import { captureFailure } from './permissions';
 import { AuthForm, type AuthMode } from './AuthForm';
 import { GuestHome } from './GuestHome';
 import { pageNames } from './BottomNavigation';
+import { CaptureBatch, MAX_CAPTURE_BATCH, collectionSize, type CaptureCollection } from './CaptureBatch';
+import { runPhotoBatch, type BatchProgress } from './batch-upload';
 
 function message(error: unknown) {
   return error instanceof Error ? error.message : '操作未完成，请重试';
@@ -185,20 +188,30 @@ function Home({
   const [photoQueue, setPhotoQueue] = useState<PhotoDeliveryRecord[]>([]), [cameraWaiting, setCameraWaiting] = useState(false);
   const [photoQueueIssues, setPhotoQueueIssues] = useState<PhotoDeliveryIssue[]>([]);
   const [cameraFailures, setCameraFailures] = useState<{ result: CameraResult; message: string }[]>([]);
+  const [collection, setCollection] = useState<CaptureCollection | null>(null);
+  const collectionRef = useRef<CaptureCollection | null>(null);
+  const [preparationBatch, setPreparationBatch] = useState<{ photos: OriginalPhoto[]; index: number; nativeBatchIds: string[] } | null>(null);
+  const [batchProgress, setBatchProgress] = useState<BatchProgress | null>(null);
+  const [cloudOpen, setCloudOpen] = useState(false);
+  const captureBusy = useRef(false);
+  const captureAbort = useRef<AbortController | null>(null);
+  function updateCollection(next: CaptureCollection | null) { collectionRef.current = next; setCollection(next); }
   const importing = useRef(new Set<string>());
   const closeLocalPhotos = useCallback(() => {
     if (!live.current) return;
     scopeGeneration.current++;
+    captureAbort.current?.abort(); setBusy(false);
+    collectionRef.current = null; setCollection(null); setPreparationBatch(null);
     setPreparing(null); setOriginalsOpen(false); setHomePage('library'); setLibraryMode('photos');
   }, []);
   useEffect(() => {
-    if (!Capacitor.isNativePlatform() || !originalsOpen) return;
+    if (!Capacitor.isNativePlatform() || (!originalsOpen && !collection)) return;
     const listener = NativeApp.addListener('backButton', closeLocalPhotos);
     return () => { void listener.then(handle => handle.remove()); };
-  }, [originalsOpen, closeLocalPhotos]);
+  }, [originalsOpen, collection, closeLocalPhotos]);
   // Read the latest operation controller on unmount, not the controller that existed at mount.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useLayoutEffect(() => { live.current = true; return () => { live.current = false; scopeGeneration.current++; uploadAbort.current?.abort(); }; }, []);
+  useLayoutEffect(() => { live.current = true; return () => { live.current = false; scopeGeneration.current++; uploadAbort.current?.abort(); captureAbort.current?.abort(); }; }, []);
   const [homePage, setHomePage] = useState<HomePage>(initialPage);
   const [libraryMode, setLibraryMode] = useState<'photos' | 'wrong'>('photos');
   const [openQuestion, setOpenQuestion] = useState('');
@@ -227,7 +240,8 @@ function Home({
   }, [owner]);
   function selectStudent(id: string) {
     if (id === activeStudent.current) return;
-    scopeGeneration.current++; activeStudent.current = id; uploadAbort.current?.abort();
+    scopeGeneration.current++; activeStudent.current = id; uploadAbort.current?.abort(); captureAbort.current?.abort();
+    updateCollection(null); setPreparationBatch(null); setBatchProgress(null); setCloudOpen(false);
     setPreparing(null); setOriginalsOpen(false); setPhotoQueue([]); setPhotoQueueIssues([]); setCameraFailures([]); setBusy(false); setSelected(id);
   }
   useEffect(() => { if (cameraRestoreError) setError(cameraRestoreError); }, [cameraRestoreError]);
@@ -314,6 +328,10 @@ function Home({
         createdAt: Date.now(),
       };
       await drafts.save(draft);
+      const batch = collectionRef.current;
+      if (live.current && batch?.studentId === studentId && !batch.drafts.some(item => item.id === id) && collectionSize(batch) < MAX_CAPTURE_BATCH) {
+        const next = { ...batch, drafts: [...batch.drafts, draft] }; collectionRef.current = next; setCollection(next);
+      }
       await refreshDrafts();
       if (!live.current || activeStudent.current !== studentId) return;
       setNotice('照片已保存为本机草稿，确认清晰完整后上传');
@@ -333,7 +351,12 @@ function Home({
         const original = await importOriginal(result.owner, result.uri, result.studentId);
         removeCameraResult(result);
         if (live.current && generation === scopeGeneration.current && activeStudent.current === result.studentId) {
-          setPreparing(original); setOriginalsOpen(false);
+          const batch = collectionRef.current;
+          if (batch?.studentId === result.studentId) {
+            if (!batch.originals.some(item => item.originalId === original.originalId) && collectionSize(batch) < MAX_CAPTURE_BATCH) {
+              const next = { ...batch, originals: [...batch.originals, original] }; collectionRef.current = next; setCollection(next);
+            }
+          } else { setPreparing(original); setOriginalsOpen(false); }
         }
       } else {
         if (!result.webPath) throw new Error('相机未返回可读取的照片');
@@ -369,47 +392,119 @@ function Home({
     return () => window.removeEventListener(cameraResultEvent, listener);
   }, [selected, recoverCamera]);
   async function capture(source: 'camera' | 'gallery') {
-    if (!student || busy) return;
+    if (!student || busy || captureBusy.current || uploadAbort.current) return;
     setError('');
+    const batch = collectionRef.current ?? { studentId: student.id, originals: [], drafts: [] };
+    if (batch.studentId !== student.id || collectionSize(batch) >= MAX_CAPTURE_BATCH) { setError('本批已达到 100 张，请先完成本批'); return; }
+    updateCollection(batch);
     captureStudent.current = student.id;
     if (!Capacitor.isNativePlatform()) {
       (source === 'camera' ? cameraInput : galleryInput).current?.click();
       return;
     }
     const generation = scopeGeneration.current;
+    const abort = new AbortController(); captureAbort.current = abort;
     let context: ReturnType<typeof beginCamera> | null = null;
     let cameraReturned = false;
-    setBusy(true);
+    setBusy(true); captureBusy.current = true;
     try {
+      if (source === 'gallery' && localPhotosEnabled) {
+        const result = await pickOriginals(owner, student.id, MAX_CAPTURE_BATCH - collectionSize(batch), { purpose: 'processed', signal: abort.signal });
+        if (live.current && generation === scopeGeneration.current && activeStudent.current === student.id) {
+          const current = collectionRef.current;
+          if (current?.studentId === student.id) updateCollection({ ...current, originals: [...current.originals, ...result.originals].slice(0, MAX_CAPTURE_BATCH - current.drafts.length),
+            nativeBatchIds: [...(current.nativeBatchIds || []), ...(result.batchId ? [result.batchId] : [])] });
+          if (result.failures.length) setError(`${result.failures.length} 张未导入：${result.failures.map(item => item.message).join('；')}`);
+        }
+        return;
+      }
       context = beginCamera(owner, student.id, source);
-      const photo =
+      const photos =
         source === 'camera'
-          ? await Camera.takePhoto({
+          ? [await Camera.takePhoto({
               quality: 95,
               includeMetadata: false,
               saveToGallery: false,
-            })
+            })]
           : (
               await Camera.chooseFromGallery({
-                allowMultipleSelection: false,
+                allowMultipleSelection: true,
+                limit: MAX_CAPTURE_BATCH - collectionSize(batch),
                 mediaType: MediaTypeSelection.Photo,
                 includeMetadata: false,
               })
-            ).results[0];
+            ).results;
       cameraReturned = true;
-      if (!photo) { cancelCamera(context); return; }
-      const result = stageCamera(context, photo);
-      await importCameraResult(result);
+      if (!photos.length) { cancelCamera(context); return; }
+      if (photos.length > MAX_CAPTURE_BATCH - collectionSize(batch)) throw new Error('选择的照片超过本批剩余名额，请重新选择，最多 100 张');
+      const results = photos.map((photo, index) => stageCamera(index ? { ...context!, id: crypto.randomUUID() } : context!, photo));
+      const failures: string[] = [];
+      for (const result of results) {
+        if (!live.current || generation !== scopeGeneration.current) break;
+        try { await importCameraResult(result); } catch (e) { failures.push(message(e)); }
+      }
+      if (failures.length && live.current && generation === scopeGeneration.current) setError(`${failures.length} 张未读取，引用已保留，可重试：${failures.join('；')}`);
     } catch (e) {
       const failure = cameraReturned || !context ? message(e) : captureFailure(e, source);
       if (failure && live.current && generation === scopeGeneration.current) setError(failure);
       if (context) cancelCamera(context);
     } finally {
+      captureBusy.current = false;
+      if (captureAbort.current === abort) captureAbort.current = null;
       if (live.current && generation === scopeGeneration.current) setBusy(false);
     }
   }
+  async function saveBrowserBatch(files: File[]) {
+    const id = captureStudent.current, generation = scopeGeneration.current, batch = collectionRef.current;
+    if (!batch || batch.studentId !== id || captureBusy.current) return;
+    if (files.length > MAX_CAPTURE_BATCH - collectionSize(batch)) { setError('选择的照片超过本批剩余名额，请重新选择，最多 100 张'); return; }
+    captureBusy.current = true; setBusy(true); setError(''); const failures: string[] = [];
+    try {
+      for (const file of files) {
+        if (!live.current || generation !== scopeGeneration.current) break;
+        try { await savePhoto(file, id, file.name); } catch (e) { failures.push(`${file.name}：${message(e)}`); }
+      }
+      if (live.current && generation === scopeGeneration.current && failures.length) setError(failures.join('；'));
+    } finally { captureBusy.current = false; if (live.current && generation === scopeGeneration.current) setBusy(false); }
+  }
+  function finishCollection() {
+    const batch = collectionRef.current; if (!batch || busy || !collectionSize(batch)) return;
+    updateCollection(null); setHomePage('library'); setLibraryMode('photos');
+    if (batch.originals.length) { setPreparationBatch({ photos: batch.originals, index: 0, nativeBatchIds: batch.nativeBatchIds || [] }); setPreparing(batch.originals[0]); }
+    else setNotice(`${batch.drafts.length} 张照片已保存为本机草稿，可检查后批量上传。`);
+  }
+  function advancePreparation() {
+    if (preparationBatch && preparationBatch.index + 1 < preparationBatch.photos.length) {
+      const next = { ...preparationBatch, index: preparationBatch.index + 1 }; setPreparationBatch(next); setPreparing(next.photos[next.index]);
+    } else {
+      for (const batchId of preparationBatch?.nativeBatchIds || []) void forgetOriginalBatch(owner, selected, batchId).catch(() => { /* Incomplete imports remain recoverable. */ });
+      setPreparationBatch(null); setPreparing(null); setHomePage('library'); setLibraryMode('photos');
+    }
+  }
+  async function recoverGallery() {
+    if (!student || busy || captureBusy.current || uploadAbort.current) return;
+    const generation = scopeGeneration.current, abort = new AbortController(); captureAbort.current = abort; captureBusy.current = true; setBusy(true); setError('');
+    try {
+      const saved = await listOriginalBatches(owner, student.id, 'processed');
+      // The native list contains references only; import one item at a time when explicitly resumed.
+      const originals: OriginalPhoto[] = []; const failures: string[] = []; const nativeBatchIds: string[] = [];
+      for (const batch of saved.batches) {
+        if (!live.current || generation !== scopeGeneration.current || originals.length >= MAX_CAPTURE_BATCH) break;
+        if (batch.state === 'cancelled' || batch.state === 'selecting') continue;
+        if (batch.items.length + originals.length > MAX_CAPTURE_BATCH) break;
+        const result = await resumeOriginalBatch(owner, student.id, batch.batchId, { signal: abort.signal });
+        for (const original of result.originals) if (!originals.some(item => item.originalId === original.originalId)) originals.push(original);
+        failures.push(...result.failures.map(item => item.message)); nativeBatchIds.push(batch.batchId);
+      }
+      if (!live.current || generation !== scopeGeneration.current) return;
+      if (originals.length) updateCollection({ studentId: student.id, originals, drafts: [], nativeBatchIds });
+      else setNotice('没有待恢复的相册选择；已经保存的照片可从“本机原片”继续处理。');
+      if (failures.length) setError(failures.join('；'));
+    } catch (e) { if (live.current && generation === scopeGeneration.current) setError(message(e)); }
+    finally { captureBusy.current = false; if (captureAbort.current === abort) captureAbort.current = null; if (live.current && generation === scopeGeneration.current) setBusy(false); }
+  }
   async function uploadPhoto(record: PhotoDeliveryRecord) {
-    if (uploading || record.owner !== owner || record.studentId !== activeStudent.current) return;
+    if (uploadAbort.current || uploading || record.owner !== owner || record.studentId !== activeStudent.current) return;
     const generation = scopeGeneration.current, abort = new AbortController(); uploadAbort.current = abort;
     setUploading(record.id); setError('');
     const current = () => live.current && generation === scopeGeneration.current && record.studentId === activeStudent.current;
@@ -426,12 +521,12 @@ function Home({
     finally { if (uploadAbort.current === abort) { uploadAbort.current = null; if (live.current) setUploading(''); } }
   }
   async function upload(draft: Draft) {
-    if (uploading || draft.owner !== owner || draft.studentId !== activeStudent.current) return;
-    const generation = scopeGeneration.current;
+    if (uploadAbort.current || uploading || draft.owner !== owner || draft.studentId !== activeStudent.current) return;
+    const generation = scopeGeneration.current, abort = new AbortController(); uploadAbort.current = abort;
     setUploading(draft.id);
     setError('');
     try {
-      const { scan } = await api.upload(draft);
+      const { scan } = await api.upload(draft, abort.signal);
       if (!live.current || generation !== scopeGeneration.current) return;
       await drafts.remove(draft.id);
       await refreshDrafts();
@@ -442,8 +537,36 @@ function Home({
     } catch (e) {
       if (live.current && generation === scopeGeneration.current) setError(`上传未完成，草稿已保留：${message(e)}`);
     } finally {
-      if (live.current) setUploading('');
+      if (uploadAbort.current === abort) { uploadAbort.current = null; if (live.current) setUploading(''); }
     }
+  }
+  async function uploadMany() {
+    if (uploadAbort.current || busy || !student) return;
+    const studentId = student.id, generation = scopeGeneration.current;
+    type Item = { id: string; prepared?: PhotoDeliveryRecord; draft?: Draft };
+    const items: Item[] = [
+      ...photoQueue.filter(item => item.owner === owner && item.studentId === studentId).map(prepared => ({ id: prepared.id, prepared })),
+      ...localDrafts.filter(item => item.owner === owner && item.studentId === studentId).map(draft => ({ id: draft.id, draft })),
+    ].slice(0, MAX_CAPTURE_BATCH);
+    if (!items.length) return;
+    const abort = new AbortController(); uploadAbort.current = abort; setUploading('batch'); setError('');
+    const current = () => live.current && generation === scopeGeneration.current && activeStudent.current === studentId;
+    try {
+      const progress = await runPhotoBatch(items, async (item, signal) => {
+        signal.throwIfAborted();
+        const result = item.prepared
+          ? await api.uploadProcessed(await recoverPhotoDelivery(item.prepared, owner, studentId, signal), signal)
+          : await api.upload(item.draft!, signal);
+        signal.throwIfAborted();
+        if (!current()) throw new DOMException('学生或账号已变化', 'AbortError');
+        if (result.scan.studentId !== studentId) throw new Error('上传回执的学生归属不匹配，待提交项已保留');
+        if (item.prepared) { removePhotoDelivery(owner, studentId, item.id); refreshPhotoQueue(); }
+        else { await drafts.remove(item.id); await refreshDrafts(); }
+        if (current()) setRecords(list => [result.scan, ...list.filter(scan => scan.id !== result.scan.id)]);
+      }, abort.signal, progress => { if (current()) setBatchProgress(progress); });
+      if (current()) setNotice(`${progress.stopped ? '本批已停止' : '本批上传结束'}：成功 ${progress.succeeded} 张，失败 ${progress.failed.length} 张。未确认成功的照片仍留在本机，可继续上传。`);
+    } catch (e) { if (current()) setError(message(e)); }
+    finally { if (uploadAbort.current === abort) { uploadAbort.current = null; if (live.current) setUploading(''); } }
   }
   const updateScan = useCallback(
     (scan: Scan) =>
@@ -451,13 +574,26 @@ function Home({
     [],
   );
   const viewGeneration = scopeGeneration.current;
-  if (preparing && preparing.studentId === selected) return <PhotoPreparation owner={owner} studentId={selected} studentLabel={student?.name}
+  const fileInputs = <>
+    <input className="visually-hidden" ref={cameraInput} type="file" accept="image/jpeg,image/png,image/webp" capture="environment"
+      onChange={e => { const files = Array.from(e.target.files || []); e.target.value = ''; void saveBrowserBatch(files); }} />
+    <input className="visually-hidden" ref={galleryInput} type="file" multiple accept="image/jpeg,image/png,image/webp"
+      onChange={e => { const files = Array.from(e.target.files || []); e.target.value = ''; void saveBrowserBatch(files); }} />
+  </>;
+  if (cloudOpen && student) return <CloudPhotoDrive key={`${owner}/${selected}`} api={api} owner={owner} studentId={selected} studentLabel={student.name} onClose={() => setCloudOpen(false)} />;
+  if (collection && collection.studentId === selected) return <><CaptureBatch collection={collection} studentLabel={student?.name || '当前孩子'} busy={busy} error={error}
+    onCapture={source => void capture(source)} onFinish={finishCollection} onClose={closeLocalPhotos}
+    onRemove={id => updateCollection({ ...collection, originals: collection.originals.filter(item => item.originalId !== id), drafts: collection.drafts.filter(item => item.id !== id) })} />{fileInputs}</>;
+  if (preparing && preparing.studentId === selected) return <>
+    {preparationBatch && <div className="capture-batch-progress"><div className="section-line"><strong>逐张调整 · 第 {preparationBatch.index + 1} / {preparationBatch.photos.length} 张</strong>
+      <button onClick={advancePreparation}>跳过这张，保留原片</button></div><p className="hint">确认当前照片后进入下一张，全部确认后可以批量上传。</p></div>}
+    <PhotoPreparation owner={owner} studentId={selected} studentLabel={student?.name}
     original={preparing} onCancel={closeLocalPhotos}
     onConfirm={delivery => {
       if (!live.current || viewGeneration !== scopeGeneration.current || delivery.record.owner !== owner || delivery.record.studentId !== activeStudent.current) return;
-      refreshPhotoQueue(); setPreparing(null); setHomePage('library'); setLibraryMode('photos');
+      refreshPhotoQueue(); advancePreparation();
       setNotice('处理图已保存为本机待提交。检查后点击上传；原片仍保留。');
-    }} />;
+    }} /></>;
   if (originalsOpen && student) return <main><div className="button-row"><button onClick={closeLocalPhotos}>返回题目资料</button></div>
     <OriginalPhotoLibrary owner={owner} studentId={selected} studentLabel={student.name} onResume={original => {
       if (live.current && viewGeneration === scopeGeneration.current && original.studentId === activeStudent.current) { setOriginalsOpen(false); setPreparing(original); }
@@ -492,12 +628,23 @@ function Home({
       libraryMode={libraryMode} onLibraryMode={setLibraryMode}
       localDrafts={localDrafts} busy={busy} uploading={uploading} refreshing={refreshing}
       processedCount={photoQueue.length + photoQueueIssues.length} onOpenOriginals={localPhotosEnabled ? () => setOriginalsOpen(true) : undefined}
+      onOpenCloud={() => setCloudOpen(true)}
+      batchUploads={<section className="batch-upload-panel" aria-label="拍题批量上传">
+        <strong>单批最多上传 100 张</strong><p className="hint">照片清晰完整后，确认上传当前孩子的待提交照片。处理图原片仍留在手机。</p>
+        <div className="button-row"><button className="primary" disabled={busy || !!uploading || !(photoQueue.length + localDrafts.filter(item => item.studentId === selected).length)} onClick={() => void uploadMany()}>
+          确认并批量上传（{Math.min(100, photoQueue.length + localDrafts.filter(item => item.studentId === selected).length)} 张）</button>
+          {uploading === 'batch' && <button onClick={() => uploadAbort.current?.abort()}>停止本批上传</button>}</div>
+        {batchProgress && <><output>已处理 {batchProgress.completed} / {batchProgress.total} 张 · 成功 {batchProgress.succeeded} · 失败 {batchProgress.failed.length}{batchProgress.stopped ? ' · 已停止' : ''}</output>
+          <progress max={batchProgress.total} value={batchProgress.completed} />
+          {!!batchProgress.failed.length && <details><summary>查看失败原因；未成功项可继续上传</summary><ul>{batchProgress.failed.map(item => <li key={item.id}>照片 {item.id.slice(0, 8)}：{item.reason}</li>)}</ul></details>}</>}
+      </section>}
       processedPending={<>{photoQueue.map(record => <PreparedDraftCard key={record.id} record={record} uploading={uploading === record.id} disabled={!!uploading}
         onUpload={() => void uploadPhoto(record)} onRemove={() => { try { removePhotoDelivery(owner, selected, record.id); refreshPhotoQueue(); } catch(e) { setError(message(e)); } }} />)}
         {photoQueueIssues.map(issue => <article key={issue.key} className="draft-card"><div><strong>待提交记录 {issue.id.slice(0, 8)}</strong><p role="alert">{issue.message}</p>
           <div className="button-row"><button onClick={() => setOriginalsOpen(true)}>从本机原片重新处理</button>
             <button disabled={!!uploading} onClick={() => { try { removeDamagedPhotoDelivery(owner, selected, issue.key); refreshPhotoQueue(); } catch(e) { setError(message(e)); } }}>移除这条损坏记录，保留原片</button></div></div></article>)}</>}
       cameraRecovery={Capacitor.isNativePlatform() ? <><div className="button-row"><button disabled={busy} onClick={() => void recoverCamera()}>读取上次相机照片</button>
+        {localPhotosEnabled && <button disabled={busy || !!uploading} onClick={() => void recoverGallery()}>恢复相册批次</button>}
         {cameraWaiting && <button disabled={busy} onClick={() => { try { clearUnfinishedCamera(owner); setCameraWaiting(false); } catch(e) { setError(message(e)); } }}>取消未完成的相机操作</button>}</div>
         {cameraFailures.map(({ result, message: reason }) => <article className="draft-card" key={result.id}><div><strong>上次照片暂时无法读取</strong>
           <p role="alert">{reason}。其他可读取的照片已继续恢复；这条引用仍保留。</p><div className="button-row">
@@ -529,18 +676,7 @@ function Home({
         disabled={!!uploading} onUpload={() => void upload(draft)}
         onRemove={() => void drafts.remove(draft.id).then(refreshDrafts).catch((e) => setError(message(e)))} />}
     ><FamilyLinks /></HomeView>
-    <input className="visually-hidden" ref={cameraInput} type="file" accept="image/jpeg,image/png,image/webp" capture="environment"
-      onChange={(e) => {
-        const file = e.target.files?.[0];
-        if (file) void savePhoto(file, captureStudent.current, file.name).catch((err) => setError(message(err)));
-        e.target.value = '';
-      }} />
-    <input className="visually-hidden" ref={galleryInput} type="file" accept="image/jpeg,image/png,image/webp"
-      onChange={(e) => {
-        const file = e.target.files?.[0];
-        if (file) void savePhoto(file, captureStudent.current, file.name).catch((err) => setError(message(err)));
-        e.target.value = '';
-      }} />
+    {fileInputs}
   </>;
 }
 

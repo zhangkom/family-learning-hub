@@ -129,13 +129,13 @@ export class FamilyApi {
     file: Blob;
     name: string;
     id: string;
-  }) {
+  }, signal?: AbortSignal) {
     const form = new FormData();
     form.set('studentId', draft.studentId);
     form.set('source', draft.source);
     form.set('clientRequestId', draft.id);
     form.set('file', draft.file, draft.name);
-    return this.request<{ scan: Scan }>('/scans', 'POST', form);
+    return this.request<{ scan: Scan }>('/scans', 'POST', form, signal);
   }
   async uploadProcessed(delivery: PhotoDelivery, signal?: AbortSignal) {
     const { upload, record } = delivery;

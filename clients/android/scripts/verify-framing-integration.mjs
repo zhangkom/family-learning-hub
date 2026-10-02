@@ -56,6 +56,7 @@ try {
   const chooser = page.waitForEvent('filechooser');
   await page.getByRole('button', { name: /相册选图/ }).click();
   await (await chooser).setFiles({ name: '多学科框题合成.png', mimeType: 'image/png', buffer: png });
+  await page.getByRole('button', { name: '完成选择，查看待上传', exact: true }).click();
   const uploadResponse = page.waitForResponse((r) => r.url() === api + '/scans' && r.request().method() === 'POST');
   await page.getByRole('button', { name: '确认并上传', exact: true }).click();
   const upload = await uploadResponse;

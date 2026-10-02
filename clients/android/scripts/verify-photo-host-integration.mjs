@@ -52,6 +52,7 @@ const readScan = async id => (await (await page.request.get(api + '/scans/' + id
 try {
   await page.goto(client); await page.getByLabel('当前学生').selectOption(student.id);
   await page.getByRole('button', { name: /拍照收题/ }).click();
+  await button('完成选择，逐张调整').click();
   await page.getByRole('heading', { name: '把题目拍清楚' }).waitFor();
   await button('取消，保留原片').click(); await button('本机原片').click();
   await button('继续处理').click();

@@ -24,6 +24,7 @@ type Props = {
   onUpdateAccount: (kind: AccountChange, value: string, currentPassword: string) => Promise<string>;
   renderDraft: (draft: Draft) => ReactNode; children: ReactNode;
   processedPending?: ReactNode; processedCount?: number; onOpenOriginals?: () => void; cameraRecovery?: ReactNode;
+  onOpenCloud?: () => void; batchUploads?: ReactNode;
 };
 
 export function HomeView(props: Props) {
@@ -75,13 +76,15 @@ export function HomeView(props: Props) {
         <section className="home-capture">
           <div className="home-capture-heading"><span className="eyebrow">错题 · 难题 · 手写过程</span><h1>收下每一次思考</h1></div>
           <div className="home-capture-actions">
-            <button type="button" className="capture-primary" disabled={busy || !student} onClick={() => props.onCapture('camera')}>
-              <Camera size={26} /><span><strong>拍照收题</strong><small>题目与手写过程</small></span>
+            <button type="button" className="capture-primary" disabled={busy || !!uploading || !student} onClick={() => props.onCapture('camera')}>
+              <Camera size={26} /><span><strong>拍照收题</strong><small>连续拍摄 · 最多 100 张</small></span>
             </button>
-            <button type="button" className="capture-secondary" disabled={busy || !student} onClick={() => props.onCapture('gallery')}>
-              <ImagePlus size={23} /><span><strong>相册选图</strong><small>从已有照片导入</small></span>
+            <button type="button" className="capture-secondary" disabled={busy || !!uploading || !student} onClick={() => props.onCapture('gallery')}>
+              <ImagePlus size={23} /><span><strong>相册选图</strong><small>多选导入 · 最多 100 张</small></span>
             </button>
           </div>
+          {props.onOpenCloud && <button className="cloud-drive-entry" disabled={busy || !!uploading || !student} onClick={props.onOpenCloud}>
+            <span><strong>批量上传图片</strong><small>图片云盘 · 原图保存 · 最多 100 张</small></span><ChevronRight size={20} /></button>}
         </section>
         <FeatureCatalog compact onSelect={(name) => {
           if (name === '错题本') { props.onLibraryMode('wrong'); navigate('library'); }
@@ -107,8 +110,9 @@ export function HomeView(props: Props) {
           <button disabled={refreshing || !student} onClick={props.onRefresh}><RefreshCw size={17} className={refreshing ? 'spin' : ''} />刷新</button>
         </div>
         {student ? <>
-          <div className="library-capture-actions"><button className="primary" disabled={busy} onClick={() => props.onCapture('camera')}><Camera size={18} />拍照收题</button><button disabled={busy} onClick={() => props.onCapture('gallery')}><ImagePlus size={18} />相册选图</button>
+          <div className="library-capture-actions"><button className="primary" disabled={busy || !!uploading} onClick={() => props.onCapture('camera')}><Camera size={18} />拍照收题</button><button disabled={busy || !!uploading} onClick={() => props.onCapture('gallery')}><ImagePlus size={18} />相册选图</button>
             {props.onOpenOriginals && <button disabled={busy} onClick={props.onOpenOriginals}>本机原片</button>}</div>
+          {props.onOpenCloud && <button className="cloud-drive-entry" disabled={busy || !!uploading} onClick={props.onOpenCloud}><span><strong>批量上传图片</strong><small>进入 {student.name} 的图片云盘</small></span><ChevronRight size={20} /></button>}
           {props.cameraRecovery}
           <nav className="library-modes" aria-label="题目分类">
             <button className={props.libraryMode === 'photos' ? 'selected' : ''} onClick={() => props.onLibraryMode('photos')}>全部照片 · {records.length}</button>
@@ -123,6 +127,7 @@ export function HomeView(props: Props) {
               <small>{new Date(question.wrongBook!.savedAt).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' })}</small>
             </button>) : <div className="empty-records"><FileImage size={30} /><p>还没有收录错题。打开一张照片，框题、选科后就能保存。</p><button onClick={() => props.onLibraryMode('photos')}>去照片里框题</button></div>}
           </section> : <>
+          {props.batchUploads}
           {!!props.processedCount && <section className="draft-section"><div className="section-line"><h2>处理图待提交 · {props.processedCount}</h2><span className="hint">尚未发送 · 原片留在本机</span></div><div className="draft-grid">{props.processedPending}</div></section>}
           {pending.length > 0 && <section className="draft-section"><div className="section-line"><h2>待上传照片 · {pending.length}</h2><span className="hint">仅保存在本机</span></div><div className="draft-grid">{pending.map(props.renderDraft)}</div></section>}
           <section className="records-section"><div className="section-line"><h2>已保存资料 · {records.length}</h2></div>
@@ -151,7 +156,7 @@ export function HomeView(props: Props) {
         </section>
         <PermissionInfo />
         <section className="profile-card"><h2>账号设置</h2><div className="button-row"><button disabled={busy || !!uploading} onClick={() => setAccountChange('username')}>修改用户名</button><button disabled={busy || !!uploading} onClick={() => setAccountChange('password')}>修改密码</button></div></section>
-        <section className="profile-card profile-storage"><h2>资料与功能</h2><p>确认上传的照片与校对结果保存在家庭服务器，按孩子、日期和科目关联。使用本机照片处理时，上传处理图，原片留在手机。</p><p className="hint">卸载应用或清除应用数据会删除本机原片和待提交照片。框题选科后可存错题本并请求 AI 讲解，分析结果需核对。</p></section>
+        <section className="profile-card profile-storage"><h2>资料与功能</h2><p>拍题支持每批 100 张，处理后上传确认的图片，原片留在手机。“图片云盘”可将选中的手机原图完整复制到家庭服务器，按当前孩子保存，不自动识别。</p><p className="hint">卸载应用或清除应用数据会删除本机原片和待提交照片；已上传成功的云盘照片仍保留在服务器。框题选科后可存错题本并请求 AI 讲解，分析结果需核对。</p></section>
         {props.children}
       </div>}
     </main>

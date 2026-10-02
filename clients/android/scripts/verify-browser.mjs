@@ -279,6 +279,7 @@ try {
       'base64',
     ),
   });
+  await page.getByRole('button', { name: '完成选择，查看待上传', exact: true }).click();
   await page.getByRole('button', { name: '确认并上传' }).waitFor();
   await page.getByLabel('当前学生').selectOption('xiaobao');
   assert.equal(await page.getByLabel('当前学生').inputValue(), 'xiaobao');

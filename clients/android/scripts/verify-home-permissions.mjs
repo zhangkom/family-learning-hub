@@ -90,10 +90,12 @@ try {
   await page.locator('.home-record-card').first().waitFor();
   await page.getByRole('button', { name: /拍照收题/ }).click();
   await page.getByText('系统相机未获允许。可以从相册选图，或在系统设置中检查相机的权限后重试。', { exact: true }).waitFor();
+  await page.getByRole('button', { name: '返回题目资料', exact: true }).click();
   await page.getByRole('button', { name: /相册选图/ }).click();
   assert.equal(await page.getByRole('alert').count(), 0);
   await page.evaluate(() => { window.galleryMode = 'photo'; });
-  await page.getByRole('button', { name: /相册选图/ }).click();
+  await page.getByRole('button', { name: '从相册添加', exact: true }).click();
+  await page.getByRole('button', { name: '完成选择，查看待上传', exact: true }).click();
   await page.getByRole('button', { name: '确认并上传', exact: true }).waitFor();
   assert.equal(await page.locator('.bottom-nav button[aria-current="page"]').textContent(), '题目');
   await page.getByLabel('当前学生').selectOption('student-b');
