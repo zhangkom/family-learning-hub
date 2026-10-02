@@ -73,7 +73,7 @@ try {
   await page.getByText('6 m', { exact: true }).waitFor({ timeout: 90000 }); await button('核对无误').click();
   await button('采用识别题干，再校对').click(); await page.locator('.manual-review > summary').click();
   await page.getByLabel('知识点（用逗号分隔）').fill('匀速运动，路程计算'); await page.getByLabel('完整题干', { exact: true }).focus();
-  await page.getByLabel('这道题的条件、区域和可见作答已核对').check(); await button('保存校对').first().click();
+  await page.getByLabel('题干与题框已核对').check(); await button('保存校对').first().click();
   await button('举一反三').waitFor(); await button('举一反三').click(); await button('生成3道变式').click(); await page.getByRole('alert').waitFor(); await button('生成3道变式').click(); await waitTasks(3);
   const practice = (await readSessions()).find(s => s.mode === 'practice'); assert.ok(practice); assert.equal(practice.source.scanId, scan.id);
   let session = await readSession(practice.id); assert.equal(session.tasks.length, 3); assert.ok(session.tasks.every(t => !t.solution && !t.answer && !t.hints.length));

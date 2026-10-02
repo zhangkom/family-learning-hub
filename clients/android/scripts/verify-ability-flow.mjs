@@ -130,7 +130,7 @@ try {
     await nav('首页').click(); await page.getByRole('navigation', { name: '资料管理' }).getByRole('button', { name: /^原题照片/ }).click();
     await page.getByRole('button', { name: new RegExp(`能力图谱-${fixture.subject}-${fixture.number}\\.jpg`) }).click();
     await page.getByRole('region', { name: '当前题目原题' }).getByRole('img', { name: '原题题干与配图', exact: true }).waitFor();
-    await page.getByLabel('这道题的条件、区域和可见作答已核对').check();
+    await page.getByLabel('题干与题框已核对').check();
     await button('保存校对').click(); await page.getByText('已保存题目框和手写步骤', { exact: true }).waitFor();
     const saved = page.waitForResponse(response => response.url().endsWith('/wrong-book') && response.request().method() === 'POST');
     await button('只存错题本').click(); fixture.scan = (await (await saved).json()).scan;
@@ -189,7 +189,7 @@ try {
   await page.locator('.weakness-evidence-actions').first().getByRole('button', { name: '回看原题', exact: true }).click();
   await page.locator('.manual-review > summary').click();
   const revisedPrompt = chosenSource.prompt + '（已再次核对题目单位。）';
-  await page.getByLabel('完整题干', { exact: true }).fill(revisedPrompt); await page.getByLabel('这道题的条件、区域和可见作答已核对').check();
+  await page.getByLabel('完整题干', { exact: true }).fill(revisedPrompt); await page.getByLabel('题干与题框已核对').check();
   await button('保存校对').click(); await page.getByText('已保存题目框和手写步骤', { exact: true }).waitFor(); await button('返回资料列表').click();
   await page.locator('.weakness-stale').waitFor();
   await page.locator('.weakness-evidence > summary').first().click();

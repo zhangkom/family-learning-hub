@@ -639,8 +639,6 @@ export function Review({
                     !question.regions.length ||
                     question.answerSteps.some(
                       (s) =>
-                        s.uncertain ||
-                        s.author === 'unknown' ||
                         !s.regionIds.length ||
                         !s.text.trim(),
                     )
@@ -649,11 +647,12 @@ export function Review({
                     update(question.id, { confirmed: e.target.checked })
                   }
                 />
-                这道题的条件、区域和可见作答已核对
+                题干与题框已核对
               </label>
               <p className="hint">
                 进入练习前请核对题干、题框和原作答；需要修改时展开下方“核对题干和原作答”。
               </p>
+              {question.answerSteps.some(s => s.uncertain || s.author === 'unknown') && <p className="hint">题干和题框核对后可继续学习；待确认的笔迹会保留标记，不作为判断个人错因的依据。</p>}
               {dirty && <button disabled={busy || conflict || hasPendingAnalysis} onClick={() => void save()}>保存这次校对</button>}
               <div className="question-learning-actions"><button disabled={dirty || busy || conflict || hasPendingAnalysis || !question.confirmed} onClick={() => onLearn('practice', scan, question.id)}>举一反三</button><button disabled={dirty || busy || conflict || hasPendingAnalysis || !question.confirmed} onClick={() => onLearn('challenge', scan, question.id)}>难题突破</button></div>
               {dirty && <p className="hint">保存校对后可进入练习与突破。</p>}

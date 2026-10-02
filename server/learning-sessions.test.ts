@@ -118,6 +118,29 @@ describe('learning sessions cross-module workflow', () => {
 });
 
 describe('learning model validation',()=>{
+  it.each(['practice', 'challenge', 'retest'] as const)('omits unconfirmed writing from the actual %s model request without changing the stored original', async mode => {
+    const steps = [
+      { id: 'trusted', order: 0, author: 'student' as const, text: '已确认学生步骤：先代入 x=1', uncertain: false, crossedOut: false, regionIds: ['r1'] },
+      { id: 'unknown', order: 1, author: 'unknown' as const, text: '未知作者笔迹不能当学生作答', uncertain: false, crossedOut: false, regionIds: ['r1'] },
+      { id: 'uncertain', order: 2, author: 'student' as const, text: '模糊学生笔迹不能确定内容', uncertain: true, crossedOut: false, regionIds: ['r1'] },
+      { id: 'crossed', order: 3, author: 'student' as const, text: '已划去步骤不应作为当前作答', uncertain: false, crossedOut: true, regionIds: ['r1'] },
+      { id: 'teacher', order: 4, author: 'teacher' as const, text: '老师批改不能当学生原作答', uncertain: false, crossedOut: false, regionIds: ['r1'] },
+    ];
+    scan = (await ok(`scans/${scan.id}/review`, 'PUT', { revision: scan.revision, questions: scan.questions.map(q => ({ ...q, confirmed: true, answerSteps: steps })) })).scan;
+    const session = await start(mode === 'challenge' ? 'challenge' : 'practice'), stored = learningById(store, 'a', session.id);
+    const before = JSON.stringify(stored.sourceRecord), requests: { messages: { content: string | { text: string }[] }[] }[] = [];
+    const count = mode === 'practice' ? 3 : 1;
+    const responses = [Array.from({ length: count }, (_, index) => draft(index)), Array.from({ length: count }, (_, index) => ({ approved: true, reason: '合成核验通过', answer: String(index + 6), explanation: '合成计算一致' }))];
+    vi.stubGlobal('fetch', vi.fn(async (_url, options) => { requests.push(JSON.parse(options.body)); return Response.json({ choices: [{ finish_reason: 'stop', message: { content: JSON.stringify({ questions: responses.shift() }) } }] }); }));
+    await prepareLearning('a', stored, mode === 'retest', {});
+    const text = (requests[0].messages[1].content as { text: string }[])[0].text;
+    const input = JSON.parse(text.slice(text.indexOf('\n') + 1));
+    expect(input.source.answerSteps).toEqual([steps[0]]);
+    expect(requests[0].messages[0].content).toContain('confirmed只表示题干与题框已核对');
+    expect(requests[0].messages[0].content).toContain('author=unknown');
+    expect(JSON.stringify(stored.sourceRecord)).toBe(before);
+    expect(learningById(store, 'a', session.id).sourceRecord.structuredQuestions![0].answerSteps).toEqual(steps);
+  });
   it('rejects missing images, duplicate questions, fabricated grading evidence and empty confirmations',()=>{
     expect(()=>validateLearningTasks([{...draft(),prompt:'如图，求面积'}],1,'practice')).toThrow();
     expect(()=>validateLearningTasks([draft(),draft(),draft()],3,'practice')).toThrow();
