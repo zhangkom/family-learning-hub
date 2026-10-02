@@ -54,7 +54,9 @@ const environment = {
   FAMILY_REGISTRATION_ENABLED: 'true',
   FAMILY_TRUST_PROXY: 'false',
   OPENAI_API_KEY: '',
-  FAMILY_MOBILE_ORIGINS: 'https://localhost,http://127.0.0.1:3178',
+  FAMILY_MOBILE_ORIGINS:
+    process.env.FAMILY_MOBILE_TEST_ORIGINS ||
+    'https://localhost,http://127.0.0.1:3178',
 };
 const server = spawn(process.execPath, [resolve(runtime, 'server.js')], {
   windowsHide: true,

@@ -9,6 +9,7 @@ import type { FamilyStore } from './family-store';
 import { ownedScan } from './mobile-service';
 import { readScanFile } from './scan-files';
 import workerSource from './candidate-worker.cjs?raw';
+import { acquireImageProcess } from './image-process-slot';
 
 type Detection = Omit<CandidateRegions, 'scanId' | 'revision'>;
 // vinext rewrites import.meta.url to the build-time source path. The standalone
@@ -77,21 +78,37 @@ export class CandidateRunner {
       );
     if (signal?.aborted)
       return Promise.reject(new HttpError(408, '请求已取消'));
+    const releaseImageProcess = acquireImageProcess();
+    if (!releaseImageProcess)
+      return Promise.reject(
+        new HttpError(503, '图片处理正忙，请稍后重试或手动框题'),
+      );
     this.busy = true;
     return new Promise((resolve, reject) => {
       let child: ChildProcessWithoutNullStreams | undefined,
-        done = false;
+        done = false,
+        closed = false;
+      let outcomeError: HttpError | undefined,
+        outcomeValue: Detection | undefined;
+      const settle = () => {
+        if (outcomeError) reject(outcomeError);
+        else resolve(outcomeValue!);
+      };
       let image: Detection['image'] | undefined, result: Detection | undefined;
       let pending = '',
         outputBytes = 0;
       const finish = (error?: HttpError, value?: Detection) => {
         if (done) return;
         done = true;
+        outcomeError = error;
+        outcomeValue = value;
         clearTimeout(timer);
         signal?.removeEventListener('abort', abort);
-        if (child && child.exitCode === null) child.kill('SIGKILL');
-        if (error) reject(error);
-        else resolve(value!);
+        // A completed request must not leave a decoder occupying the shared
+        // slot. Wait for close after killing a child, including invalid input.
+        if (child && !closed) {
+          if (child.exitCode === null) child.kill('SIGKILL');
+        } else settle();
       };
       const abort = () => finish(new HttpError(408, '请求已取消'));
       const timer = setTimeout(() => {
@@ -116,6 +133,7 @@ export class CandidateRunner {
           const bytes = await load();
           if (done) {
             this.busy = false;
+            releaseImageProcess();
             return;
           }
           if (bytes.length > MAX_SCAN_BYTES)
@@ -178,8 +196,11 @@ export class CandidateRunner {
             }
           });
           child.on('close', (code) => {
+            closed = true;
             this.busy = false;
-            if (!done)
+            releaseImageProcess();
+            if (done) settle();
+            else
               finish(
                 code === 0 && result
                   ? undefined
@@ -194,7 +215,10 @@ export class CandidateRunner {
             }),
           );
         } catch (error) {
-          if (!child) this.busy = false;
+          if (!child) {
+            this.busy = false;
+            releaseImageProcess();
+          }
           finish(
             error instanceof HttpError
               ? error

@@ -10,6 +10,10 @@ import {
   rmSync,
   chmodSync,
   lstatSync,
+  linkSync,
+  openSync,
+  readSync,
+  closeSync,
 } from 'node:fs';
 import { resolve, join, sep } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
@@ -25,12 +29,14 @@ const name = `family-${new Date().toISOString().replace(/[:.]/g, '-')}`;
 const staging = join(directory, `.pending-${randomUUID()}`);
 mkdirSync(staging, { mode: 0o700 });
 const manifest = { version: 1, createdAt: new Date().toISOString(), files: [] };
-function record(relative) {
+function record(relative, verifiedSha256) {
   const target = join(staging, relative);
   if (process.platform !== 'win32') chmodSync(target, 0o600);
   manifest.files.push({
     path: relative,
-    sha256: createHash('sha256').update(readFileSync(target)).digest('hex'),
+    sha256:
+      verifiedSha256 ||
+      createHash('sha256').update(readFileSync(target)).digest('hex'),
   });
 }
 // Metadata is replaced atomically by the app, and originals are immutable.
@@ -108,6 +114,132 @@ if (existsSync(database)) {
   }
   record('family.sqlite');
 }
+// Cloud originals are immutable and are published before their SQLite receipt.
+// Enumerate the *backed-up* DB, so no committed cloud receipt lacks its files.
+// Link only to a verified prior BACKUP, never to live data. Rotation can remove
+// any snapshot without losing files retained by another snapshot.
+function fileHash(path) {
+  const state = lstatSync(path);
+  if (!state.isFile() || state.isSymbolicLink())
+    throw new Error('Unsafe cloud backup file');
+  const fd = openSync(path, 'r'),
+    hash = createHash('sha256'),
+    buffer = Buffer.alloc(65536);
+  try {
+    let size;
+    while ((size = readSync(fd, buffer, 0, buffer.length, null)))
+      hash.update(buffer.subarray(0, size));
+    return hash.digest('hex');
+  } finally {
+    closeSync(fd);
+  }
+}
+function plainDirectory(path) {
+  const state = lstatSync(path);
+  if (!state.isDirectory() || state.isSymbolicLink())
+    throw new Error('Unsafe cloud backup directory');
+}
+const previousName = readdirSync(directory)
+  .filter((x) => /^family-\d{4}-\d{2}-\d{2}T[\dZ-]+$/.test(x))
+  .sort()
+  .at(-1);
+if (existsSync(join(staging, 'family.sqlite'))) {
+  const snapshot = new DatabaseSync(join(staging, 'family.sqlite'), {
+    readOnly: true,
+  });
+  try {
+    if (
+      snapshot
+        .prepare(
+          "SELECT 1 FROM sqlite_master WHERE type='table' AND name='cloud_photos'",
+        )
+        .get()
+    ) {
+      for (const row of snapshot
+        .prepare('SELECT id,account_id,body FROM cloud_photos')
+        .iterate()) {
+        const photo = JSON.parse(String(row.body)),
+          id = String(row.id);
+        if (
+          !/^[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(id) ||
+          photo.id !== id ||
+          !/^[a-f0-9]{64}$/.test(photo.sha256) ||
+          !Number.isSafeInteger(photo.size) ||
+          photo.size < 1 ||
+          photo.size > 32 * 1024 * 1024
+        )
+          throw new Error('Invalid cloud receipt');
+        const owner = createHash('sha256')
+          .update(String(row.account_id))
+          .digest('hex');
+        const relative = `${owner}/cloud-photos/${id}`,
+          input = join(root, relative),
+          target = join(staging, relative);
+        for (const path of [
+          root,
+          join(root, owner),
+          join(root, owner, 'cloud-photos'),
+          input,
+        ])
+          plainDirectory(path);
+        const metadata = join(input, 'record.json');
+        if (
+          !lstatSync(metadata).isFile() ||
+          lstatSync(metadata).isSymbolicLink() ||
+          readFileSync(metadata, 'utf8') !== row.body
+        )
+          throw new Error('Cloud metadata integrity failure');
+        const original = join(input, 'original');
+        if (
+          lstatSync(original).size !== photo.size ||
+          fileHash(original) !== photo.sha256
+        )
+          throw new Error('Cloud original integrity failure');
+        mkdirSync(target, { recursive: true, mode: 0o700 });
+        writeFileSync(join(target, 'record.json'), String(row.body), {
+          mode: 0o600,
+        });
+        let reused = false;
+        if (previousName) {
+          const previous = join(directory, previousName),
+            candidate = join(previous, relative, 'original');
+          if (existsSync(candidate)) {
+            for (const path of [
+              previous,
+              join(previous, owner),
+              join(previous, owner, 'cloud-photos'),
+              join(previous, relative),
+            ])
+              plainDirectory(path);
+            if (
+              lstatSync(candidate).size === photo.size &&
+              fileHash(candidate) === photo.sha256
+            ) {
+              try {
+                linkSync(candidate, join(target, 'original'));
+                reused = true;
+              } catch (error) {
+                if (
+                  !['EXDEV', 'EPERM', 'EACCES', 'EMLINK'].includes(error.code)
+                )
+                  throw error;
+              }
+            }
+          }
+        }
+        if (!reused) {
+          copyFileSync(original, join(target, 'original'));
+          if (fileHash(join(target, 'original')) !== photo.sha256)
+            throw new Error('Cloud backup copy failed');
+        }
+        record(`${relative}/original`, photo.sha256);
+        record(`${relative}/record.json`);
+      }
+    }
+  } finally {
+    snapshot.close();
+  }
+}
 writeFileSync(
   join(staging, 'manifest.json'),
   JSON.stringify(manifest, null, 2),
@@ -128,5 +260,5 @@ for (const old of backups.slice(30)) {
   rmSync(target, { recursive: true });
 }
 console.log(
-  `Verified private backup: ${name}, ${manifest.files.length} files (database, scan originals/metadata and model audits).`,
+  `Verified private backup: ${name}, ${manifest.files.length} files (database, scan/cloud originals/metadata and model audits).`,
 );
