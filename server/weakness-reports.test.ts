@@ -226,6 +226,86 @@ describe('weakness model grounding', () => {
     expect(validateWeaknessResult(resultFor(saved), saved).focuses[0].basis).toBe('wrong_question_pattern');
     expect(validateWeaknessResult([{ summary: '共同方向证据不足', focuses: [], limitations: ['请补充同科目的其他错题与作答。'] }], saved).focuses).toEqual([]);
   });
+  it('accepts narrowly stated abstentions and future prevention without treating them as observed errors', async () => {
+    const r = await start(), saved = weaknessById(store, 'a', r.id), response = resultFor(saved);
+    response[0].summary = '这是收录题目的待核对学习建议；无法确定学生是否出现计算错误。';
+    response[0].focuses[0].reason = '两题共同涉及代入条件，不能据此判断学生存在概念混淆。';
+    response[0].focuses[0].practiceDirection = '练习时核对符号，避免计算错误。';
+    response[0].focuses[0].evidence[0].reason = '题干给出代入条件，不能判断概念混淆。';
+    response[0].limitations = ['一次正确不代表完全掌握。', '一次复测正确不代表永久掌握。', '现有材料不能证明已经掌握。'];
+    const result = validateWeaknessResult(response, saved);
+    expect(result.focuses[0].reason).toBe(response[0].focuses[0].reason);
+    expect(result.limitations).toEqual(response[0].limitations);
+  });
+  it.each([
+    ['reason', '不能判断概念混淆，但学生确实不理解这些条件。'],
+    ['reason', '不能判断概念混淆但学生确实不理解这些条件。'],
+    ['reason', '不能排除概念混淆。'],
+    ['reason', '不能判断没有计算错误。'],
+    ['practiceDirection', '避免计算错误，也说明学生经常粗心。'],
+    ['practiceDirection', '学生没有避免计算错误。'],
+    ['summary', '这些题表明学生理解不足。'],
+    ['limitations', '无法确定学生是否出现计算错误，但这位学生基础薄弱。'],
+    ['limitations', '一次正确不代表完全掌握，但该学生已经掌握。'],
+    ['limitations', '一次正确不代表完全掌握但学生天生学不会。'],
+    ['knowledgePoints', '概念混淆'],
+    ['evidenceReason', '这些条件证明学生计算能力差。'],
+  ])('still rejects unsupported claims in %s even beside a disclaimer: %s', async (field, value) => {
+    const r = await start(), saved = weaknessById(store, 'a', r.id), response = resultFor(saved), focus = response[0].focuses[0];
+    if (field === 'summary') response[0].summary = value;
+    else if (field === 'limitations') response[0].limitations = [value];
+    else if (field === 'knowledgePoints') focus.knowledgePoints = [value];
+    else if (field === 'evidenceReason') focus.evidence[0].reason = value;
+    else if (field === 'reason') focus.reason = value;
+    else focus.practiceDirection = value;
+    expect(() => validateWeaknessResult(response, saved)).toThrow('已拦下');
+  });
+  it('runs a three-question physics review sample with unknown handwriting through both model passes and leaves all axes unscored', async () => {
+    // Entirely synthetic: reproduces the evidence shape, never private photos or text.
+    const questions = [1, 2, 3].map((n): Question => ({ ...question(n, '物理'), prompt: `物体以 ${n + 1} m/s 的恒定速度运动 4 s，求路程。`, knowledgePoints: ['匀速运动'],
+      answerSteps: [{ id: `s${n}`, order: 0, text: '待确认笔迹仅供合成测试', author: 'unknown', crossedOut: false, uncertain: false, regionIds: [] }],
+      tutoring: { status: 'needs_review' as const, result: { transcribedPrompt: '', referenceAnswer: `${(n + 1) * 4} m`, explanation: '路程等于速度乘时间。',
+        answerEvidence: [], errorHypotheses: [], uncertainties: [], generatedAt: '2026-10-02T00:00:00Z', needsReview: true as const },
+        review: { status: 'confirmed' as const, reviewedAt: '2026-10-02T00:01:00Z', resultGeneratedAt: '2026-10-02T00:00:00Z' } } }));
+    update([...questions, ...[4, 5, 6].map(n => ({ ...question(n, '物理'), prompt: '', confirmed: false })), question(7, '化学'), question(8, '语文')]);
+    const r = await start('物理'), saved = weaknessById(store, 'a', r.id), requests: Record<string, unknown>[] = [];
+    expect(saved.coverage).toMatchObject({ total: 6, eligible: 3, selected: 3, needsReview: 3 });
+    expect(saved.input.every(s => s.studentEvidence.length === 0)).toBe(true);
+    const response = [{ summary: '这些收录题目共同涉及匀速运动，是待核对的练习建议。', focuses: [{ title: '联系速度、时间与路程', subject: '物理', dimensionId: 'calculation',
+      knowledgePoints: ['匀速运动'], priority: 'medium', basis: 'wrong_question_pattern', reason: '三题都提供速度与时间，可以练习条件和关系式之间的联系。',
+      practiceDirection: '列出条件与单位后再代入，避免计算错误。', evidence: saved.input.map(s => ({ sourceId: s.id, kind: 'question', quote: s.prompt, reason: '题干要求由速度和时间求路程。' })) }],
+      limitations: ['缺少经确认的独立作答，个人能力与具体错因待评估。'] }];
+    vi.stubGlobal('fetch', vi.fn(async (_url, options) => {
+      const body = JSON.parse(options.body); requests.push(body);
+      const contextText = body.messages[1].content[0].text as string;
+      const context = JSON.parse(contextText.slice(contextText.indexOf('\n') + 1));
+      expect(context.evidencePolicy).toContain('收录到错题本只表示希望复习，不证明这道题实际做错');
+      expect(context.evidencePolicy).toContain('reviewedAnswer是核对过的参考答案，不是学生的作答表现');
+      expect(context.subjectEvidence).toEqual([{ subject: '物理', questionCount: 3, sourcesWithStudentEvidence: 0, allowedBasis: ['wrong_question_pattern'] }]);
+      expect(context.sources).toEqual(saved.input); expect(JSON.stringify(body)).not.toContain('待确认笔迹仅供合成测试');
+      const isReview = String(body.messages[0].content).includes('依据核验老师');
+      expect(String(body.messages[0].content)).toContain('正确');
+      return Response.json({ choices: [{ finish_reason: 'stop', message: { content: JSON.stringify({ questions: isReview ? [{ approved: true, reason: '合成复核：仅共同考点建议，无个人错误判断。' }] : response }) } }] });
+    }));
+    await runNextWeaknessJob(store);
+    const done = (await get(r)).report;
+    expect(done.status).toBe('ready'); expect(requests).toHaveLength(2);
+    expect(done.result!.axes).toHaveLength(6); expect(done.result!.axes.every(a => a.score === null && a.evidenceCount === 0 && a.confidence === 'insufficient')).toBe(true);
+    expect(done.result!.focuses[0].evidence).toHaveLength(3);
+    expect(JSON.stringify(requests)).not.toContain('image_url');
+  });
+  it('does not publish even a structurally valid non-claim when the independent semantic review rejects it', async () => {
+    const r = await start(), saved = weaknessById(store, 'a', r.id), response = resultFor(saved);
+    response[0].focuses[0].practiceDirection = '避免计算错误。';
+    const fetch = vi.fn(async (_url, options) => {
+      const body = JSON.parse(options.body), isReview = String(body.messages[0].content).includes('依据核验老师');
+      return Response.json({ choices: [{ finish_reason: 'stop', message: { content: JSON.stringify({ questions: isReview ? [{ approved: false, reason: '合成复核拒绝：练习方向与证据关联不足。' }] : response }) } }] });
+    });
+    vi.stubGlobal('fetch', fetch); await runNextWeaknessJob(store);
+    const failed = (await get(r)).report;
+    expect(fetch).toHaveBeenCalledTimes(2); expect(failed).toMatchObject({ status: 'failed', error: '分析依据未通过复核，请校对错题材料后重试' });
+    expect(failed.result).toBeUndefined();
+  });
   it('accepts specific tentative error directions only with actual writing from at least two questions', async () => {
     update([1, 2].map(n => ({ ...question(n), answerSteps: [{ id: `s${n}`, order: 0, text: `x+4=${n}+4=4`, author: 'student', crossedOut: false, uncertain: false, regionIds: [] }] })));
     const r = await start(), saved = weaknessById(store, 'a', r.id), response = resultFor(saved, 'answer_evidence');
