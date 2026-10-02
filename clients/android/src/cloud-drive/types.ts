@@ -16,7 +16,7 @@ export type UploadJob = CloudScope & {
   source: OriginalSource; status: UploadStatus; message?: string; sha256?: string; receipt?: CloudPhoto;
 };
 export type PickedOriginal = { id?: string; name: string; size: number; mimeType: string; source: OriginalSource };
-export type PickResult = { items: PickedOriginal[]; failures: string[]; cancelled?: boolean; acknowledge?: () => Promise<void> };
+export type PickResult = { items: PickedOriginal[]; failures: string[]; cancelled?: boolean; acknowledge?: () => Promise<void>; discardRecovery?: () => Promise<void> };
 export type UploadBytes = { file: Blob; sha256: string };
 export type CloudPage = { photos: CloudPhoto[]; nextCursor?: string | null; storage?: { usedBytes: number; limitBytes: number } };
 export interface DriveStore {
