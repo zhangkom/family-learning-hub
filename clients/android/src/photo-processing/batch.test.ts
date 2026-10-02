@@ -90,7 +90,10 @@ describe('durable sequential original batches', () => {
       if (batch.items[0].status === 'imported') abort.abort();
     } });
     expect(result.cancelled).toBe(true); expect(result.originals).toHaveLength(1);
-    expect(mocks.native.importBatchItem).toHaveBeenCalledTimes(1); expect(state.state).toBe('cancelled');
+    expect(mocks.native.importBatchItem).toHaveBeenCalledTimes(1); expect(state.state).toBe('ready');
+    expect(mocks.native.cancelOriginalBatch).not.toHaveBeenCalled(); expect(result.selectedCount).toBe(100);
+    const resumed = await resumeOriginalBatch('owner', 'student', state.batchId);
+    expect(resumed.originals).toHaveLength(100); expect(state.state).toBe('completed');
   });
   it('returns picker cancellation without importing and can recover saved originals from a cancelled batch', async () => {
     state.state = 'cancelled'; state.items = [];

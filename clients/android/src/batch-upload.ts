@@ -8,16 +8,14 @@ export async function runPhotoBatch<T extends { id: string }>(items: readonly T[
   const progress: BatchProgress = { total: items.length, completed: 0, succeeded: 0, failed: [], stopped: false };
   const emit = () => report({ ...progress, failed: [...progress.failed] });
   emit();
-  groups: for (let offset = 0; offset < items.length; offset += 200) {
-   for (const item of items.slice(offset, offset + 200)) {
-    if (signal.aborted) { progress.stopped = true; break groups; }
+  for (const item of items) {
+    if (signal.aborted) { progress.stopped = true; break; }
     try { await send(item, signal); progress.succeeded++; }
     catch (error) {
-      if (signal.aborted) { progress.stopped = true; break groups; }
+      if (signal.aborted) { progress.stopped = true; break; }
       progress.failed.push({ id: item.id, reason: error instanceof Error ? error.message : '上传未完成' });
     }
     progress.completed++; emit();
-  }
   }
   emit(); return progress;
 }

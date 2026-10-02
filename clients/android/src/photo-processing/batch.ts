@@ -2,7 +2,7 @@ import { photoPlugin } from './native-plugin';
 import { getOriginal, photoProcessingAvailable, validateOriginal, type OriginalPhoto } from './index';
 
 export type PhotoBatchPurpose = 'processed' | 'cloud-original';
-// Picker selections are metadata. Upload grouping does not cap the number selected.
+// Picker selections are metadata; no application photo-count cap.
 const batchLimit = () => 2147483647;
 export type NativePhotoBatch = {
   schemaVersion: 1; batchId: string; studentId: string; purpose: PhotoBatchPurpose;
@@ -12,6 +12,7 @@ export type NativePhotoBatch = {
 export type OriginalBatchResult = {
   batchId: string; originals: OriginalPhoto[];
   failures: { index: number; originalId: string; message: string }[]; cancelled: boolean;
+  selectedCount: number;
 };
 export type OriginalBatchOptions = {
   purpose?: PhotoBatchPurpose; folderRange?: boolean; albumRange?: boolean; signal?: AbortSignal; onProgress?: (batch: NativePhotoBatch) => void;
@@ -48,7 +49,7 @@ export function validatePhotoBatch(batch: NativePhotoBatch, studentId: string, b
     throw new Error('照片批次记录或学生归属无效');
   return batch;
 }
-export async function pickOriginalBatch(owner: string, studentId: string, limit = 200, batchPurpose: PhotoBatchPurpose = 'processed', folderRange = false, albumRange = false) {
+export async function pickOriginalBatch(owner: string, studentId: string, limit = batchLimit(), batchPurpose: PhotoBatchPurpose = 'processed', folderRange = false, albumRange = false) {
   scope(owner, studentId); purpose(batchPurpose);
   if (folderRange && albumRange) throw new Error('请选择一种相册方式');
   if (!Number.isInteger(limit) || limit < 1 || limit > batchLimit()) throw new Error('照片分组参数无效');
@@ -97,11 +98,10 @@ export async function resumeOriginalBatch(owner: string, studentId: string, batc
   purpose(options.purpose);
   if (options.purpose && batch.purpose !== options.purpose) throw new Error('照片批次用途不匹配');
   if (batch.state === 'selecting') throw new Error('上次系统相册尚未返回，可返回相册完成选择或取消该批次');
-  const result: OriginalBatchResult = { batchId, originals: [], failures: [], cancelled: batch.state === 'cancelled' };
+  const result: OriginalBatchResult = { batchId, originals: [], failures: [], cancelled: batch.state === 'cancelled', selectedCount: batch.items.length };
   options.onProgress?.(batch);
   for (const item of batch.items) {
     if (options.signal?.aborted) {
-      if (batch.state !== 'cancelled') batch = await cancelOriginalBatch(owner, studentId, batchId);
       result.cancelled = true; options.onProgress?.(batch); break;
     }
     if (batch.state === 'cancelled' && item.status !== 'imported') continue;
@@ -121,11 +121,11 @@ export async function resumeOriginalBatch(owner: string, studentId: string, batc
     options.onProgress?.(batch);
   }
   if (options.signal?.aborted && !result.cancelled) {
-    await cancelOriginalBatch(owner, studentId, batchId); result.cancelled = true;
+    result.cancelled = true;
   }
   return result;
 }
-export async function pickOriginals(owner: string, studentId: string, limit = 200, options: OriginalBatchOptions = {}): Promise<OriginalBatchResult> {
+export async function pickOriginals(owner: string, studentId: string, limit = batchLimit(), options: OriginalBatchOptions = {}): Promise<OriginalBatchResult> {
   options.signal?.throwIfAborted();
   const batch = await pickOriginalBatch(owner, studentId, limit, options.purpose, options.folderRange, options.albumRange);
   return resumeOriginalBatch(owner, studentId, batch.batchId, options);

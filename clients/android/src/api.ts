@@ -8,6 +8,7 @@ export class ApiError extends Error {
   constructor(
     message: string,
     public status: number,
+    public code?: string,
   ) {
     super(message);
   }
@@ -72,6 +73,7 @@ export class FamilyApi {
       throw new ApiError(
         data.error || `请求未完成（${response.status}）`,
         response.status,
+        data.code,
       );
     return data as T;
     } finally { clearTimeout(timer); signal?.removeEventListener('abort', forwardAbort); }

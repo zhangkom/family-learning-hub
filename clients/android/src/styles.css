@@ -973,7 +973,7 @@ footer {
   }
   .topbar {
     height: 70px;
-    padding: env(safe-area-inset-top, 0px) 20px 0;
+    padding: 0px 20px 0;
   }
   .brand {
     font-size: 19px;
@@ -1154,7 +1154,7 @@ footer {
     font-size: 11px;
   }
   footer {
-    margin-bottom: calc(12px + env(safe-area-inset-bottom));
+    margin-bottom: calc(12px + var(--app-safe-bottom));
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -1352,7 +1352,7 @@ summary:focus-visible {
 .topbar {
   height: auto;
   min-height: 76px;
-  padding: max(10px, env(safe-area-inset-top, 0px)) 32px 10px;
+  padding: max(10px, 0px) 32px 10px;
   border-bottom: 1px solid var(--line);
   gap: 12px;
 }
@@ -1367,7 +1367,7 @@ summary:focus-visible {
 }
 .dashboard {
   max-width: 960px;
-  padding: 24px 24px calc(100px + env(safe-area-inset-bottom, 0px));
+  padding: 24px 24px calc(100px + var(--app-safe-bottom));
 }
 .home-dashboard {
   max-width: 760px;
@@ -1562,6 +1562,13 @@ summary:focus-visible {
   padding: 9px 12px;
   border-radius: 12px;
 }
+.learning-totals { font-size:12px; color:var(--muted); margin:0 0 12px; }
+.question-library .subject-section { margin:10px 0 16px; }
+.question-library .subject-grid { display:flex; flex-wrap:wrap; gap:6px; }
+.question-library .subject-grid button { display:flex; align-items:center; gap:5px; padding:8px 10px; min-height:44px; font-size:12px; border-radius:10px; }
+.home-dashboard .draft-grid { max-height:46dvh; overflow:auto; overscroll-behavior:contain; padding:2px; }
+.home-dashboard .home-capture-heading h1, .guest-capture .home-capture-heading h1 { font-size:23px; margin:0; }
+.home-dashboard .draft-section { margin-top:14px; }
 .student-switcher .subject-tag {
   flex: none;
   font-size: 12px;
@@ -1786,7 +1793,7 @@ summary:focus-visible {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   width: min(100%, 760px);
-  padding: 8px 16px max(8px, env(safe-area-inset-bottom, 0px));
+  padding: 8px 16px max(8px, var(--app-safe-bottom));
   border: 1px solid #e3e9f4;
   border-bottom: 0;
   border-radius: 22px 22px 0 0;
@@ -1920,7 +1927,7 @@ summary:focus-visible {
 @media (max-width: 760px) {
   .topbar {
     min-height: 64px;
-    padding: max(8px, env(safe-area-inset-top, 0px)) 20px 8px;
+    padding: max(8px, 0px) 20px 8px;
   }
   .brand {
     font-size: 20px;
@@ -1929,7 +1936,7 @@ summary:focus-visible {
     font-size: 11px;
   }
   .dashboard {
-    padding: 16px 20px calc(88px + env(safe-area-inset-bottom, 0px));
+    padding: 16px 20px calc(88px + var(--app-safe-bottom));
   }
   .home-dashboard {
     padding-top: 10px;
@@ -1956,7 +1963,7 @@ summary:focus-visible {
     flex-wrap: wrap;
   }
   .review-page {
-    padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+    padding-bottom: calc(24px + var(--app-safe-bottom));
   }
   .review-header small,
   .review-status,
@@ -2120,90 +2127,6 @@ summary:focus-visible {
 .guest-capture h1 {
   font-size: 23px;
 }
-.feature-catalog {
-  margin-top: 18px;
-}
-.feature-catalog-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 12px;
-}
-.feature-catalog-heading h2 {
-  font-size: 16px;
-}
-.feature-catalog-heading > span {
-  font-size: 11px;
-  color: #7b899f;
-}
-.feature-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-}
-.feature-card {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: flex-start;
-  gap: 0;
-  min-width: 0;
-  padding: 12px 14px;
-  background: #fff;
-  border: 1px solid #e5ebf5;
-  border-radius: 16px;
-  text-align: left;
-}
-.feature-card-top {
-  display: flex;
-  width: 100%;
-  align-items: center;
-  justify-content: space-between;
-  gap: 4px;
-  margin-bottom: 5px;
-}
-.feature-icon {
-  display: grid;
-  place-items: center;
-  width: 30px;
-  height: 30px;
-  flex: none;
-  color: #315ced;
-  background: #edf2ff;
-  border-radius: 9px;
-}
-.feature-teal .feature-icon {
-  background: #e9f6f3;
-  color: #348878;
-}
-.feature-violet .feature-icon {
-  background: #f1edff;
-  color: #8260cf;
-}
-.feature-amber .feature-icon {
-  background: #fff3e3;
-  color: #ab7932;
-}
-.feature-card > strong {
-  font-size: 14px;
-  line-height: 1.6;
-  font-weight: 600;
-}
-.feature-card > small {
-  color: #64738a;
-  font-size: 11px;
-  line-height: 1.65;
-}
-.feature-status {
-  font-size: 11px;
-  line-height: 1.5;
-  padding: 2px 5px;
-  border-radius: 5px;
-  background: #f1f4f9;
-  color: #596a83;
-  white-space: nowrap;
-}
 .guest-account-hint {
   display: flex;
   width: 100%;
@@ -2243,64 +2166,12 @@ summary:focus-visible {
 .guest-account-hint > svg {
   color: #8b9bb4;
 }
-.feature-catalog-compact .feature-grid {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  background: #fff;
-  border: 1px solid var(--line);
-  border-radius: 16px;
-  gap: 0;
-  padding: 12px 4px;
-}
-.feature-catalog-compact .feature-card {
-  position: relative;
-  align-items: center;
-  border: 0;
-  padding: 0 3px;
-  text-align: center;
-  background: transparent;
-}
-.feature-catalog-compact {
-  margin-top: 14px;
-}
-.feature-catalog-compact .feature-catalog-heading {
-  display: none;
-}
-.feature-catalog-compact .feature-card-top {
-  display: contents;
-}
-.feature-catalog-compact .feature-icon {
-  order: 0;
-  margin-bottom: 4px;
-}
-.feature-catalog-compact .feature-card > strong {
-  order: 1;
-  font-size: 12px;
-}
-.feature-catalog-compact .feature-status {
-  order: 2;
-  padding: 0;
-  margin-top: 1px;
-  background: transparent;
-  font-size: 11px;
-}
-.feature-catalog-compact .feature-card > small {
-  display: none;
-}
 @media (min-width: 761px) {
   .guest-dashboard {
     padding-top: 28px;
   }
   .guest-capture h1 {
     font-size: 27px;
-  }
-  .feature-grid {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-  .feature-card {
-    min-height: 110px;
-  }
-  .feature-catalog-compact .feature-card {
-    min-height: 0;
   }
   .guest-account-hint {
     padding-top: 18px;
@@ -2328,15 +2199,6 @@ summary:focus-visible {
   .guest-dashboard {
     padding-top: 14px;
   }
-  .feature-catalog {
-    margin-top: 15px;
-  }
-  .feature-catalog-heading {
-    margin-bottom: 10px;
-  }
-  .feature-card {
-    padding: 10px 12px;
-  }
 }
 @media (max-width: 340px) {
   .guest-brand-group {
@@ -2348,12 +2210,6 @@ summary:focus-visible {
     min-height: 24px;
     padding: 0 4px;
   }
-  .feature-catalog-heading > span {
-    font-size: 10px;
-  }
-  .feature-card {
-    padding: 10px;
-  }
 }
 
 /* Account entry keeps the same visual language without replacing the home. */
@@ -2361,8 +2217,8 @@ summary:focus-visible {
   min-height: 100dvh;
   width: min(100%, 520px);
   margin: auto;
-  padding: max(20px, env(safe-area-inset-top, 0px)) 24px
-    calc(24px + env(safe-area-inset-bottom, 0px));
+  padding: max(20px, 0px) 24px
+    calc(24px + var(--app-safe-bottom));
 }
 .auth-header {
   display: flex;
@@ -2519,55 +2375,10 @@ summary:focus-visible {
 .auth-card footer {
   margin: 14px 0 4px;
 }
-.feature-dialog {
-  width: min(360px, calc(100% - 40px));
-  max-height: calc(100dvh - 48px);
-  overflow-y: auto;
-  padding: 25px;
-  margin: auto;
-  color: #243759;
-  border: 1px solid var(--line);
-  border-radius: 24px;
-  background: #fff;
-  box-shadow: 0 20px 80px #11295826;
-}
-.feature-dialog::backdrop {
-  background: #1e315967;
-  backdrop-filter: blur(3px);
-}
-.feature-dialog h2 {
-  font-size: 23px;
-  letter-spacing: -0.4px;
-  margin-bottom: 7px;
-}
-.feature-dialog p {
-  color: #6c7d98;
-  font-size: 13px;
-  line-height: 1.8;
-  margin: 14px 0 20px;
-}
-.feature-dialog > button {
-  width: 100%;
-  margin-top: 8px;
-  min-height: 46px;
-  font-size: 14px;
-}
-.feature-dialog .button-row {
-  margin-top: 18px;
-}
-.feature-dialog .button-row button {
-  flex: 1;
-  min-height: 46px;
-}
-.feature-dialog .feature-status {
-  display: inline-flex;
-  font-size: 11px;
-  padding: 3px 8px;
-}
 @media (max-width: 380px) {
   .auth-page {
-    padding: max(14px, env(safe-area-inset-top, 0px)) 16px
-      calc(8px + env(safe-area-inset-bottom, 0px));
+    padding: max(14px, 0px) 16px
+      calc(8px + var(--app-safe-bottom));
   }
   .auth-header {
     margin-bottom: 14px;
@@ -2705,10 +2516,6 @@ summary:focus-visible {
 .student-profile-stats small { font-size:11px; color:#62738b; }
 .student-profile-card > p { display:flex; align-items:center; justify-content:space-between; gap:4px; margin:0; font-size:11px; color:#687990; line-height:1.5; }
 .student-profile-card > p svg { flex-shrink:0; }
-.learning-overview { display:flex; align-items:center; gap:12px; background:#edf3ff; color:#34558b; border-radius:16px; padding:16px; }
-.learning-overview > div { display:grid; gap:5px; }
-.learning-overview strong { font-size:20px; }
-.learning-overview span { font-size:12px; color:#617591; }
 .subject-section { margin:16px 0; }
 .subject-section .section-line { margin:0 0 8px; }
 .subject-section h2, .question-library .section-line h2 { font-size:16px; }
@@ -2728,11 +2535,6 @@ summary:focus-visible {
 .knowledge-card summary strong { font-size:14px; overflow-wrap:anywhere; }
 .knowledge-card summary small { font-size:11px; color:#617591; }
 .knowledge-card .wrong-question-card { padding:12px; }
-.practice-planned { display:flex; gap:10px; align-items:center; border-top:1px solid #e2e7f0; padding:16px 0; margin-top:16px; color:#687990; }
-.practice-planned > div { display:grid; gap:5px; flex:1; }
-.practice-planned strong { font-size:14px; }
-.practice-planned small, .practice-planned > span { font-size:11px; }
-.practice-planned > span { background:#edf0f5; border-radius:6px; padding:5px 7px; }
 .wrong-question-card { display: flex; flex-direction: column; align-items: stretch; gap: 10px; text-align: left; width: 100%; padding: 18px; border-radius: 16px; margin: 12px 0; }
 .wrong-question-card > div { display: flex; align-items: center; gap: 10px; }
 .wrong-question-card strong { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; white-space: pre-wrap; line-height: 1.6; }
@@ -2763,3 +2565,7 @@ summary:focus-visible {
   .review-header small { font-size: 12px; }
   .review-page .review-status { flex-wrap: wrap; }
 }
+
+/* Capacitor supplies safe-area variables on Android WebViews that need them. */
+:root{--app-safe-top:max(env(safe-area-inset-top,0px),var(--safe-area-inset-top,0px));--app-safe-bottom:max(env(safe-area-inset-bottom,0px),var(--safe-area-inset-bottom,0px))}
+#root{padding-top:var(--app-safe-top);padding-left:max(env(safe-area-inset-left,0px),var(--safe-area-inset-left,0px));padding-right:max(env(safe-area-inset-right,0px),var(--safe-area-inset-right,0px))}

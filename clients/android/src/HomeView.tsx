@@ -2,8 +2,7 @@ import { useState, type ReactNode } from 'react';
 import { Camera, ChevronRight, FileImage, ImagePlus, Plus, RefreshCw, UserRound } from 'lucide-react';
 import { BottomNavigation, type HomePage } from './BottomNavigation';
 import { BrandMark } from './Brand';
-import { UpdateDot } from './UpdateControl';
-import { appName, appVersion } from './release';
+import { appName } from './release';
 import { statusNames, type Scan, type Student } from './types';
 import type { Draft } from './drafts';
 import { QuestionLibrary, type LibraryMode } from './QuestionLibrary';
@@ -52,9 +51,6 @@ export function HomeView(props: Props) {
   return <div className="app-shell">
     <header className="topbar">
       <div className="brand"><BrandMark size={36} /><span>{appName}</span></div>
-      <button type="button" className="version-chip" onClick={() => navigate('me')} aria-label="版本与更新">
-        v{appVersion} <UpdateDot />
-      </button>
     </header>
     <main className={`dashboard ${tab === 'home' ? 'home-dashboard' : ''}`}>
       {tab !== 'me' && <section className="student-switcher" aria-label="当前学习档案">
@@ -64,14 +60,13 @@ export function HomeView(props: Props) {
             {students.map((s) => <option key={s.id} value={s.id}>{s.name}{s.grade ? ` · ${s.grade}` : ''}</option>)}
           </select> : <button type="button" onClick={addStudent}>添加学生档案</button>}
         </div>
-        <span className="subject-tag">{tab === 'library' ? '分类学习' : '拍照 · 收题'}</span>
       </section>}
       {error && <p role="alert" className="error">{error}</p>}
       {notice && <output className="notice">{notice}</output>}
 
       {tab === 'home' && <div className="home-content">
         <section className="home-capture">
-          <div className="home-capture-heading"><span className="eyebrow">错题 · 难题 · 手写过程</span><h1>收下每一次思考</h1></div>
+          <div className="home-capture-heading"><h1>添加题目</h1></div>
           <div className="home-capture-actions">
             <button type="button" className="capture-primary" disabled={busy || !!uploading || !student} onClick={() => props.onCapture('camera')}>
               <Camera size={26} /><span><strong>拍照收题</strong><small>连续拍摄 · 随时添加</small></span>
@@ -83,7 +78,7 @@ export function HomeView(props: Props) {
           {props.onOpenCloud && <button className="cloud-drive-entry" disabled={busy || !!uploading || !student} onClick={props.onOpenCloud}>
             <span><strong>批量上传图片</strong><small>图片云盘 · 保留原文件名</small></span><ChevronRight size={20} /></button>}
         </section>
-        {student && <details className="home-local-tools"><summary>本机照片与恢复</summary><div>{props.onOpenOriginals && <button disabled={busy} onClick={props.onOpenOriginals}>本机原片</button>}{props.cameraRecovery}</div></details>}
+        {student && (props.onOpenOriginals || props.cameraRecovery) && <details className="home-local-tools"><summary>本机照片与恢复</summary><div>{props.onOpenOriginals && <button disabled={busy} onClick={props.onOpenOriginals}>本机原片</button>}{props.cameraRecovery}</div></details>}
         {student && <div id="home-pending">          {props.batchUploads}
           {!!props.processedCount && <section className="draft-section"><div className="section-line"><h2>处理图待提交 · {props.processedCount}</h2><span className="hint">尚未发送 · 原片留在本机</span></div><div className="draft-grid">{props.processedPending}</div></section>}
           {pending.length > 0 && <section className="draft-section"><div className="section-line"><h2>待上传照片 · {pending.length}</h2><span className="hint">仅保存在本机</span></div><div className="draft-grid">{pending.map(props.renderDraft)}</div></section>}
@@ -104,7 +99,7 @@ export function HomeView(props: Props) {
       </div>}
 
       {tab === 'library' && <>
-        <div className="section-line library-heading"><div><span className="eyebrow">{student?.name || '家庭学习'}</span><h1>题目与学习</h1></div><button disabled={refreshing || !student} onClick={props.onRefresh}><RefreshCw size={17} className={refreshing ? 'spin' : ''} />刷新</button></div>
+        <div className="section-line library-heading"><div><h1>题目</h1></div><button disabled={refreshing || !student} onClick={props.onRefresh}><RefreshCw size={17} className={refreshing ? 'spin' : ''} />刷新</button></div>
         {student ? <QuestionLibrary key={student.id} records={records} mode={props.libraryMode} onMode={props.onLibraryMode} onOpen={props.onOpenScan} renderScan={scanCard} refreshing={refreshing} /> : <div className="empty"><p>先添加学生档案，题目会按孩子分别整理。</p><button className="primary" onClick={addStudent}>添加学生</button></div>}
       </>}
 
@@ -132,7 +127,7 @@ export function HomeView(props: Props) {
           </form>}
         </section>
         {props.children}
-        <details className="profile-card profile-storage"><summary>资料保存与功能说明</summary><p>拍题支持多选和连续添加，处理后上传确认的图片，原片留在手机。“图片云盘”可将选中的手机原图完整复制到家庭服务器，按当前孩子保存，不自动识别。</p><p className="hint">卸载应用或清除应用数据会删除本机原片和待提交照片；已上传成功的云盘照片仍保留在服务器。框题选科后可存错题本并请求 AI 讲解，分析结果需核对。</p></details>
+
       </div>}
     </main>
     <BottomNavigation page={tab} onNavigate={navigate} pending={pendingCount > 0} />

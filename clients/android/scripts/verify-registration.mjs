@@ -57,17 +57,19 @@ try {
   mkdirSync('test-results', { recursive: true });
   const normal = await scenario(), page = normal.page;
   assert.equal(await page.locator('input').count(), 0);
+  assert.equal(await page.getByText('准备中', { exact: true }).count(), 0);
+  assert.equal(await page.getByRole('region', { name: '学习工具' }).count(), 0);
   assert.deepEqual(normal.counts(), { registerCalls: 0, statusCalls: 0, loginCalls: 0, privateCalls: 0 });
   for (const viewport of [{ width: 390, height: 844 }, { width: 360, height: 740 }]) {
     await page.setViewportSize(viewport);
     const measured = await page.evaluate(() => ({ width: innerWidth, height: innerHeight, scrollWidth: document.documentElement.scrollWidth, scrollHeight: document.documentElement.scrollHeight,
-      contentBottom: document.querySelector('.guest-account-hint').getBoundingClientRect().bottom, navTop: document.querySelector('.bottom-nav').getBoundingClientRect().top }));
+      contentBottom: document.querySelector('.guest-capture').getBoundingClientRect().bottom, navTop: document.querySelector('.bottom-nav').getBoundingClientRect().top }));
     geometry.push(measured);
     assert.ok(measured.scrollHeight <= measured.height + 1 && measured.scrollWidth <= measured.width, JSON.stringify(measured));
     assert.ok(measured.contentBottom <= measured.navTop, JSON.stringify(measured));
     await page.screenshot({ path: `test-results/guest-home-${viewport.width}.png`, fullPage: true });
   }
-  for (const feature of ['拍照收题', '相册选图', '错题本', '分步辅导', '举一反三', '学习报告']) {
+  for (const feature of ['拍照收题', '相册选图']) {
     const button = ['拍照收题', '相册选图'].includes(feature)
       ? page.getByRole('button', { name: new RegExp(feature) })
       : page.getByRole('region', { name: '学习工具' }).getByRole('button', { name: new RegExp(feature) });
@@ -75,7 +77,7 @@ try {
     await page.getByRole('heading', { name: '登录', exact: true }).waitFor();
     assert.ok((await page.locator('.auth-feature-context').textContent()).includes(feature));
     assert.equal(await page.getByLabel('家庭启用码', { exact: true }).count(), 0);
-    await page.getByRole('button', { name: '先逛逛', exact: true }).click();
+    await page.getByRole('button', { name: '返回首页', exact: true }).click();
   }
   assert.deepEqual(normal.counts(), { registerCalls: 0, statusCalls: 0, loginCalls: 0, privateCalls: 0 });
   const nav = page.getByRole('navigation', { name: '主要页面' });
@@ -117,9 +119,9 @@ try {
     assert.equal(await nav.locator('[aria-current="page"]').textContent(), name);
   }
   assert.equal((await page.evaluate(() => JSON.stringify(localStorage))).includes('123456'), false);
-  await page.getByRole('region', { name: '学习工具' }).getByRole('button', { name: /错题本/ }).click();
-  await page.getByRole('heading', { name: '题目资料', exact: true }).waitFor();
-  await page.getByText('先添加一个学生，再开始收题。', { exact: true }).waitFor();
+  await nav.getByRole('button', { name: '题目', exact: true }).click();
+  await page.getByRole('heading', { name: '题目', exact: true }).waitFor();
+  await page.getByText('先添加学生档案，题目会按孩子分别整理。', { exact: true }).waitFor();
   await nav.getByRole('button', { name: '首页', exact: true }).click();
   const duplicate = await scenario({ duplicate: true });
   const fromLibrary = await scenario();
@@ -128,7 +130,7 @@ try {
   await fromLibrary.page.getByLabel('账号', { exact: true }).fill('family2026');
   await fromLibrary.page.getByLabel('密码', { exact: true }).fill('123456');
   await fromLibrary.page.getByRole('button', { name: '登录', exact: true }).click();
-  await fromLibrary.page.getByRole('heading', { name: '题目资料', exact: true }).waitFor();
+  await fromLibrary.page.getByRole('heading', { name: '题目', exact: true }).waitFor();
   assert.equal(await fromLibrary.page.locator('.bottom-nav [aria-current="page"]').textContent(), '题目');
   await fromLibrary.page.close();
   await registerForm(duplicate.page);

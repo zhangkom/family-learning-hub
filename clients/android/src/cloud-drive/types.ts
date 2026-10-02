@@ -1,12 +1,14 @@
 import type { OriginalPhoto } from '../photo-processing';
 
-export const BATCH_LIMIT = 200;
 export type CloudScope = { owner: string; studentId: string };
 export type CloudPhoto = {
   id: string; batchId: string; clientRequestId: string; studentId: string; originalName: string; mimeType: string;
   size: number; sha256: string; createdAt: string; source?: string;
 };
-export type CloudLimits = { maxFileBytes: number; mimeTypes: string[]; maxBatch: number };
+export type CloudLimits = { maxFileBytes: number; mimeTypes: string[]; maxBatch: number; nameConflictVersion?: number };
+export type NameCheck = { name: string; conflicts: number; token: string; suggestedName: string; receipt?: CloudPhoto };
+export type NameChoice = { action: 'replace' } | { action: 'rename'; name: string };
+export type ResolveName = (check: NameCheck, signal: AbortSignal) => Promise<NameChoice>;
 export type OriginalSource =
   | { kind: 'web'; file?: Blob }
   | { kind: 'native'; original: OriginalPhoto };
@@ -14,9 +16,11 @@ export type UploadStatus = 'queued' | 'uploading' | 'paused' | 'failed' | 'compl
 export type UploadJob = CloudScope & {
   id: string; clientBatchId: string; expectedCount: number; name: string; size: number; mimeType: string; createdAt: number;
   source: OriginalSource; status: UploadStatus; message?: string; sha256?: string; receipt?: CloudPhoto;
+  nameToken?: string;
 };
 export type PickedOriginal = { id?: string; name: string; size: number; mimeType: string; source: OriginalSource };
-export type PickResult = { items: PickedOriginal[]; failures: string[]; cancelled?: boolean; acknowledge?: () => Promise<void>; discardRecovery?: () => Promise<void> };
+export type ImportProgress = { total: number; imported: number; failed: number };
+export type PickResult = { items: PickedOriginal[]; failures: string[]; selectedCount?: number; cancelled?: boolean; acknowledge?: () => Promise<void>; discardRecovery?: () => Promise<void> };
 export type UploadBytes = { file: Blob; sha256: string };
 export type CloudPage = { photos: CloudPhoto[]; nextCursor?: string | null; storage?: { usedBytes: number; limitBytes: number } };
 export interface DriveStore {
@@ -29,11 +33,13 @@ export interface DriveServices {
   limits(signal?: AbortSignal): Promise<CloudLimits>;
   list(studentId: string, cursor?: string, signal?: AbortSignal): Promise<CloudPage>;
   upload(job: UploadJob, bytes: UploadBytes, signal: AbortSignal): Promise<CloudPhoto>;
+  prepare?(job: UploadJob, signal: AbortSignal): Promise<UploadJob>;
   read(job: UploadJob, signal: AbortSignal): Promise<UploadBytes>;
   preview(photo: CloudPhoto, signal: AbortSignal): Promise<Blob>;
   download(photo: CloudPhoto, signal: AbortSignal): Promise<void>;
-  pick?(scope: CloudScope, limit: number, signal: AbortSignal, folderRange?: boolean, albumRange?: boolean): Promise<PickResult>;
-  recover?(scope: CloudScope, limit: number, signal: AbortSignal): Promise<PickResult>;
+  pendingImports?(scope: CloudScope, signal: AbortSignal): Promise<string[]>;
+  pick?(scope: CloudScope, limit: number, signal: AbortSignal, folderRange?: boolean, albumRange?: boolean, progress?: (value: ImportProgress) => void): Promise<PickResult>;
+  recover?(scope: CloudScope, limit: number, signal: AbortSignal, progress?: (value: ImportProgress) => void): Promise<PickResult>;
 }
 
 export function assertScope(scope: CloudScope) {

@@ -23,7 +23,7 @@ export function CaptureBatch({ collection, studentLabel, busy, error, progress, 
       <button disabled={busy} onClick={onClose}>返回首页</button></div>
     <p className="hint">先保存在本机，可继续添加；确认后再上传。</p>
     <div className="capture-batch-actions">
-      <button className="primary" disabled={busy} onClick={() => onCapture('camera')}>继续拍照</button>
+      <button className={count ? undefined : 'primary'} disabled={busy} onClick={() => onCapture('camera')}>继续拍照</button>
       <button disabled={busy} onClick={() => onCapture('gallery')}>从相册添加</button>
       {onFolderRange && <button disabled={busy} onClick={onFolderRange}>文件夹范围</button>}
     </div>

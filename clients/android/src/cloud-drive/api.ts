@@ -1,5 +1,5 @@
 import { ApiError, FamilyApi, sessionExpiredEvent } from '../api';
-import { BATCH_LIMIT, assertReceipt, type CloudLimits, type CloudPage, type CloudPhoto, type UploadBytes, type UploadJob } from './types';
+import { assertReceipt, type CloudLimits, type CloudPage, type CloudPhoto, type UploadBytes, type UploadJob, type NameCheck, type ResolveName } from './types';
 
 export async function sha256(file: Blob) {
   return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', await file.arrayBuffer())), b => b.toString(16).padStart(2, '0')).join('');
@@ -9,12 +9,32 @@ export function createCloudApi(api: FamilyApi) {
   let cachedLimits: CloudLimits | undefined;
   const batches = new Map<string, string>();
   async function limits(signal?: AbortSignal): Promise<CloudLimits> {
-    const setup = await api.request<{ cloudPhotos?: { version: number; maxFileBytes: number; maxBatchItems: number; mimeTypes: string[] } }>('/setup', 'GET', undefined, signal);
+    const setup = await api.request<{ cloudPhotos?: { version: number; maxFileBytes: number; maxBatchItems: number; mimeTypes: string[]; nameConflictVersion?: number } }>('/setup', 'GET', undefined, signal);
     const cap = setup.cloudPhotos;
     if (!cap || cap.version !== 1 || !Number.isSafeInteger(cap.maxFileBytes) || cap.maxFileBytes < 1 || !Number.isInteger(cap.maxBatchItems) || cap.maxBatchItems < 1 || !Array.isArray(cap.mimeTypes) || !cap.mimeTypes.length)
       throw new Error('服务器尚未开放图片云盘，请更新服务后重试');
-    cachedLimits = { maxFileBytes: cap.maxFileBytes, maxBatch: Math.min(BATCH_LIMIT, cap.maxBatchItems), mimeTypes: cap.mimeTypes };
+    cachedLimits = { maxFileBytes: cap.maxFileBytes, maxBatch: cap.maxBatchItems, mimeTypes: cap.mimeTypes, nameConflictVersion: cap.nameConflictVersion };
     return cachedLimits;
+  }
+  async function prepare(job: UploadJob, signal: AbortSignal, resolve?: ResolveName): Promise<UploadJob> {
+    const cap = cachedLimits || await limits(signal);
+    if (cap.nameConflictVersion !== 1 || job.expectedCount > cap.maxBatch)
+      throw new Error('服务器需要更新才能检查同名图片和接收整批上传，本机照片已保留');
+    for (;;) {
+      signal.throwIfAborted();
+      const checked = await api.request<NameCheck>(`/cloud-photos/name?studentId=${encodeURIComponent(job.studentId)}&name=${encodeURIComponent(job.name)}&clientRequestId=${encodeURIComponent(job.id)}`, 'GET', undefined, signal);
+      if (!checked.name || !checked.suggestedName || !Number.isSafeInteger(checked.conflicts) || checked.conflicts < 0 || !/^[a-f\d]{64}$/.test(checked.token)) throw new Error('同名检查结果无效');
+      if (checked.receipt) return job; // Retry the durable request identity; the upload verifies the complete receipt.
+      job = { ...job, name: checked.name };
+      if (!checked.conflicts) return { ...job, nameToken: undefined };
+      if (job.nameToken === checked.token) return job;
+      if (!resolve) throw new Error('云盘中已有同名图片，请选择覆盖或重命名');
+      const choice = await resolve(checked, signal);
+      signal.throwIfAborted();
+      if (choice.action === 'replace') return { ...job, nameToken: checked.token };
+      if (!choice.name.trim() || choice.name.length > 255 || /[\\/]/.test(choice.name) || Array.from(choice.name).some(c => c.charCodeAt(0) < 32 || c.charCodeAt(0) === 127)) throw new Error('请输入有效的图片名称');
+      job = { ...job, name: choice.name, nameToken: undefined };
+    }
   }
   async function upload(job: UploadJob, bytes: UploadBytes, signal: AbortSignal) {
     const cap = cachedLimits || await limits(signal);
@@ -32,6 +52,8 @@ export function createCloudApi(api: FamilyApi) {
     const form = new FormData();
     form.set('studentId', job.studentId); form.set('batchId', batchId); form.set('clientRequestId', job.id);
     form.set('sha256', bytes.sha256); form.set('file', bytes.file, job.name);
+    form.set('nameAction', job.nameToken ? 'replace' : 'check');
+    if (job.nameToken) form.set('nameToken', job.nameToken);
     const { photo } = await api.request<{ photo: CloudPhoto }>('/cloud-photos', 'POST', form, signal);
     assertReceipt(photo, job, bytes.sha256);
     // Server sanitizes the displayed filename; identity and content fields remain exact.
@@ -57,5 +79,5 @@ export function createCloudApi(api: FamilyApi) {
       return file;
     } finally { clearTimeout(timer); signal.removeEventListener('abort', abort); }
   }
-  return { limits, list, upload, blob };
+  return { limits, list, upload, prepare, blob };
 }

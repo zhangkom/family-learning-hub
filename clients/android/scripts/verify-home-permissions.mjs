@@ -105,6 +105,7 @@ try {
   await page.locator('.student-profile-card').first().getByText('已整理 3 道题 · 云盘保存 45 张', { exact: true }).waitFor();
   assert.equal(await page.getByText('权限与隐私', { exact: true }).count(), 0);
   assert.equal(await page.locator('.profile-account-actions button').count(), 3);
+  assert.equal(await page.getByRole('link', { name: /家长账号|家长查看/ }).count(), 0);
   assert.equal(await page.locator('.student-profile-card').count(), 2);
   assert.match(await page.locator('.student-profile-card').nth(1).textContent(), /已整理 0 道题 · 云盘保存 8 张/);
   for (const width of [320, 390, 768]) {
@@ -113,9 +114,11 @@ try {
     await page.screenshot({ path: `test-results/profile-${width}.png`, fullPage: true });
   }
   await page.locator('.student-profile-card').first().click();
-  await page.getByRole('heading', { name: '题目与学习', exact: true }).waitFor();
+  await page.getByRole('heading', { name: '题目', exact: true }).waitFor();
   assert.equal(await page.getByRole('button', { name: /拍照收题|相册选图|批量上传图片/ }).count(), 0);
   assert.equal(await page.locator('.wrong-question-card').count(), 2);
+  assert.equal(await page.getByText('准备中', { exact: true }).count(), 0);
+  assert.equal(await page.locator('.subject-grid button').count(), 3);
   await page.getByRole('button', { name: '数学 1 道错题', exact: true }).click();
   assert.equal(await page.locator('.wrong-question-card').count(), 1);
   await page.getByRole('button', { name: '全部科目', exact: true }).click();
@@ -128,6 +131,7 @@ try {
   await page.getByRole('button', { name: '原题照片', exact: true }).click();
   assert.equal(await page.locator('.record-card').count(), 20);
   assert.equal(await page.locator('.home-record-card').count(), 0);
+  assert.equal(await page.getByRole('region', { name: '按科目学习' }).count(), 0);
   for (const width of [320, 390, 768]) {
     await page.setViewportSize({ width, height: 844 });
     await page.getByRole('button', { name: '错题本', exact: true }).click();

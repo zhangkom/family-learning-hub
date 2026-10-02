@@ -107,7 +107,8 @@ assert.equal(setup.processedPhotoMetadataVersion, 1);
 if (expected.versionCode >= 14) assert.equal(setup.questionReviewVersion, 1);
 if (expected.versionCode >= 12) {
   assert.equal(setup.cloudPhotos?.version, 1);
-  assert.equal(setup.cloudPhotos.maxBatchItems, expected.versionCode >= 13 ? 200 : 100);
+  assert.equal(setup.cloudPhotos.maxBatchItems, expected.versionCode >= 17 ? Number.MAX_SAFE_INTEGER : expected.versionCode >= 13 ? 200 : 100);
+  if (expected.versionCode >= 17) assert.equal(setup.cloudPhotos.nameConflictVersion, 1);
   assert.equal(setup.cloudPhotos.maxFileBytes, 32 * 1024 * 1024);
 }
 const account = await fetch(base + 'account', { signal: AbortSignal.timeout(20000) }); assert.equal(account.status, 200);

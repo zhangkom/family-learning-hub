@@ -33,3 +33,4 @@
   .home-dashboard .home-summary > button { min-height: 44px; }
   .home-dashboard .home-recent { margin-top: 6px; }
 }
+.capture-batch-grid{max-height:60dvh;overflow:auto;overscroll-behavior:contain;padding:2px}

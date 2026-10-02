@@ -24,8 +24,8 @@ export async function receiveCloudPhoto(request: Request, directory: string) {
       defParamCharset: 'utf8',
       limits: {
         files: 1,
-        fields: 5,
-        parts: 7,
+        fields: 7,
+        parts: 8,
         fieldSize: 4096,
         fileSize: limits.maxFileBytes + 1,
         headerPairs: 30,
@@ -51,7 +51,7 @@ export async function receiveCloudPhoto(request: Request, directory: string) {
   };
   parser.on('field', (name, value, info) => {
     if (
-      !['studentId', 'batchId', 'clientRequestId', 'sha256'].includes(name) ||
+      !['studentId', 'batchId', 'clientRequestId', 'sha256', 'nameAction', 'nameToken'].includes(name) ||
       Object.hasOwn(fields, name) ||
       info.valueTruncated ||
       info.nameTruncated
@@ -124,7 +124,7 @@ export async function receiveCloudPhoto(request: Request, directory: string) {
     );
     await fileTask;
     if (failure) throw failure;
-    if (!file || !size || Object.keys(fields).length !== 4)
+    if (!file || !size || !['studentId', 'batchId', 'clientRequestId', 'sha256'].every(key => fields[key]))
       throw new HttpError(400, '请选择图片并填写批次、学生和上传标识');
     return { ...file, size, sha256: hash.digest('hex'), fields };
   } catch (error) {

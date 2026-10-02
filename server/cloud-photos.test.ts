@@ -138,20 +138,24 @@ async function upload(
     digest?: string;
     session?: string;
     extra?: boolean;
+    nameAction?: string;
+    nameToken?: string;
     handle?: typeof handleMobile;
   } = {},
 ) {
-  const form = new FormData();
+  const form = new FormData(), requestId = options.requestId ?? randomUUID();
   form.set('studentId', options.studentId ?? child);
   form.set('batchId', batchId);
-  form.set('clientRequestId', options.requestId ?? randomUUID());
+  form.set('clientRequestId', requestId);
   form.set('sha256', options.digest ?? hash(bytes));
   form.set(
     'file',
     new Blob([new Uint8Array(bytes)], { type: options.mime ?? 'image/jpeg' }),
-    options.name ?? '合成原片.jpg',
+    options.name ?? `合成原片-${requestId}.jpg`,
   );
   if (options.extra) form.append('studentId', child);
+  if (options.nameAction !== undefined) form.set('nameAction', options.nameAction);
+  if (options.nameToken !== undefined) form.set('nameToken', options.nameToken);
   return (options.handle ?? handleMobile)(
     new Request(api + 'cloud-photos', {
       method: 'POST',
@@ -199,7 +203,7 @@ describe('private cloud photo API', () => {
         )
       ).status,
     ).toBe(403);
-    for (const expectedCount of [0, 201, 1.5, '1'])
+    for (const expectedCount of [0, -1, Number.MAX_SAFE_INTEGER + 1, 1.5, '1'])
       expect(
         (
           await call('cloud-photo-batches', {
@@ -237,17 +241,27 @@ describe('private cloud photo API', () => {
       'IDEMPOTENCY_CONFLICT',
     );
   });
-  it('keeps long original names including leading dots and separates distinct photos with the same filename', async () => {
+  it('keeps long original names and replaces only after explicit confirmation without losing old originals', async () => {
     const name = '.作业照片 ' + 'a'.repeat(150) + '.JPG';
     const b = await batch(2), bytes = await jpeg(1), other = await jpeg(3);
-    const first = await upload(bytes, b.id, { name }), second = await upload(other, b.id, { name });
-    expect(first.status).toBe(201); expect(second.status).toBe(201);
+    const first = await upload(bytes, b.id, { name });
+    expect(first.status).toBe(201); expect((await upload(other, b.id, { name })).status).toBe(409);
+    const check = await (await call(`cloud-photos/name?studentId=${child}&name=${encodeURIComponent(name)}`)).text().then(JSON.parse);
+    expect(check.conflicts).toBe(1); expect(check.suggestedName).toBe(name.slice(0, -4) + '_1.JPG');
+    const replacementId = randomUUID();
+    const second = await upload(other, b.id, { name, requestId: replacementId, nameAction: 'replace', nameToken: check.token });
+    expect(second.status, await second.clone().text()).toBe(201);
     const a = (await first.text().then(JSON.parse)).photo, c = (await second.text().then(JSON.parse)).photo;
     expect(a.originalName).toBe(name); expect(c.originalName).toBe(name); expect(a.id).not.toBe(c.id);
     expect(a.sha256).not.toBe(c.sha256);
     const downloaded = await call(`cloud-photos/${a.id}/file`);
     expect(downloaded.headers.get('content-disposition')).toContain(encodeURIComponent(name));
     expect(Buffer.from(await downloaded.arrayBuffer())).toEqual(bytes);
+    const visible = await (await call('cloud-photos?studentId=' + child)).text().then(JSON.parse);
+    expect(visible.photos.map((p: { id: string }) => p.id)).toEqual([c.id]);
+    const retry = await upload(other, b.id, { name, requestId: replacementId, nameAction: 'replace', nameToken: check.token });
+    expect(retry.status).toBe(200); expect((await retry.text().then(JSON.parse)).photo.id).toBe(c.id);
+    expect(store.db.prepare('SELECT count(*) n FROM cloud_photo_replacements').get()?.n).toBe(1);
   });
 
   it('preserves original bytes, UTF8 filename, EXIF and private download while creating no scan or model job', async () => {
@@ -258,7 +272,7 @@ describe('private cloud photo API', () => {
       p = await photo(bytes);
     expect(p).toMatchObject({
       studentId: child,
-      originalName: '合成原片.jpg',
+      originalName: expect.stringMatching(/^合成原片-.*\.jpg$/),
       size: bytes.length,
       sha256: hash(bytes),
       width: 40,
@@ -372,12 +386,13 @@ describe('private cloud photo API', () => {
     expect((await upload(huge, b.id, { mime: 'image/png' })).status).toBe(413);
     expect(readdirSync(temp)).toEqual([]);
   }, 30000);
-  it('accepts a full 200-photo server group and requires the 201st photo to use another group', async () => {
-    const b = await batch(200),
+  it('uploads all 500 photos in one selection without the old 200 or hourly 600 cap', async () => {
+    store.db.prepare('INSERT INTO limits VALUES (?,?,?)').run(`cloud-upload:${account}`, 600, Date.now() + 3600000);
+    const b = await batch(500),
       bytes = await jpeg();
-    for (let i = 0; i < 200; i++) {
+    for (let i = 0; i < 500; i++) {
       const response = await upload(bytes, b.id);
-      expect(response.status, await response.clone().text()).toBe(201);
+      expect(response.status, `photo ${i + 1}: ${await response.clone().text()}`).toBe(201);
     }
     const extra = await upload(bytes, b.id);
     expect(extra.status).toBe(409);
@@ -386,15 +401,15 @@ describe('private cloud photo API', () => {
     );
     expect(
       store.db.prepare('SELECT count(*) n FROM cloud_photos').get()?.n,
-    ).toBe(200);
-  }, 60000);
-  it('upgrades an existing 100-photo database while preserving photos, foreign keys and upload receipts', async () => {
+    ).toBe(500);
+  }, 180000);
+  it.each([100, 200])('upgrades an existing %i-photo database while preserving photos, foreign keys and upload receipts', async oldLimit => {
     const oldBatch = await batch(100), bytes = await jpeg(), requestId = randomUUID();
     const before = await upload(bytes, oldBatch.id, { requestId });
     const oldPhoto = (await before.text().then(JSON.parse)).photo;
     const oldSchema = String(store.db.prepare("SELECT sql FROM sqlite_schema WHERE name='cloud_photo_batches'").get()?.sql)
       .replace('CREATE TABLE cloud_photo_batches', 'CREATE TABLE old_cloud_batches')
-      .replace('BETWEEN 1 AND 200', 'BETWEEN 1 AND 100');
+      .replace('expected_count >= 1', `expected_count BETWEEN 1 AND ${oldLimit}`);
     store.db.exec(`PRAGMA foreign_keys=OFF; BEGIN IMMEDIATE; ${oldSchema};
       INSERT INTO old_cloud_batches SELECT * FROM cloud_photo_batches;
       DROP TABLE cloud_photo_batches; ALTER TABLE old_cloud_batches RENAME TO cloud_photo_batches;
@@ -406,10 +421,34 @@ describe('private cloud photo API', () => {
     expect(retry.status).toBe(200);
     expect((await retry.text().then(JSON.parse)).photo).toEqual(oldPhoto);
     expect(await (await call('cloud-photos/' + oldPhoto.id + '/file')).arrayBuffer()).toEqual(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
-    await batch(200);
+    await batch(100000);
     store.close(); store = new FamilyStore(join(data, 'family.sqlite'));
     expect(store.db.prepare('SELECT count(*) n FROM cloud_photo_batches').get()?.n).toBe(2);
     expect(store.db.prepare('SELECT count(*) n FROM cloud_photos').get()?.n).toBe(1);
+  });
+  it('checks suffixes, prevents stale overwrite choices and isolates name lookup by family and student', async () => {
+    const b = await batch(8), bytes = await jpeg(), name = 'IMG_作业.JPG';
+    const checkName = async (value = name, student = child, session = token) => {
+      const response = await call(`cloud-photos/name?studentId=${student}&name=${encodeURIComponent(value)}`, undefined, session);
+      return { status: response.status, ...(await response.text().then(JSON.parse)) };
+    };
+    expect((await upload(bytes, b.id, { name })).status).toBe(201);
+    const first = await checkName(); expect(first.suggestedName).toBe('IMG_作业_1.JPG');
+    expect((await upload(bytes, b.id, { name: first.suggestedName })).status).toBe(201);
+    expect((await checkName()).suggestedName).toBe('IMG_作业_2.JPG');
+    expect((await checkName(name, otherChild, otherToken)).conflicts).toBe(0);
+    expect((await checkName(name, child, otherToken)).status).toBe(404);
+    const otherStudent = store.addStudent(account, '同家庭另一孩子').id;
+    expect((await checkName(name, otherStudent)).conflicts).toBe(0);
+    const replaced = await upload(bytes, b.id, { name, nameAction: 'replace', nameToken: first.token });
+    expect(replaced.status).toBe(201);
+    const stale = await upload(bytes, b.id, { name, nameAction: 'replace', nameToken: first.token });
+    expect(stale.status).toBe(409); expect((await stale.text().then(JSON.parse)).code).toBe('CLOUD_NAME_CONFLICT');
+    const current = await checkName();
+    expect((await upload(bytes.subarray(0, 80), b.id, { name, nameAction: 'replace', nameToken: current.token })).status).toBe(400);
+    expect((await checkName()).token).toBe(current.token);
+    expect((await upload(bytes, b.id, { name: '自己编辑的名称.JPG' })).status).toBe(201);
+    expect((await checkName('自己编辑的名称.JPG')).conflicts).toBe(1);
   });
   it('isolates other families, requires explicit child, and paginates without repeats or cursor crossover', async () => {
     const bytes = await jpeg(),

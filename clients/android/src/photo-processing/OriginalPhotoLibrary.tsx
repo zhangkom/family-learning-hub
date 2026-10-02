@@ -56,8 +56,7 @@ function LibrarySession({ owner, studentId, studentLabel, onResume, onExport, se
     } catch(e) { if (life.current.live) setError(message(e)); } finally { if (life.current.live) setBusy(false); }
   }
   return <section className="photo-library" aria-labelledby="photo-library-title"><header><h2 id="photo-library-title">本机原片</h2><span className="photo-prep-student">{studentLabel || '当前学生'}</span></header>
-    <p className="photo-library-note">原片保存在这台手机，可重新裁切和调整。上传处理图后仍保留原片；卸载应用或清除应用数据会删除这些照片。</p>
-    {!onExport && <p className="photo-library-note">此入口尚未接入原片导出，请勿把本机保存视为备份。</p>}
+    <p className="photo-library-note">可重新裁切和调整。本机保存不等于备份，卸载应用或清除应用数据会删除照片。</p>
     {busy && <output>正在读取…</output>}{notice && <output>{notice}</output>}
     {error && <p role="alert" className="photo-prep-error">{error}</p>}
     {!busy && !error && photos.length === 0 && <p>这位学生在本机还没有保存的原片。</p>}

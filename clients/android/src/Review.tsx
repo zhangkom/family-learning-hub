@@ -419,7 +419,7 @@ export function Review({
         </button>
         <div>
           <small>{studentName} · {question?.subject || '框题后选科目'}</small>
-          <h1>框出要收录的题目</h1>
+          <h1>{questions.length ? '题目详情' : '框选题目'}</h1>
         </div>
         <button
           className="primary save-button"
@@ -429,7 +429,7 @@ export function Review({
           <Save size={17} /> 保存校对
         </button>
       </header>
-      {imageSource === 'local' && <p className="hint">正在使用本机照片，无需下载原图。</p>}
+
       {localImageMissing && <section className="notice"><p>本机没有这张题图的可用副本。可以返回“本机原片”重新处理，或主动从云端恢复。</p>
         <button type="button" onClick={() => setAllowCloudImage(true)}>从云端恢复这张题图</button></section>}
       <div className="review-status">
@@ -437,7 +437,7 @@ export function Review({
           {statusNames[scan.status] || scan.status}
         </span>
         <span>
-          {questions.length} 道题{dirty ? ' · 有修改未保存' : ''}
+          {imageSource === 'local' ? '本机照片 · ' : ''}{questions.length} 道题{dirty ? ' · 有修改未保存' : ''}
         </span>
         {!suggestions && <button
           disabled={finding || busy || conflict || !draftReady || !image || !imageSize || hasPendingAnalysis || ['queued', 'processing'].includes(scan.status)}
@@ -447,7 +447,7 @@ export function Review({
         {finding && <button onClick={() => {
           candidateRequest.current++; setFinding(false); setNotice('已取消找题，上传图和已有题目保持不变。');
         }}>取消找题</button>}
-        <button
+        {questions.length === 0 && <button
           disabled={
             !recognitionEnabled || busy || finding || !!suggestions || dirty || questions.length > 0 || ['queued', 'processing'].includes(scan.status)
           }
@@ -455,10 +455,8 @@ export function Review({
         >
           <RefreshCw size={15} />
           {scan.status === 'failed' ? '重试识别' : '识别这张照片'}
-        </button>
+        </button>}
       </div>
-      <p className="hint">框住完整题干、配图和孩子的手写过程。同一张照片选一次科目，后续新题自动沿用，也可逐题修改。</p>
-      {scan.sourceKind === 'processed-photo' && <p className="hint">当前显示你确认上传的处理图。原片请在上传手机的“本机原片”中查看。</p>}
       {error && (
         <p role="alert" className="error">
           {error}
@@ -584,7 +582,7 @@ export function Review({
             </div>
             {!recognitionEnabled && <p className="hint">AI 分析暂不可用，可以先存错题本。</p>}
             {hasPendingAnalysis && !analyzing && <p className="hint">这张照片的另一道题正在分析，完成后可继续保存和分析。</p>}
-            <p className="hint">不用先手抄题干。AI 结果需要核对；没有作答证据时，不判断孩子的错因。</p>
+            <p className="hint">AI 讲解需核对；原题和作答以照片为准。</p>
           </section>}
         </RegionEditor>
         <section className="transcript-panel">

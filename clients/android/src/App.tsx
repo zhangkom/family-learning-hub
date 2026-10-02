@@ -11,7 +11,7 @@ import { CloudPhotoDrive } from './cloud-drive/CloudPhotoDrive';
 import { activeCamera, beginCamera, cancelCamera, clearUnfinishedCamera, stageCamera, restoredCamera, listCameraResults, removeCameraResult, cameraResultEvent, type CameraResult } from './photo-processing/camera-handoff';
 import { Review } from './Review';
 import { type Scan, type Student, type StudentOverviewReply } from './types';
-import { appName, appVersion, familyWebsite } from './release';
+import { appName, appVersion } from './release';
 import { restoreSession, type Auth } from './restore-session';
 import { UpdateControl } from './UpdateControl';
 import { HomeView, type HomePage } from './HomeView';
@@ -424,7 +424,7 @@ function Home({
     setBusy(true); captureBusy.current = true;
     try {
       if ((source === 'gallery' || source === 'folder') && localPhotosEnabled) {
-        const result = await pickOriginals(owner, student.id, 200, { purpose: 'processed', signal: abort.signal, folderRange: source === 'folder',
+        const result = await pickOriginals(owner, student.id, 2147483647, { purpose: 'processed', signal: abort.signal, folderRange: source === 'folder',
           onProgress: progress => { if (live.current && generation === scopeGeneration.current) setCaptureProgress(`正在导入相册：已处理 ${progress.items.filter(item => item.status !== 'pending').length} / ${progress.items.length} 张`); } });
         if (live.current && generation === scopeGeneration.current && activeStudent.current === student.id) {
           const current = collectionRef.current;
@@ -666,12 +666,13 @@ function Home({
       processedCount={photoQueue.length + photoQueueIssues.length} onOpenOriginals={localPhotosEnabled ? () => setOriginalsOpen(true) : undefined}
       onOpenCloud={() => setCloudOpen(true)}
       batchUploads={(photoQueue.length + localDrafts.filter(item => item.studentId === selected).length > 0 || !!batchProgress || uploading === 'batch') ? <section className="batch-upload-panel" aria-label="拍题批量上传">
-        <strong>照片按每组200张依次上传</strong><p className="hint">照片清晰完整后，确认上传当前孩子的待提交照片。处理图原片仍留在手机。</p>
-        <div className="button-row"><button className="primary" disabled={busy || !!uploading || !(photoQueue.length + localDrafts.filter(item => item.studentId === selected).length)} onClick={() => void uploadMany()}>
-          确认并批量上传（{photoQueue.length + localDrafts.filter(item => item.studentId === selected).length} 张）</button>
+        <strong>确认上传</strong><p className="hint">原片保留在本机。</p>
+        <div className="button-row">{(photoQueue.length + localDrafts.filter(item => item.studentId === selected).length > 0) && <button className="primary" disabled={busy || !!uploading} onClick={() => void uploadMany()}>
+          确认并批量上传（{photoQueue.length + localDrafts.filter(item => item.studentId === selected).length} 张）</button>}
           {uploading === 'batch' && <button onClick={() => uploadAbort.current?.abort()}>停止本批上传</button>}</div>
         {batchProgress && <><output>已处理 {batchProgress.completed} / {batchProgress.total} 张 · 成功 {batchProgress.succeeded} · 失败 {batchProgress.failed.length}{batchProgress.stopped ? ' · 已停止' : ''}</output>
           <progress max={batchProgress.total} value={batchProgress.completed} />
+          {!uploading && <button onClick={() => setBatchProgress(null)}>收起进度</button>}
           {!!batchProgress.failed.length && <details><summary>查看失败原因；未成功项可继续上传</summary><ul>{batchProgress.failed.map(item => <li key={item.id}>照片 {item.id.slice(0, 8)}：{item.reason}</li>)}</ul></details>}</>}
       </section> : null}
       processedPending={<>{photoQueue.map(record => <PreparedDraftCard key={record.id} record={record} uploading={uploading === record.id} disabled={!!uploading}
@@ -717,15 +718,11 @@ function Home({
 }
 
 function FamilyLinks() {
-  const target = Capacitor.isNativePlatform() ? '_self' : '_blank';
   return (
     <div className="family-links">
       <span>{appName} {appVersion} · 家庭试用版</span>
       <UpdateControl />
-      <nav aria-label="家长与版本入口">
-        <a href={`${familyWebsite}account`} target={target} rel="noopener noreferrer">家长账号</a>
-        <a href={`${familyWebsite}students`} target={target} rel="noopener noreferrer">家长查看</a>
-      </nav>
+
     </div>
   );
 }
@@ -734,7 +731,7 @@ function PreparedDraftCard({ record, uploading, disabled, onUpload, onRemove }: 
 }) {
   return <article className="draft-card"><img src={previewUrl(record.prepared)} alt="已确认的处理图" />
     <div><strong>处理图 · {new Date(record.confirmedAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}</strong>
-      <small>{(record.prepared.bytes / 1024 / 1024).toFixed(1)} MiB · 尚未确认上传成功 · 原片保留在本机</small>
+      <small>{(record.prepared.bytes / 1024 / 1024).toFixed(1)} MiB · 待上传</small>
       <details className="photo-prep-detail"><summary>查看待提交照片</summary><div><img src={previewUrl(record.prepared)} alt="待提交处理图放大查看" /></div></details>
       <div className="button-row"><button className="primary" disabled={disabled} onClick={onUpload}>{uploading ? '正在上传…' : '上传处理图'}</button>
         <button disabled={disabled} onClick={onRemove}>移除待提交，保留原片</button></div></div></article>;

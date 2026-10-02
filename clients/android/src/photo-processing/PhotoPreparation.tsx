@@ -101,7 +101,7 @@ function PreparationSession({ owner, studentId, studentLabel, original, onConfir
   }
   function cancel() { const life = lifecycle.current; life.live = false; life.sequence++; life.abort.abort(); onCancel(); }
   return <section className="photo-prep" aria-labelledby="photo-prep-title">
-    <header><div><p className="photo-prep-kicker">上传前整理</p><h2 id="photo-prep-title">把题目拍清楚</h2></div><span className="photo-prep-student">{studentLabel || '当前学生'}</span></header>
+    <header><div><h2 id="photo-prep-title">把题目拍清楚</h2></div><span className="photo-prep-student">{studentLabel || '当前学生'}</span></header>
     <p className="photo-prep-intro">保留题干、选项、公式和作答痕迹。先看效果，再确认使用。</p>
     <div className="photo-prep-row photo-prep-tabs"><button type="button" aria-pressed={view === 'original'} onClick={() => setView('original')}>查看原片</button>
       <button type="button" disabled={!prepared} aria-pressed={view === 'prepared'} onClick={() => setView('prepared')}>查看处理结果</button></div>
@@ -134,7 +134,7 @@ function PreparationSession({ owner, studentId, studentLabel, original, onConfir
         <button type="button" aria-label="调整四角" aria-pressed={manual} onClick={() => { invalidate(); setManual(true); }}><span>调整</span><span>四角</span></button>
         <button type="button" aria-label="顺时针转 90°" onClick={() => { invalidate(); setTurns(((turns + 1) % 4) as QuarterTurns); }}><span>旋转</span><span>90°</span></button>
         <button type="button" aria-label="提亮阴影" aria-pressed={light} onClick={() => { const next = !light; invalidate(); setLight(next); void process(next ? 'light' : 'none'); }}><span>提亮</span><span>阴影</span></button></div>
-      <p className="photo-prep-hint">{busy ? '正在生成真实处理预览…' : light ? '提亮已开启；请对比细字和彩色批注。' : '提亮已关闭。'}原片文件始终保留。</p>
+      <p className="photo-prep-hint">{busy ? '正在生成真实处理预览…' : light ? '提亮已开启；请对比细字和彩色批注。' : '提亮已关闭。'}</p>
     </fieldset>
     <details className="photo-prep-detail" key={`${view}:${prepared?.outputId || 'original'}`}><summary>放大检查细节</summary><div>
       {view === 'prepared' && prepared ? <img src={services.preview(prepared)} alt="可滑动查看的放大照片" /> :
@@ -147,7 +147,7 @@ function PreparationSession({ owner, studentId, studentLabel, original, onConfir
     {prepared && <div className="photo-prep-quality" role="status"><p>请放大检查小字、根号、角标和批注，确认没有裁掉内容。</p>
       {prepared.quality.warnings.map(code => <p key={code}>{tips[code]}</p>)}</div>}
     {error && <p className="photo-prep-error" role="alert">{error}</p>}
-    <div className="photo-prep-actions"><button className="photo-prep-primary" type="button" disabled={busy} onClick={() => void process()}>{busy ? '正在处理…' : prepared ? '重新生成预览' : '生成预览'}</button>
+    <div className="photo-prep-actions"><button className={prepared ? undefined : 'photo-prep-primary'} type="button" disabled={busy} onClick={() => void process()}>{busy ? '正在处理…' : prepared ? '重新生成预览' : '生成预览'}</button>
       <button className="photo-prep-primary" type="button" disabled={busy || !prepared || !seen || handedOff} onClick={() => void confirm()}>确认使用处理图</button>
       <button type="button" onClick={cancel}>取消，保留原片</button></div>
     <p className="photo-prep-footnote">原片保存在这台手机。确认后加入待上传，上传时只发送处理图；卸载应用或清除应用数据会删除本机照片。</p>

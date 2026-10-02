@@ -3,15 +3,16 @@ import type { FamilyApi } from '../api';
 import type { OriginalPhoto } from '../photo-processing';
 import { originalPhotoName } from '../photo-processing/original-name';
 import { createCloudApi, cloudFilePath, sha256 } from './api';
-import type { CloudScope, DriveServices, PickResult, UploadJob } from './types';
+import type { CloudScope, DriveServices, PickResult, UploadJob, ResolveName, ImportProgress } from './types';
+import type { NativePhotoBatch } from '../photo-processing/batch';
 import { ImageRequestGate, retryBusy } from './scheduler';
 
-type BatchResult = { batchId: string; originals: OriginalPhoto[]; failures: { index: number; originalId: string; message: string }[]; cancelled: boolean };
+type BatchResult = { batchId: string; originals: OriginalPhoto[]; failures: { index: number; originalId: string; message: string }[]; cancelled: boolean; selectedCount?: number };
 type NativeBridge = {
-  pickOriginals(owner: string, studentId: string, limit: number, options: { purpose: 'cloud-original'; folderRange?: boolean; signal?: AbortSignal }): Promise<BatchResult>;
+  pickOriginals(owner: string, studentId: string, limit: number, options: { purpose: 'cloud-original'; folderRange?: boolean; signal?: AbortSignal; onProgress?: (batch: NativePhotoBatch) => void }): Promise<BatchResult>;
   readCloudOriginalUpload(owner: string, photo: OriginalPhoto, signal?: AbortSignal): Promise<{ file: Blob; sha256: string; studentId: string }>;
-  listOriginalBatches(owner: string, studentId: string, purpose: 'cloud-original'): Promise<{ batches: { batchId: string; studentId: string; purpose: string; state: string; createdAt: number }[] }>;
-  resumeOriginalBatch(owner: string, studentId: string, batchId: string, options: { signal?: AbortSignal; purpose?: 'cloud-original' }): Promise<BatchResult>;
+  listOriginalBatches(owner: string, studentId: string, purpose: 'cloud-original'): Promise<{ batches: NativePhotoBatch[] }>;
+  resumeOriginalBatch(owner: string, studentId: string, batchId: string, options: { signal?: AbortSignal; purpose?: 'cloud-original'; onProgress?: (batch: NativePhotoBatch) => void }): Promise<BatchResult>;
   forgetOriginalBatch(owner: string, studentId: string, batchId: string): Promise<void>;
   getOriginalBatch(owner: string, studentId: string, batchId: string): Promise<{ state: string }>;
   cancelOriginalBatch(owner: string, studentId: string, batchId: string): Promise<unknown>;
@@ -25,7 +26,7 @@ async function nativeBridge() {
 }
 function fromNative(result: BatchResult, scope: CloudScope, bridge: NativeBridge): PickResult {
   if (result.originals.some(photo => photo.studentId !== scope.studentId)) throw new Error('原图所属孩子不匹配');
-  return { cancelled: result.cancelled, ...(result.batchId && !result.failures.length ? { acknowledge: () => bridge.forgetOriginalBatch(scope.owner, scope.studentId, result.batchId) } : {}),
+  return { cancelled: result.cancelled, selectedCount: result.selectedCount, ...(result.batchId && !result.cancelled && !result.failures.length && (result.selectedCount === undefined || result.selectedCount === result.originals.length) ? { acknowledge: () => bridge.forgetOriginalBatch(scope.owner, scope.studentId, result.batchId) } : {}),
     ...(result.batchId && result.failures.length ? { discardRecovery: () => discardBatch(bridge, scope, result.batchId) } : {}),
     failures: result.failures.map(f => `第 ${f.index + 1} 张未导入：${f.message}`), items: result.originals.map(original => ({
     id: original.originalId, name: originalPhotoName(original),
@@ -37,10 +38,11 @@ async function discardBatch(bridge: NativeBridge, scope: CloudScope, batchId: st
   if (!['completed', 'cancelled'].includes(current.state)) await bridge.cancelOriginalBatch(scope.owner, scope.studentId, batchId);
   await bridge.forgetOriginalBatch(scope.owner, scope.studentId, batchId);
 }
-export function createDriveServices(api: FamilyApi): DriveServices {
+export function createDriveServices(api: FamilyApi, resolveName?: ResolveName): DriveServices {
   const cloud = createCloudApi(api), native = Capacitor.getPlatform() === 'android', gate = new ImageRequestGate();
   return {
-    native, limits: cloud.limits, list: cloud.list, upload: (job, bytes, signal) => gate.run(() => cloud.upload(job, bytes, signal), signal, 1),
+    native, limits: cloud.limits, list: cloud.list, upload: (job, bytes, signal) => gate.run(() => retryBusy(() => cloud.upload(job, bytes, signal), signal), signal, 1),
+    prepare: (job, signal) => cloud.prepare(job, signal, resolveName),
     async read(job: UploadJob, signal) {
       signal.throwIfAborted();
       if (job.source.kind === 'native') {
@@ -67,10 +69,16 @@ export function createDriveServices(api: FamilyApi): DriveServices {
       }
     },
     ...(native ? {
-      pick: async (scope: CloudScope, limit: number, signal: AbortSignal, folderRange = false, albumRange = false) => {
-        const bridge = await nativeBridge(); return fromNative(await bridge.pickOriginals(scope.owner, scope.studentId, limit, { purpose: 'cloud-original', signal, ...(folderRange ? { folderRange: true } : {}), ...(albumRange ? { albumRange: true } : {}) }), scope, bridge);
+      pendingImports: async (scope: CloudScope, signal: AbortSignal) => {
+        const { batches } = await (await nativeBridge()).listOriginalBatches(scope.owner, scope.studentId, 'cloud-original');
+        signal.throwIfAborted();
+        if (batches.some(batch => batch.studentId !== scope.studentId || batch.purpose !== 'cloud-original')) throw new Error('相册记录所属孩子不匹配');
+        return batches.filter(batch => batch.state !== 'cancelled').flatMap(batch => batch.items?.map(item => item.originalId) || []);
       },
-      recover: async (scope: CloudScope, _limit: number, signal: AbortSignal) => {
+      pick: async (scope: CloudScope, limit: number, signal: AbortSignal, folderRange = false, albumRange = false, progress?: (value: ImportProgress) => void) => {
+        const bridge = await nativeBridge(); return fromNative(await bridge.pickOriginals(scope.owner, scope.studentId, limit, { purpose: 'cloud-original', signal, ...progressOption(progress), ...(folderRange ? { folderRange: true } : {}), ...(albumRange ? { albumRange: true } : {}) }), scope, bridge);
+      },
+      recover: async (scope: CloudScope, _limit: number, signal: AbortSignal, progress?: (value: ImportProgress) => void) => {
         const bridge = await nativeBridge();
         const { batches } = await bridge.listOriginalBatches(scope.owner, scope.studentId, 'cloud-original');
         signal.throwIfAborted();
@@ -78,8 +86,11 @@ export function createDriveServices(api: FamilyApi): DriveServices {
         const batch = batches.sort((a, b) => a.createdAt - b.createdAt)[0];
         if (!batch) return { items: [], failures: [] };
         if (batch.state === 'selecting') return { items: [], failures: ['上次系统相册尚未返回，请完成选择；也可忽略这次未完成的选图。'], discardRecovery: () => discardBatch(bridge, scope, batch.batchId) };
-        return fromNative(await bridge.resumeOriginalBatch(scope.owner, scope.studentId, batch.batchId, { signal, purpose: 'cloud-original' }), scope, bridge);
+        return fromNative(await bridge.resumeOriginalBatch(scope.owner, scope.studentId, batch.batchId, { signal, purpose: 'cloud-original', ...progressOption(progress) }), scope, bridge);
       },
     } : {}),
   };
+}
+function progressOption(progress?: (value: ImportProgress) => void) {
+  return progress ? { onProgress: (batch: NativePhotoBatch) => progress({ total: batch.items.length, imported: batch.items.filter(item => item.status === 'imported').length, failed: batch.items.filter(item => item.status === 'failed').length }) } : {};
 }

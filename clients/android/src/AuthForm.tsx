@@ -9,7 +9,6 @@ import { appName, configuredServer } from './release';
 import type { Auth } from './restore-session';
 
 export type AuthMode = 'login' | 'register';
-const upcoming = new Set(['分步辅导', '举一反三', '学习报告']);
 type Props = { initialMode: AuthMode; feature?: string; initialError: string; backLabel?: string;
   onBack: () => void; onLogin: (auth: Auth) => Promise<void>; children: ReactNode };
 
@@ -55,11 +54,8 @@ export function AuthForm({ initialMode, feature, initialError, backLabel = '返�
       <div className="brand"><BrandMark size={32} /><span>{appName}</span></div>
     </header>
     <section className="auth-card">
-      <span className="eyebrow">让每一次学习，都留下收获</span>
       <h1>{registering ? '注册' : '登录'}</h1>
-      {feature ? <p className="auth-feature-context">{upcoming.has(feature)
-        ? `${feature}正在准备中。你可以先注册或登录，开始拍题与校对。`
-        : `使用${feature}，请先注册或登录。`}</p>
+      {feature ? <p className="auth-feature-context">{`使用${feature}，请先注册或登录。`}</p>
         : <p>一个账号管理多个孩子，学习资料分别保存。</p>}
       <div className="auth-tabs" role="tablist" aria-label="注册或登录">
         <button type="button" role="tab" aria-selected={registering} disabled={busy} onClick={() => switchMode('register')}>注册</button>
@@ -106,7 +102,6 @@ export function AuthForm({ initialMode, feature, initialError, backLabel = '返�
         </div>}
         {error && <p className="error" role="alert">{error}</p>}
         <button className="primary full" disabled={busy || (registering && (checking || !registration?.enabled))}>{busy ? registering ? '正在注册…' : '正在登录…' : registering ? '注册' : '登录'}</button>
-        <button className="auth-browse" type="button" disabled={busy} onClick={onBack}>先逛逛</button>
       </form>
       {children}
       <PermissionInfo />

@@ -20,7 +20,7 @@ export async function studentOverview(store: FamilyStore, accountId: string) {
     student.overview.wrongQuestionCount += questions.filter(question => question.wrongBook).length;
     if (scan.status === 'needs_review') student.overview.needsReviewCount++;
   }
-  for (const row of store.db.prepare('SELECT student_id, COUNT(*) AS total FROM cloud_photos WHERE account_id=? GROUP BY student_id').all(accountId)) {
+  for (const row of store.db.prepare('SELECT student_id, COUNT(*) AS total FROM cloud_photos WHERE account_id=? AND NOT EXISTS (SELECT 1 FROM cloud_photo_replacements WHERE old_id=cloud_photos.id) GROUP BY student_id').all(accountId)) {
     const student = byId.get(String(row.student_id));
     if (student) student.overview.cloudPhotoCount = Number(row.total);
   }

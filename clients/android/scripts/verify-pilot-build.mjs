@@ -37,8 +37,8 @@ try {
   await page.getByRole('navigation', { name: '账户' }).getByRole('button', { name: '登录', exact: true }).click();
   assert.equal(await page.getByLabel('家庭服务地址').count(), 0);
   await page.getByText(`知燃 AI ${version} · 家庭试用版`, { exact: true }).waitFor();
-  assert.equal(await page.getByRole('link', { name: '家长账号' }).getAttribute('href'), `${website}account`);
-  assert.equal(await page.getByRole('link', { name: '家长查看' }).getAttribute('href'), `${website}students`);
+  assert.equal(await page.getByRole('link', { name: '家长账号' }).count(), 0);
+  assert.equal(await page.getByRole('link', { name: '家长查看' }).count(), 0);
   mkdirSync('test-results', { recursive: true });
   await page.screenshot({ path: 'test-results/pilot-login.png', fullPage: true });
   await page.getByLabel('账号', { exact: true }).fill('synthetic-family');

@@ -17,24 +17,26 @@ const receipt = (job: UploadJob): CloudPhoto => ({ id: 'server-' + job.id, batch
 function services() { return { read: vi.fn(async (job: UploadJob) => ({ file: (job.source as { file: Blob }).file, sha256: digest })), upload: vi.fn(async (job: UploadJob) => receipt(job)) }; }
 
 describe('cloud original upload queue', () => {
-  it('groups 450 selections as 200/200/50 and keeps all group IDs across recovery and further selection', async () => {
+  it('keeps 500 selections in one upload and restores every ID before continuing', async () => {
     const { store } = memory(), api = services(), queue = new UploadQueue(scope, store, api); await queue.load();
-    await queue.add(Array.from({ length: 450 }, (_, i) => item(`${i}.jpg`)));
+    await queue.add(Array.from({ length: 500 }, (_, i) => item(`${i}.jpg`)));
     expect(api.read).not.toHaveBeenCalled(); expect(api.upload).not.toHaveBeenCalled();
     const saved = queue.snapshot().jobs;
     const groups = [...new Set(saved.map(j => j.clientBatchId))];
-    expect(groups.map(id => saved.filter(j => j.clientBatchId === id).length)).toEqual([200, 200, 50]);
-    expect(groups.map(id => saved.find(j => j.clientBatchId === id)!.expectedCount)).toEqual([200, 200, 50]);
+    expect(groups.map(id => saved.filter(j => j.clientBatchId === id).length)).toEqual([500]);
+    expect(groups.map(id => saved.find(j => j.clientBatchId === id)!.expectedCount)).toEqual([500]);
     queue.dispose(); const restored = new UploadQueue(scope, store, api); await restored.load();
     expect(restored.snapshot().jobs.map(j => [j.id, j.clientBatchId])).toEqual(saved.map(j => [j.id, j.clientBatchId]));
-    await restored.add([item()]); expect((await store.list(scope)).length).toBe(451);
-    await restored.start(); expect(api.upload).toHaveBeenCalledTimes(451);
+    await restored.add([item()]); expect((await store.list(scope)).length).toBe(501);
+    await restored.start(); expect(api.upload).toHaveBeenCalledTimes(501);
     expect(restored.snapshot().jobs.every(j => j.status === 'completed')).toBe(true);
   });
-  it('honors an older server group limit without blocking larger selections', async () => {
+  it('starts a new total after previous completed selections, retaining pending progress during recovery', async () => {
     const { store } = memory(), api = services(), queue = new UploadQueue(scope, store, api); await queue.load();
-    await queue.add(Array.from({ length: 201 }, () => item()), 100);
-    expect([...new Set(queue.snapshot().jobs.map(j => j.clientBatchId))].map(id => queue.snapshot().jobs.filter(j => j.clientBatchId === id).length)).toEqual([100, 100, 1]);
+    await queue.add(Array.from({ length: 5 }, () => item())); await queue.start();
+    await queue.add(Array.from({ length: 500 }, () => item()));
+    expect(queue.snapshot().jobs).toHaveLength(500); expect(queue.snapshot().jobs.every(j => j.status === 'queued')).toBe(true);
+    await queue.start(); await queue.add([item()], false); expect(queue.snapshot().jobs).toHaveLength(501);
   });
   it('reads/sends serially, releases web blobs only after verified receipts', async () => {
     const { store } = memory(), api = services(), queue = new UploadQueue(scope, store, api); let live = 0, peak = 0;
@@ -92,5 +94,23 @@ describe('cloud original upload queue', () => {
   it('native recovery repeats stable IDs without duplicate queue rows', async () => {
     const { store } = memory(), queue = new UploadQueue(scope, store, services()); await queue.load();
     await queue.add([{ ...item(), id: 'stable-id' }]); await queue.add([{ ...item(), id: 'stable-id' }]); expect(queue.snapshot().jobs.length).toBe(1);
+  });
+  it('persists the chosen name before upload and retries a changed name conflict without losing progress', async () => {
+    const { store } = memory(), api = services();
+    let calls = 0;
+    const prepare = vi.fn(async (job: UploadJob) => ({ ...job, name: ++calls === 1 ? '同名_1.jpg' : '同名_2.jpg' }));
+    api.upload.mockImplementationOnce(async job => { expect((await store.list(scope))[0].name).toBe(job.name); throw Object.assign(new Error('race'), { code: 'CLOUD_NAME_CONFLICT' }); });
+    const queue = new UploadQueue(scope, store, { ...api, prepare }); await queue.load(); await queue.add([item()]); await queue.start();
+    expect(prepare).toHaveBeenCalledTimes(2); expect(api.read).toHaveBeenCalledTimes(1);
+    expect(queue.snapshot().jobs[0]).toMatchObject({ name: '同名_2.jpg', status: 'completed' });
+  });
+  it('stops while waiting for a name decision without reading or uploading later photos', async () => {
+    const { store } = memory(), api = services(); let ready!: () => void;
+    const waiting = new Promise<void>(resolve => { ready = resolve; });
+    const prepare = (_job: UploadJob, signal: AbortSignal) => new Promise<UploadJob>((_resolve, reject) => { ready(); signal.addEventListener('abort', () => reject(signal.reason), { once: true }); });
+    const queue = new UploadQueue(scope, store, { ...api, prepare }); await queue.load(); await queue.add([item(), item()]);
+    const running = queue.start(); await waiting; queue.stop(); await running;
+    expect(api.read).not.toHaveBeenCalled(); expect(api.upload).not.toHaveBeenCalled();
+    expect(queue.snapshot().jobs.map(j => j.status)).toEqual(['paused', 'queued']);
   });
 });

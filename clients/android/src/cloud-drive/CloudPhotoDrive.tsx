@@ -5,7 +5,8 @@ import type { FamilyApi } from '../api';
 import { createDriveServices } from './services';
 import { driveStore } from './store';
 import { UploadQueue, type QueueSnapshot } from './queue';
-import { BATCH_LIMIT, type CloudLimits, type CloudPage, type CloudPhoto, type DriveServices, type DriveStore, type PickResult, type PickedOriginal } from './types';
+import { type CloudLimits, type CloudPage, type CloudPhoto, type DriveServices, type DriveStore, type PickResult, type PickedOriginal, type NameCheck, type NameChoice, type ResolveName, type ImportProgress } from './types';
+import { NameConflictDialog } from './NameConflictDialog';
 import './cloud-drive.css';
 
 export type CloudPhotoDriveProps = {
@@ -22,10 +23,19 @@ export function CloudPhotoDrive(props: CloudPhotoDriveProps) {
   return <DriveSession key={JSON.stringify([props.owner, props.studentId, props.api.base])} {...props} />;
 }
 function DriveSession({ api, owner, studentId, studentLabel, onClose, onOpenOriginals, services: supplied, store = driveStore }: CloudPhotoDriveProps) {
-  const services = useMemo(() => supplied || createDriveServices(api), [api, supplied]);
+  const [nameRequest, setNameRequest] = useState<{ check: NameCheck; choose: (choice: NameChoice) => void } | null>(null);
+  const resolveName: ResolveName = useCallback((check, signal) => new Promise<NameChoice>((resolve, reject) => {
+    const clear = () => setNameRequest(current => current === request ? null : current);
+    const abort = () => { clear(); reject(signal.reason); };
+    const request = { check, choose: (choice: NameChoice) => { signal.removeEventListener('abort', abort); clear(); resolve(choice); } };
+    if (signal.aborted) { reject(signal.reason); return; }
+    signal.addEventListener('abort', abort, { once: true }); setNameRequest(request);
+  }), []);
+  const services = useMemo(() => supplied || createDriveServices(api, resolveName), [api, supplied, resolveName]);
   const [queue, setQueue] = useState<QueueSnapshot>({ jobs: [], running: false });
   const [ready, setReady] = useState(false), [limits, setLimits] = useState<CloudLimits | null>(null);
   const [error, setError] = useState(''), [notice, setNotice] = useState(''), [picking, setPicking] = useState(false);
+  const [importProgress, setImportProgress] = useState<ImportProgress | null>(null), [pendingImportIds, setPendingImportIds] = useState<string[]>([]);
   const [photos, setPhotos] = useState<CloudPage>({ photos: [] }), [listing, setListing] = useState(false);
   const [viewing, setViewing] = useState<CloudPhoto | null>(null), [downloading, setDownloading] = useState('');
   const [recoveryAction, setRecoveryAction] = useState<{ run: () => Promise<void> } | null>(null);
@@ -34,9 +44,16 @@ function DriveSession({ api, owner, studentId, studentLabel, onClose, onOpenOrig
   const dialog = useRef<HTMLDialogElement>(null);
   useEffect(() => { const element = dialog.current; if (viewing && element && !element.open) element.showModal(); return () => element?.close(); }, [viewing]);
   const uploadCount = queue.jobs.filter(job => job.status === 'completed').length;
-  const waiting = queue.jobs.length - uploadCount, batchSize = limits?.maxBatch || BATCH_LIMIT;
-  const groupCount = new Set(queue.jobs.map(job => job.clientBatchId)).size;
+  const waiting = queue.jobs.length - uploadCount;
   const locked = queue.running || picking || !ready;
+  const pendingImports = pendingImportIds.filter(id => !queue.jobs.some(job => job.id === id)).length;
+  const totalSelected = queue.jobs.length + pendingImports;
+  const refreshImports = useCallback(async () => {
+    const signal = controller.current?.signal;
+    if (!services.pendingImports || !signal || signal.aborted) return;
+    const ids = await services.pendingImports({ owner, studentId }, signal);
+    if (live.current && !signal.aborted) setPendingImportIds(ids);
+  }, [services, owner, studentId]);
   const refresh = useCallback(async (cursor?: string) => {
     const signal = controller.current?.signal; if (!live.current || !signal || signal.aborted) return;
     const ticket = ++listTicket.current; setListing(true);
@@ -51,19 +68,19 @@ function DriveSession({ api, owner, studentId, studentLabel, onClose, onOpenOrig
     live.current = true; const abort = new AbortController(); controller.current = abort;
     const work = new UploadQueue({ owner, studentId }, store, services); queueRef.current = work;
     const unsubscribe = work.subscribe(() => { if (live.current && !abort.signal.aborted) setQueue(work.snapshot()); });
-    void Promise.all([work.load(), services.limits(abort.signal)]).then(([, cap]) => {
+    void Promise.all([work.load(), services.limits(abort.signal), refreshImports()]).then(([, cap]) => {
       if (live.current && !abort.signal.aborted) { setLimits(cap); setReady(true); void refresh(); }
     }).catch(e => { if (live.current && !abort.signal.aborted) setError(message(e)); });
     return () => { live.current = false; abort.abort(); work.dispose(); unsubscribe(); };
-  }, [owner, studentId, store, services, refresh]);
+  }, [owner, studentId, store, services, refresh, refreshImports]);
   function close() { queueRef.current?.stop(); controller.current?.abort(); onClose(); }
-  closeRef.current = () => { if (viewing) setViewing(null); else close(); };
+  closeRef.current = () => { if (nameRequest) queueRef.current?.stop(); else if (viewing) setViewing(null); else close(); };
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) return;
     const listener = NativeApp.addListener('backButton', () => closeRef.current());
     return () => { void listener.then(handle => handle.remove()); };
   }, []);
-  async function addPicked(result: PickResult) {
+  async function addPicked(result: PickResult, recovering = false) {
     const signal = controller.current?.signal;
     if (!live.current || !signal || signal.aborted || !limits) return;
     const rejected: string[] = [], accepted: PickedOriginal[] = [];
@@ -72,25 +89,31 @@ function DriveSession({ api, owner, studentId, studentLabel, onClose, onOpenOrig
       else if (item.size > limits.maxFileBytes || item.size < 1) rejected.push(`${item.name}：超过单张大小限制或文件为空`);
       else accepted.push(item);
     }
-    if (accepted.length) await queueRef.current?.add(accepted, limits.maxBatch);
+    const added = accepted.length ? await queueRef.current?.add(accepted, !recovering) || 0 : 0;
     if (!live.current || signal.aborted) return;
     setRecoveryAction(result.discardRecovery ? { run: result.discardRecovery } : null);
     if (!rejected.length && !result.failures.length) await result.acknowledge?.();
     if (!live.current || signal.aborted) return;
-    setNotice(result.cancelled && !accepted.length ? '已取消选图' : accepted.length ? `已保存 ${accepted.length} 张到本机待上传，按每组最多 ${limits.maxBatch} 张自动分组，请点“开始上传”。` : '没有新的图片需要加入');
+    setNotice(result.cancelled && !accepted.length ? '已暂停读取，可点“恢复上次”继续。' : accepted.length ? `已选 ${result.selectedCount ?? result.items.length} 张，本次加入 ${added} 张。` : '没有新的图片需要加入');
     setError([...result.failures, ...rejected].join('；'));
   }
   async function select(recover = false, folderRange = false, albumRange = false) {
     const signal = controller.current?.signal; if (locked || !signal) return;
     setError(''); setNotice('');
     if (!services.native && !recover) { input.current?.click(); return; }
-    setPicking(true);
+    setPicking(true); setImportProgress(null);
     try {
-      const result = recover ? await services.recover?.({ owner, studentId }, batchSize, signal) : await services.pick?.({ owner, studentId }, batchSize, signal, folderRange, albumRange);
+      const progress = (value: ImportProgress) => { if (live.current && !signal.aborted) setImportProgress(value); };
+      const result = recover ? await services.recover?.({ owner, studentId }, 2147483647, signal, progress) : await services.pick?.({ owner, studentId }, 2147483647, signal, folderRange, albumRange, progress);
       if (!result) throw new Error('此设备暂不支持此选图方式');
-      await addPicked(result);
+      await addPicked(result, recover);
     } catch (e) { if (live.current && !signal.aborted) setError(message(e)); }
-    finally { if (live.current && !signal.aborted) setPicking(false); }
+    finally {
+      if (live.current && !signal.aborted) {
+        try { await refreshImports(); } catch (e) { if (!signal.aborted) setError(message(e)); }
+        if (live.current && !signal.aborted) { setPicking(false); setImportProgress(null); }
+      }
+    }
   }
   async function filesSelected(files: File[]) {
     setPicking(true); setError(''); setNotice('');
@@ -118,15 +141,16 @@ function DriveSession({ api, owner, studentId, studentLabel, onClose, onOpenOrig
   }
   async function discardRecovery() {
     if (!recoveryAction || locked) return; setPicking(true);
-    try { await recoveryAction.run(); if (live.current) { setRecoveryAction(null); setError(''); setNotice('已忽略这批未导入项，已导入原片和待上传记录均保留。可继续恢复下一批。'); } }
+    try { await recoveryAction.run(); await refreshImports(); if (live.current) { setRecoveryAction(null); setError(''); setNotice('已忽略这批未导入项，已导入原片和待上传记录均保留。可继续恢复下一批。'); } }
     catch (e) { if (live.current) setError(message(e)); }
     finally { if (live.current) setPicking(false); }
   }
   const bytesWaiting = queue.jobs.filter(job => job.status !== 'completed').reduce((sum, job) => sum + job.size, 0);
   return <section className="cloud-drive" aria-labelledby="cloud-drive-title">
+    {nameRequest && <NameConflictDialog key={nameRequest.check.token + nameRequest.check.name} check={nameRequest.check} onChoose={nameRequest.choose} onCancel={() => queueRef.current?.stop()} />}
     <header className="cloud-header"><button type="button" onClick={close} aria-label="返回上一页">‹ 返回</button><span className="cloud-child">{studentLabel || '当前孩子'}</span></header>
-    <div className="cloud-hero"><h2 id="cloud-drive-title">图片云盘</h2><p>原图备份 · 保留原文件名 · 分析优先读本机</p></div>
-    <div className="cloud-select"><div className="cloud-select-heading"><h3>批量上传图片</h3><p>每组 {batchSize} 张，超出自动分组</p></div>
+    <div className="cloud-hero"><h2 id="cloud-drive-title">图片云盘</h2><p>备份原图，保留原文件名</p></div>
+    <div className="cloud-select"><div className="cloud-select-heading"><h3>批量上传图片</h3></div>
       <div className="cloud-pick-actions">
         <button type="button" className="cloud-primary" disabled={locked || !limits} onClick={() => void select(false, false, true)}>{picking ? '读取中…' : services.native ? '相册选择' : '选择图片'}</button>
         {services.native && <button type="button" disabled={locked || !limits} onClick={() => void select(false, true)}>文件夹范围</button>}
@@ -141,20 +165,20 @@ function DriveSession({ api, owner, studentId, studentLabel, onClose, onOpenOrig
       </div>
     </div>
     {(error || queue.error) && <p role="alert" className="cloud-error">{error || queue.error}</p>}{notice && <output className="cloud-notice">{notice}</output>}
+    {picking && importProgress && <output className="cloud-notice">正在保存到本机 {importProgress.imported}/{importProgress.total}{importProgress.failed ? `，${importProgress.failed} 张需重试` : ''}</output>}
+    {!picking && pendingImports > 0 && <output className="cloud-error cloud-import-warning">还有 {pendingImports} 张所选照片未加入上传队列。<button type="button" disabled={locked} onClick={() => void select(true)}>继续读取</button></output>}
     {recoveryAction && <button type="button" disabled={locked} onClick={() => void discardRecovery()}>忽略这批未导入项，保留原片</button>}
-    <section className="cloud-panel" aria-labelledby="cloud-queue-title"><div className="cloud-section-heading"><h3 id="cloud-queue-title">本机待上传</h3><span>{waiting} 张待完成</span></div>
-      {queue.jobs.length ? <>
-        <div className="cloud-progress"><span>已存云盘 {uploadCount} / {queue.jobs.length} 张 · 共 {groupCount} 组</span><progress max={queue.jobs.length} value={uploadCount} aria-label="全部图片上传进度" /></div>
-        <div className="cloud-actions"><button type="button" className="cloud-primary" disabled={locked || !waiting || !limits} onClick={() => void start()}>{queue.jobs.some(job => job.status === 'failed' || job.status === 'paused') ? '继续上传 / 重试' : '开始上传'}</button>
-          <button type="button" disabled={!queue.running} onClick={() => queueRef.current?.stop()}>停止继续上传</button></div>
-        <p className="cloud-hint">逐张读取并上传；停止后保留已完成图片，未确认的项目可重试。离开页面会停止后续上传。</p>
+    {!!totalSelected && <section className="cloud-panel" aria-labelledby="cloud-queue-title"><div className="cloud-section-heading"><h3 id="cloud-queue-title">{waiting || pendingImports ? '本机待上传' : '上传记录'}</h3><span aria-label="上传完成数量">{uploadCount}/{totalSelected}</span></div>
+        <div className="cloud-progress"><progress max={totalSelected} value={uploadCount} aria-label="全部图片上传进度" /></div>
+        {(waiting > 0 || queue.running) && <div className="cloud-actions"><button type="button" className="cloud-primary" disabled={locked || !waiting || !limits} onClick={() => void start()}>{queue.jobs.some(job => job.status === 'failed' || job.status === 'paused') ? '继续上传 / 重试' : '开始上传'}</button>
+          {queue.running && <button type="button" onClick={() => queueRef.current?.stop()}>停止继续上传</button>}</div>}
+        {waiting > 0 && <p className="cloud-hint">离开页面会暂停后续上传，可回来继续。</p>}
         {photos.storage && bytesWaiting > photos.storage.limitBytes - photos.storage.usedBytes && <p className="cloud-error">本批原图大小超过家庭云盘剩余空间，部分图片可能无法上传。</p>}
-        <ol className="cloud-queue">{queue.jobs.map(job => <li key={job.id} className={`cloud-job cloud-job-${job.status}`}><div className="cloud-job-text"><strong title={job.name}>{job.name}</strong><span>{sizeLabel(job.size)} · {job.status === 'uploading' ? queue.phase === 'reading' ? '读取并校验原图…' : '正在上传原图…' : statusLabel[job.status]}</span>{job.message && <p>{job.message}</p>}</div>
+        <ol className="cloud-queue">{queue.jobs.map(job => <li key={job.id} className={`cloud-job cloud-job-${job.status}`}><div className="cloud-job-text"><strong title={job.name}>{job.name}</strong><span>{sizeLabel(job.size)} · {job.status === 'uploading' ? queue.phase === 'naming' ? '检查图片名称…' : queue.phase === 'reading' ? '读取并校验原图…' : '正在上传原图…' : statusLabel[job.status]}</span>{job.message && <p>{job.message}</p>}</div>
           <div className="cloud-job-actions">{['failed', 'paused'].includes(job.status) && <button type="button" disabled={locked} onClick={() => void start(job.id)} aria-label={`重试 ${job.name}`}>重试</button>}
           <button type="button" disabled={locked} onClick={() => void remove(job.id)} aria-label={`${job.status === 'completed' ? '清理记录' : '移除待上传'} ${job.name}`}>{job.status === 'completed' ? '清理记录' : '移除'}</button></div></li>)}</ol>
         <p className="cloud-hint">移除只清理本机上传记录，不会删除相册原图或云盘图片。</p>
-      </> : <p className="cloud-empty">选择的照片会出现在这里，确认后再上传。</p>}
-    </section>
+    </section>}
     <section className="cloud-panel" aria-labelledby="cloud-photos-title"><div className="cloud-section-heading"><h3 id="cloud-photos-title">已存云图</h3><button type="button" disabled={listing || !limits} onClick={() => void refresh()}>刷新</button></div>
       {photos.storage && <p className="cloud-hint">家庭云盘已用 {sizeLabel(photos.storage.usedBytes)} / {sizeLabel(photos.storage.limitBytes)}</p>}
       <div className="cloud-grid">{photos.photos.map(photo => <article className="cloud-photo" key={photo.id}>

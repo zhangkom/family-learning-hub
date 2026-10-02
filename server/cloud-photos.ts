@@ -38,6 +38,7 @@ import {
 } from './cloud-photo-files';
 import { receiveCloudPhoto } from './cloud-photo-multipart';
 import { inspectCloudImage } from './cloud-image';
+import { currentName, checkPhotoName, validateNameChoice, replaceNamedPhotos } from './cloud-photo-names';
 
 function uuid(value: unknown) {
   if (typeof value !== 'string' || !cloudUuid.test(value.toLowerCase()))
@@ -84,10 +85,9 @@ async function createBatch(
       (k) => !['studentId', 'clientBatchId', 'expectedCount'].includes(k),
     ) ||
     !Number.isSafeInteger(body.expectedCount) ||
-    Number(body.expectedCount) < 1 ||
-    Number(body.expectedCount) > CLOUD_PHOTO_CAPABILITY.maxBatchItems
+    Number(body.expectedCount) < 1
   )
-    throw new HttpError(400, `每批请选择1至${CLOUD_PHOTO_CAPABILITY.maxBatchItems}张图片`);
+    throw new HttpError(400, '图片数量须为正整数');
   const student = requireStudent(store, account, body.studentId),
     client = uuid(body.clientBatchId);
   const prior = store.db
@@ -185,8 +185,6 @@ async function uploadPhoto(
 ) {
   if (uploading)
     throw new MobileError(503, '上传正忙，请稍后重试', 'UPLOAD_BUSY');
-  if (!store.allow(`cloud-upload:${account}`, 600, 3600000))
-    throw new HttpError(429, '上传过于频繁，请稍后再试');
   uploading = true;
   let temp: string | undefined;
   try {
@@ -230,6 +228,12 @@ async function uploadPhoto(
     };
     const prior = previous();
     if (prior) return json({ photo: prior });
+    const chosenName = () => {
+      const named = currentName(store, account, student.id, originalName);
+      validateNameChoice(named, fields.nameAction, fields.nameToken);
+      return named;
+    };
+    chosenName();
     const enforceLimits = () => {
       if (
         count(
@@ -272,6 +276,7 @@ async function uploadPhoto(
     const result = store.transaction(() => {
       const prior = previous();
       if (prior) return { photo: prior, created: false };
+      const named = chosenName();
       enforceLimits();
       const parent = cloudDirectory(account),
         target = join(parent, photo.id);
@@ -331,6 +336,7 @@ async function uploadPhoto(
           photo.createdAt,
           JSON.stringify(photo),
         );
+      replaceNamedPhotos(store, named, photo.id);
       return { photo, created: true };
     });
     cacheThumbnail(photo.id, image.thumbnail);
@@ -379,12 +385,12 @@ function listPhotos(request: Request, store: FamilyStore, account: string) {
   const rows = after
     ? store.db
         .prepare(
-          'SELECT body FROM cloud_photos WHERE account_id=? AND student_id=? AND (created_at<? OR (created_at=? AND id<?)) ORDER BY created_at DESC,id DESC LIMIT ?',
+          'SELECT body FROM cloud_photos WHERE account_id=? AND student_id=? AND NOT EXISTS (SELECT 1 FROM cloud_photo_replacements WHERE old_id=cloud_photos.id) AND (created_at<? OR (created_at=? AND id<?)) ORDER BY created_at DESC,id DESC LIMIT ?',
         )
         .all(account, student.id, after[0], after[0], after[1], limit + 1)
     : store.db
         .prepare(
-          'SELECT body FROM cloud_photos WHERE account_id=? AND student_id=? ORDER BY created_at DESC,id DESC LIMIT ?',
+          'SELECT body FROM cloud_photos WHERE account_id=? AND student_id=? AND NOT EXISTS (SELECT 1 FROM cloud_photo_replacements WHERE old_id=cloud_photos.id) ORDER BY created_at DESC,id DESC LIMIT ?',
         )
         .all(account, student.id, limit + 1);
   const photos = rows
@@ -430,6 +436,7 @@ export async function cloudPhotoResponse(
   if (parts[0] !== 'cloud-photos' || parts.length > 3)
     throw new HttpError(404, '接口不存在');
   if (request.method !== 'GET') throw new HttpError(405, '请求方式不支持');
+  if (parts.length === 2 && parts[1] === 'name') return checkPhotoName(request, store, account);
   const photo = ownedCloudPhoto(store, account, parts[1]);
   if (parts.length === 2) return json({ photo });
   if (!['file', 'thumbnail'].includes(parts[2]))

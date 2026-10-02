@@ -3,7 +3,6 @@ import { mkdirSync, chmodSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { Student } from '../lib/mobile';
-import { CLOUD_PHOTO_CAPABILITY } from '../lib/cloud-photos';
 import {
   emptyFamily,
   mergeFamily,
@@ -12,10 +11,10 @@ import {
 } from '../lib/family-state';
 
 const cloudBatchTable = (name: 'cloud_photo_batches' | 'cloud_photo_batches_upgrade') =>
-  `CREATE TABLE IF NOT EXISTS ${name} (id TEXT PRIMARY KEY, account_id TEXT NOT NULL REFERENCES accounts(id), student_id TEXT NOT NULL, client_id TEXT NOT NULL, expected_count INTEGER NOT NULL CHECK(expected_count BETWEEN 1 AND ${CLOUD_PHOTO_CAPABILITY.maxBatchItems}), body TEXT NOT NULL, UNIQUE(account_id,client_id), FOREIGN KEY(account_id,student_id) REFERENCES students(account_id,id));`;
+  `CREATE TABLE IF NOT EXISTS ${name} (id TEXT PRIMARY KEY, account_id TEXT NOT NULL REFERENCES accounts(id), student_id TEXT NOT NULL, client_id TEXT NOT NULL, expected_count INTEGER NOT NULL CHECK(expected_count >= 1), body TEXT NOT NULL, UNIQUE(account_id,client_id), FOREIGN KEY(account_id,student_id) REFERENCES students(account_id,id));`;
 
 function upgradeCloudPhotoBatches(db: DatabaseSync) {
-  const needsUpgrade = () => /expected_count\s+BETWEEN\s+1\s+AND\s+100\b/i.test(String(db.prepare("SELECT sql FROM sqlite_schema WHERE name='cloud_photo_batches'").get()?.sql));
+  const needsUpgrade = () => /expected_count\s+BETWEEN\s+1\s+AND\s+(?:100|200)\b/i.test(String(db.prepare("SELECT sql FROM sqlite_schema WHERE name='cloud_photo_batches'").get()?.sql));
   if (!needsUpgrade()) return;
   // Disable foreign keys before the transaction so replacing the parent table
   // preserves every cloud_photos reference. Recheck after acquiring the lock.
@@ -53,6 +52,8 @@ export class FamilyStore {
       CREATE TABLE IF NOT EXISTS cloud_photos (id TEXT PRIMARY KEY, account_id TEXT NOT NULL REFERENCES accounts(id), student_id TEXT NOT NULL, batch_id TEXT NOT NULL REFERENCES cloud_photo_batches(id), request_id TEXT NOT NULL, fingerprint TEXT NOT NULL, size INTEGER NOT NULL, created_at TEXT NOT NULL, body TEXT NOT NULL, UNIQUE(account_id,request_id), FOREIGN KEY(account_id,student_id) REFERENCES students(account_id,id));
       CREATE INDEX IF NOT EXISTS cloud_photos_page ON cloud_photos(account_id,student_id,created_at DESC,id DESC);
       CREATE INDEX IF NOT EXISTS cloud_photos_batch ON cloud_photos(batch_id);
+      CREATE INDEX IF NOT EXISTS cloud_photos_name ON cloud_photos(account_id,student_id,json_extract(body,'$.originalName'));
+      CREATE TABLE IF NOT EXISTS cloud_photo_replacements (old_id TEXT PRIMARY KEY REFERENCES cloud_photos(id), new_id TEXT NOT NULL REFERENCES cloud_photos(id));
       CREATE TABLE IF NOT EXISTS scan_jobs (id TEXT PRIMARY KEY, account_id TEXT NOT NULL REFERENCES accounts(id), owner TEXT NOT NULL, student_id TEXT NOT NULL, scan_id TEXT NOT NULL, revision INTEGER NOT NULL, status TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, available_at INTEGER NOT NULL, lease_until INTEGER NOT NULL DEFAULT 0, lease_token TEXT, error TEXT, created_at INTEGER NOT NULL);
       CREATE INDEX IF NOT EXISTS scan_jobs_ready ON scan_jobs(status,available_at,lease_until);
       CREATE UNIQUE INDEX IF NOT EXISTS scan_jobs_active ON scan_jobs(owner,scan_id) WHERE status IN ('queued','processing');`);

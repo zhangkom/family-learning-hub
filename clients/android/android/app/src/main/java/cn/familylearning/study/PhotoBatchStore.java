@@ -7,7 +7,7 @@ import java.util.*;
 final class PhotoBatchStore {
     static int maxItems(String purpose) {
         checkPurpose(purpose);
-        // A cloud selection may span many 200-image upload groups; this manifest contains metadata only.
+        // Selections have no application count cap; this manifest contains metadata only.
         return Integer.MAX_VALUE;
     }
     static final class Item {
