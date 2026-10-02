@@ -2,10 +2,10 @@
 export const CLOUD_PHOTO_CAPABILITY = {
   version: 1,
   maxBatchItems: 100,
-  maxFileBytes: 8 * 1024 * 1024,
+  maxFileBytes: 32 * 1024 * 1024,
   maxPixels: 32_000_000,
   mimeTypes: ['image/jpeg', 'image/png', 'image/webp'],
-  recommendedConcurrency: 2,
+  recommendedConcurrency: 1,
 } as const;
 
 export type CloudPhotoBatch = {
