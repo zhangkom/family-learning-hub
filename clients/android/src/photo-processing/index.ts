@@ -1,4 +1,5 @@
-import { Capacitor, registerPlugin } from '@capacitor/core';
+import { Capacitor } from '@capacitor/core';
+import { photoPlugin } from './native-plugin';
 import { validateMatrix, validateQuad, type Quad, type Matrix3 } from './geometry';
 export { fullPage, mapPoint, mapQuestionToOriginal, pointerToImage } from './geometry';
 export type { Quad, Matrix3 } from './geometry';
@@ -34,7 +35,7 @@ interface NativePhotos {
   process(input: { owner: string; originalId: string } & ProcessOptions): Promise<PreparedPhoto>;
   deleteOriginal(input: { owner: string; originalId: string; confirmDelete: true }): Promise<void>;
 }
-const native = registerPlugin<NativePhotos>('PhotoProcessing');
+const native = photoPlugin<NativePhotos>();
 const uuid = /^[a-f\d]{8}(?:-[a-f\d]{4}){3}-[a-f\d]{12}$/;
 const hash = /^[a-f\d]{64}$/;
 

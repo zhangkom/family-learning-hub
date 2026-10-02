@@ -1,4 +1,4 @@
-import { registerPlugin } from '@capacitor/core';
+import { photoPlugin } from './native-plugin';
 import { photoProcessingAvailable } from './index';
 
 export type CloudOriginalDownloadOptions = {
@@ -9,7 +9,7 @@ interface NativeDownload {
   downloadCloudOriginal(input: CloudOriginalDownloadOptions & { requestId: string }): Promise<{ saved: boolean; cancelled: boolean }>;
   cancelCloudOriginalDownload(input: { requestId: string }): Promise<void>;
 }
-const native = registerPlugin<NativeDownload>('PhotoProcessing');
+const native = photoPlugin<NativeDownload>();
 /** User-initiated native HTTPS stream, verified before Android's save-location dialog. */
 export async function downloadCloudOriginal(options: CloudOriginalDownloadOptions, signal?: AbortSignal) {
   signal?.throwIfAborted();

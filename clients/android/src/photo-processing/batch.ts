@@ -1,4 +1,4 @@
-import { registerPlugin } from '@capacitor/core';
+import { photoPlugin } from './native-plugin';
 import { getOriginal, photoProcessingAvailable, validateOriginal, type OriginalPhoto } from './index';
 
 export type PhotoBatchPurpose = 'processed' | 'cloud-original';
@@ -24,7 +24,7 @@ interface NativeBatches {
   cancelOriginalBatch(input: BatchScope): Promise<NativePhotoBatch>;
   forgetOriginalBatch(input: BatchScope): Promise<void>;
 }
-const native = registerPlugin<NativeBatches>('PhotoProcessing');
+const native = photoPlugin<NativeBatches>();
 const uuid = /^[a-f\d]{8}(?:-[a-f\d]{4}){3}-[a-f\d]{12}$/;
 function scope(owner: string, studentId: string, batchId?: string) {
   if (!photoProcessingAvailable()) throw new Error('此设备尚未接入本地批量照片导入');
