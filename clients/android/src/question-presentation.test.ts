@@ -1,10 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { questionPrompt, questionRectangles } from './question-presentation';
+import { questionPrompt, questionRectangles, questionTextLayout } from './question-presentation';
 import type { Question, Region } from './types';
 
 const region = (id: string, kind: Region['kind'], x: number, y: number, width: number, height: number): Region => ({ id, kind, x, y, width, height });
 const question = (id: string, regions: Region[], extra: Partial<Question> = {}): Question => ({ id, number: id, prompt: '', diagram: '', regions, knowledgePoints: [], answerSteps: [], uncertainties: [], confirmed: false, ...extra });
 describe('original question presentation', () => {
+  it('lays out complete options without changing their content or splitting geometric labels', () => {
+    expect(questionTextLayout('求长度。\nA. 3　 B. 4　 C. 5　 D. 7')).toEqual({ stem: '求长度。', options: ['A. 3', 'B. 4', 'C. 5', 'D. 7'] });
+    for (const text of ['如图，A、B、C 三点共线。', 'A. 3\nC. 5', 'A. 3 B. 4 C. 5 D. 7\n\n（2）求面积。'])
+      expect(questionTextLayout(text)).toEqual({ stem: text, options: [] });
+  });
   it('keeps separate boxes apart instead of including intervening questions', () => {
     const q = question('1', [region('bottom', 'figure', .1, .7, .5, .1), region('top', 'stem', .1, .1, .7, .2)]);
     const rectangles = questionRectangles(q, [q], 'paper');

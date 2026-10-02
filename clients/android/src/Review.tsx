@@ -19,7 +19,7 @@ import {
 } from './regions';
 import { subjects, statusNames, type Subject, type Question, type Region, type Scan, type TutoringReviewInput } from './types';
 import { AnalysisStatus } from './AnalysisStatus';
-import { QuestionPaper } from './QuestionPaper';
+import { QuestionPaper, QuestionSource } from './QuestionPaper';
 import { decodeQuestionImage } from './question-images';
 
 type Props = {
@@ -132,7 +132,7 @@ export function Review({
       .catch((e) => {
         if (!abort.signal.aborted) {
           setImageError(e.message);
-          if (Capacitor.getPlatform() === 'android' && !allowCloudImage) setLocalImageMissing(true);
+          if (Capacitor.getPlatform() === 'android') setLocalImageMissing(true);
           else setError(e.message);
         }
       });
@@ -437,9 +437,10 @@ export function Review({
         </button>
       </header>
 
-      {localImageMissing && <section className="notice"><p>暂时无法读取本机题图。可以重试读取，或主动从云端恢复这张题图。</p>
-        <button type="button" onClick={() => setImageRetry(value => value + 1)}>重试读取本机题图</button>
-        <button type="button" onClick={() => setAllowCloudImage(true)}>从云端恢复这张题图</button></section>}
+      {localImageMissing && <section className="notice"><p>{imageError || '暂时无法读取本机题图。'}</p>
+        <p>恢复会从云端下载一次并保存到本机，之后优先读取本机。</p>
+        <button type="button" onClick={() => { setAllowCloudImage(false); setImageRetry(value => value + 1); }}>重试读取本机题图</button>
+        <button type="button" onClick={() => { setAllowCloudImage(true); setImageRetry(value => value + 1); }}>恢复题图到本机</button></section>}
       <div className="review-status">
         <span className="status">
           {statusNames[scan.status] || scan.status}
@@ -628,7 +629,8 @@ export function Review({
                   image={image && imageSize ? { url: image, ...imageSize } : undefined}
                   onImageError={() => { setImage(''); setImageError('题图显示失败，请重新读取'); }} />
                 {!image && <output className="paper-image-note">{imageError || '正在读取题图…'}</output>}
-                {imageError && <button type="button" onClick={() => setImageRetry(value => value + 1)}>重试读取题图</button>}
+                {imageError && <button type="button" onClick={() => { setAllowCloudImage(false); setImageRetry(value => value + 1); }}>重试读取题图</button>}
+                <QuestionSource scan={{ ...scan, questions }} question={question} />
               </section>
               <label className="confirm-check">
                 <input

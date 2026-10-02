@@ -31,3 +31,15 @@ export function questionRectangles(question: Question, questions: Question[], mo
 export function questionPrompt(question: Question) {
   return question.prompt.trim() || question.tutoring?.result?.transcribedPrompt.trim() || '';
 }
+
+/** Split only a complete, ordered A–D option sequence; preserve all other text verbatim. */
+export function questionTextLayout(text: string) {
+  const labels = [...text.matchAll(/(?:^|[\s　])([A-D])[.．、]\s*/g)];
+  if (labels.length !== 4 || labels.map(match => match[1]).join('') !== 'ABCD')
+    return { stem: text, options: [] as string[] };
+  const options = labels.map((match, i) => text.slice(match.index, labels[i + 1]?.index ?? text.length).trim());
+  // Multi-paragraph tails may contain a follow-up problem: don't turn them into option D.
+  if (options.some(option => /\n\s*\n/.test(option) || option.length < 3))
+    return { stem: text, options: [] as string[] };
+  return { stem: text.slice(0, labels[0].index).trimEnd(), options };
+}

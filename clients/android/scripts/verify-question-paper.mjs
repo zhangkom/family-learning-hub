@@ -51,7 +51,8 @@ try {
   const scan = { id: 'paper-a', studentId: 'a', subject: '数学', source: '合成试卷', originalName: '合成几何与统计.jpg', mimeType: 'image/jpeg', size: photo.bytes, createdAt: now, revision: 1, status: 'ready', sourceKind: 'processed-photo', processing, questions };
   for (const native of [false, true]) {
     const context = await browser.newContext({ viewport: { width: 390, height: 844 } }); const page = await context.newPage(); lastPage = page; page.setDefaultTimeout(10000);
-    const requests = { cloudImages: 0 }; let delayStudent = false;
+    const requests = { cloudImages: 0 }; let delayStudent = false, legacy = false;
+    const currentScan = () => legacy ? { ...scan, id: 'paper-legacy', sourceKind: undefined, processing: undefined } : scan;
     page.on('pageerror', error => errors.push(error.message));
     if (native) await context.addInitScript(({ original, photo, outputId }) => {
       window.nativeReads = 0; window.localMissing = false; window.nativeBusy = true; window.androidBridge = {};
@@ -66,7 +67,11 @@ try {
           window.nativeReads++; return photo.data;
         },
         async nativePromise(plugin, method, input) {
-          if (plugin === 'SessionVault' && method === 'get') return { value: '' };
+          if (plugin === 'SessionVault') {
+            if (method === 'get') return { value: localStorage.getItem('synthetic-vault') || '' };
+            if (method === 'set') { localStorage.setItem('synthetic-vault', input.value); return {}; }
+            if (method === 'clear') { localStorage.removeItem('synthetic-vault'); return {}; }
+          }
           if (method === 'listOriginalBatches') return { batches: [] };
           if (method === 'listOriginals') return { originals: [], total: 0 };
           if (method === 'getOriginal') {
@@ -84,11 +89,12 @@ try {
       if (url.pathname.endsWith('latest.json')) return route.fulfill({ status: 503, body: '{}' });
       if (url.href === api + '/setup') return send({ enabled: true, registrationEnabled: true });
       if (url.href === api + '/session/login') return send({ token: 'synthetic', user: { id: 'paper-family', username: '题卡合成验收' }, expiresAt: Date.now() + 999999 });
+      if (url.href === api + '/session') return send({ user: { id: 'paper-family', username: '题卡合成验收' } });
       if (url.pathname.endsWith('/learning-sessions')) return send({ sessions: [], more: false, enabled: true });
     if (url.pathname.endsWith('/students')) return send({ students: [{ id: 'a', name: '合成学生甲', createdAt: now }, { id: 'b', name: '合成学生乙', createdAt: now }] });
-      if (url.pathname.endsWith('/scans')) { if (delayStudent && url.searchParams.get('studentId') === 'b') await new Promise(resolve => setTimeout(resolve, 500)); return send({ scans: url.searchParams.get('studentId') === 'a' ? [scan] : [], recognition: false }); }
-      if (url.href === api + '/scans/paper-a') return send({ scan });
-      if (url.href === api + '/scans/paper-a/file') { requests.cloudImages++; return route.fulfill({ contentType: 'image/jpeg', body: Buffer.from(photo.data.split(',')[1], 'base64') }); }
+      if (url.pathname.endsWith('/scans')) { if (delayStudent && url.searchParams.get('studentId') === 'b') await new Promise(resolve => setTimeout(resolve, 500)); return send({ scans: url.searchParams.get('studentId') === 'a' ? [currentScan()] : [], recognition: false }); }
+      if (url.href === api + `/scans/${currentScan().id}`) return send({ scan: currentScan() });
+      if (url.href === api + `/scans/${currentScan().id}/file`) { requests.cloudImages++; return route.fulfill({ contentType: 'image/jpeg', body: Buffer.from(photo.data.split(',')[1], 'base64') }); }
       errors.push('Unexpected request: ' + url.pathname); return route.abort();
     });
     await page.goto(client);
@@ -102,6 +108,10 @@ try {
     const card = () => page.getByRole('article', { name: '第 1 题', exact: true });
     await card().getByRole('img', { name: '原题配图', exact: true }).waitFor();
     assert.match(await card().locator('.paper-prompt').textContent(), /AC = 3，BC = 4/);
+    assert.deepEqual(await card().locator('.paper-options p').allTextContents(), ['A. 3', 'B. 4', 'C. 5', 'D. 7']);
+    await card().getByText('题目来源', { exact: true }).click();
+    await card().getByText(scan.originalName, { exact: true }).waitFor();
+    await card().getByText('题目来源', { exact: true }).click();
     if (native) { assert.equal(requests.cloudImages, 0); assert.equal(await page.evaluate(() => window.nativeReads), 1); }
     else assert.equal(requests.cloudImages, 1);
     await page.getByRole('article', { name: '第 2 题', exact: true }).scrollIntoViewIfNeeded();
@@ -138,6 +148,7 @@ try {
     const noFigure = page.getByRole('article', { name: '第 2 题', exact: true });
     await noFigure.scrollIntoViewIfNeeded();
     await noFigure.getByText('原题题框（含配图）', { exact: true }).waitFor();
+    assert.equal(await noFigure.locator('.paper-prompt').count(), 0, 'Unsegmented diagrams use the complete crop, avoiding a duplicate text-only reconstruction');
     const beforeToggle = await noFigure.screenshot();
     await noFigure.getByRole('button', { name: '原图', exact: true }).click();
     await noFigure.getByText('原图题框 · 第 2 题', { exact: true }).waitFor();
@@ -178,8 +189,83 @@ try {
       assert.equal(await card().locator('.paper-prompt').count(), 0, 'Missing original never masquerades as a successful text-only view');
       await card().getByText('synthetic local missing', { exact: true }).waitFor();
       assert.equal(requests.cloudImages, 0);
-      await card().getByRole('button', { name: '从云端读取这张题图', exact: true }).click(); await card().getByRole('img', { name: /这道题的原图题框/ }).first().waitFor();
+      await card().getByRole('button', { name: '恢复题图到本机', exact: true }).click(); await card().getByRole('img', { name: /这道题的原图题框/ }).first().waitFor();
       assert.equal(requests.cloudImages, 1);
+      // Recovered processed images remain usable when their original native file is still missing.
+      await page.getByLabel('当前学生').selectOption('b'); await page.getByText('还没有错题，先从首页录入。', { exact: true }).waitFor();
+      await page.getByLabel('当前学生').selectOption('a'); await card().getByRole('img', { name: '原题配图', exact: true }).waitFor();
+      assert.equal(requests.cloudImages, 1);
+      // Reproduce the real legacy/desktop-created record: no processing metadata, no native photo ID.
+      await page.getByLabel('当前学生').selectOption('b'); await page.getByText('还没有错题，先从首页录入。', { exact: true }).waitFor(); legacy = true;
+      await page.getByLabel('当前学生').selectOption('a'); await card().getByText('这张题图尚未关联到当前手机，恢复一次后会保存在本机', { exact: true }).waitFor();
+      await card().getByText('题图未就绪，当前内容尚不完整。', { exact: true }).waitFor();
+      assert.equal(requests.cloudImages, 1);
+      for (const width of [320, 390, 768]) {
+        await page.setViewportSize({ width, height: 900 }); await card().scrollIntoViewIfNeeded();
+        assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
+        await card().screenshot({ path: resolve(out, `legacy-recovery-${width}.png`) });
+      }
+      // A successful network response isn't success until the local transaction commits.
+      await page.evaluate(() => {
+        // oxlint-disable-next-line typescript/unbound-method -- Keep the actual prototype method for reversible quota fault injection.
+        const originalPut = IDBObjectStore.prototype.put;
+        window.restoreImageWrites = () => { IDBObjectStore.prototype.put = originalPut; };
+        IDBObjectStore.prototype.put = function (...args) {
+          if (this.name === 'images') throw new DOMException('Synthetic disk full', 'QuotaExceededError');
+          return originalPut.apply(this, args);
+        };
+      });
+      await card().getByRole('button', { name: '恢复题图到本机', exact: true }).click();
+      await card().getByText('本机题图保存或读取失败，请检查手机可用空间后重试', { exact: true }).waitFor();
+      assert.equal(await card().locator('img').count(), 0); assert.equal(requests.cloudImages, 2);
+      await card().getByRole('button', { name: '重试读取', exact: true }).click();
+      await card().getByText('这张题图尚未关联到当前手机，恢复一次后会保存在本机', { exact: true }).waitFor();
+      assert.equal(requests.cloudImages, 2);
+      await card().getByRole('button', { name: '题目详情', exact: true }).click();
+      await page.getByRole('button', { name: '恢复题图到本机', exact: true }).click();
+      await page.locator('.review-page > .notice').getByText('本机题图保存或读取失败，请检查手机可用空间后重试', { exact: true }).waitFor();
+      assert.equal(requests.cloudImages, 3);
+      await page.evaluate(() => window.restoreImageWrites());
+      await page.getByRole('button', { name: '恢复题图到本机', exact: true }).click();
+      await page.getByRole('region', { name: '当前题目原题' }).getByRole('img', { name: '原题配图', exact: true }).waitFor();
+      assert.equal(requests.cloudImages, 4, 'Details recovery can retry after storage failure');
+      await page.reload(); await page.getByRole('navigation', { name: '主要页面' }).getByRole('button', { name: '题目', exact: true }).click();
+      await card().getByRole('img', { name: '原题配图', exact: true }).waitFor(); assert.equal(requests.cloudImages, 4, 'Reload reuses persistent legacy image without downloading');
+      await card().getByRole('button', { name: '题目详情', exact: true }).click();
+      await page.getByRole('region', { name: '当前题目原题' }).getByRole('img', { name: '原题配图', exact: true }).waitFor();
+      assert.equal(requests.cloudImages, 4, 'Details share the same persistent image');
+      const cacheChecks = await page.evaluate(async ({ owner, scan }) => {
+        const { recoveredImages } = await import('/src/photo-processing/recovered-image.ts');
+        const signal = new AbortController().signal;
+        const cached = await recoveredImages.read(owner, scan, signal);
+        const accountIsolated = !await recoveredImages.read(owner + '-other', scan, signal);
+        const studentIsolated = !await recoveredImages.read(owner, { ...scan, studentId: 'b' }, signal);
+        let changedRejected = false, aborted = false;
+        try { await recoveredImages.read(owner, { ...scan, size: scan.size + 1 }, signal); } catch { changedRejected = true; }
+        const cancelled = new AbortController(); cancelled.abort();
+        try { await recoveredImages.read(owner, scan, cancelled.signal); } catch (e) { aborted = e.name === 'AbortError'; }
+        const hash = async file => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', await file.arrayBuffer())), v => v.toString(16).padStart(2,'0')).join('');
+        return { accountIsolated, studentIsolated, changedRejected, aborted, bytes: cached.size, sha256: await hash(cached) };
+      }, { owner: api + '|paper-family', scan: currentScan() });
+      assert.deepEqual(cacheChecks, { accountIsolated: true, studentIsolated: true, changedRejected: true, aborted: true, bytes: photo.bytes, sha256: photo.sha256 });
+      await page.getByRole('button', { name: '返回资料列表', exact: true }).click();
+      await card().screenshot({ path: resolve(out, 'legacy-restored.png') });
+      await page.evaluate(async ({ owner, scan }) => {
+        const db = await new Promise((resolve, reject) => { const r = indexedDB.open('family-learning-recovered-question-images', 1); r.onsuccess = () => resolve(r.result); r.onerror = () => reject(r.error); });
+        await new Promise((resolve, reject) => {
+          const tx = db.transaction('images', 'readwrite'), store = tx.objectStore('images');
+          const r = store.get(JSON.stringify([owner, scan.studentId, scan.id]));
+          r.onsuccess = () => { const saved = r.result; store.put({ ...saved, file: new Blob([new Uint8Array(saved.file.size)], { type: saved.file.type }) }); };
+          tx.oncomplete = resolve; tx.onerror = tx.onabort = () => reject(tx.error);
+        }); db.close();
+      }, { owner: api + '|paper-family', scan: currentScan() });
+      await page.reload(); await page.getByRole('navigation', { name: '主要页面' }).getByRole('button', { name: '题目', exact: true }).click();
+      await card().getByText('已保存的本机题图校验失败，请重新恢复', { exact: true }).waitFor();
+      assert.equal(requests.cloudImages, 4, 'Corruption is surfaced without automatic download');
+      await card().getByRole('button', { name: '恢复题图到本机', exact: true }).click();
+      await card().getByRole('img', { name: '原题配图', exact: true }).waitFor(); assert.equal(requests.cloudImages, 5);
+      checks.push('Actual IndexedDB: storage-write failure stays recoverable in both cards and details, local retry never downloads; corrupt same-size bytes rejected and repaired only after explicit recovery');
+      checks.push('Real IndexedDB: legacy scan recovery persists after reload and detail navigation; exact original bytes/hash; account/student isolation; changed metadata and cancellation rejected; no implicit download');
       checks.push('Android bridge: exact private processed path, student/original identity and file hash checked; transient PHOTO_BUSY recovery; no IntersectionObserver fallback; one read shared between question cards; no server download until explicit missing-file recovery');
     }
     checks.push(`${native ? 'Native bridge' : 'Browser'}: four saved wrong questions, unsaved excluded; subject filters; inline original toggle; shared figure; unsegmented diagram fallback with a visibly distinct original view; detail preview; continue exact last opened question, isolated by student; delayed student switch isolation`);

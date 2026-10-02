@@ -4,3 +4,11 @@
 .question-paper .paper-source-fallback > small { display:block; margin-bottom:8px; color:#607089; font-family:system-ui,sans-serif; font-size:12px; }
 .question-paper .question-crop img { max-width:none; max-height:none; object-fit:fill; }
 .question-card .paper-image-unavailable > small { display:block; overflow-wrap:anywhere; }
+.paper-options { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px 20px; margin:14px 0; font-family:'Noto Serif SC','Songti SC',SimSun,'Times New Roman',serif; font-size:17px; line-height:1.8; }
+.paper-options p { margin:0; white-space:pre-wrap; overflow-wrap:anywhere; }
+.paper-incomplete { display:block; margin:12px 0; color:#82601f; font-size:13px; line-height:1.6; }
+.question-source { margin-top:12px; color:#5c6878; font-size:13px; }
+.question-source summary { cursor:pointer; padding:10px 0; min-height:44px; }
+.question-source dl { display:grid; grid-template-columns:70px minmax(0,1fr); gap:6px 10px; margin:0 0 8px; line-height:1.6; }
+.question-source dd { margin:0; overflow-wrap:anywhere; }
+@media (max-width:360px) { .paper-options { grid-template-columns:minmax(0,1fr); } }

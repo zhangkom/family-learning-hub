@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { Image as ImageIcon, FileText, ChevronRight } from 'lucide-react';
 import type { Question, Scan } from './types';
-import { questionPrompt, questionRectangles, type QuestionRectangle } from './question-presentation';
+import { questionPrompt, questionRectangles, questionTextLayout, type QuestionRectangle } from './question-presentation';
 import { type QuestionImage, type QuestionImageState, type QuestionImages } from './question-images';
 import './question-paper.css';
 
@@ -14,6 +14,23 @@ function CroppedRegions({ image, rectangles, label, onImageError }: { image: Que
   </div>)}</div>;
 }
 
+function PaperText({ text }: { text: string }) {
+  const { stem, options } = questionTextLayout(text);
+  return <>{stem && <p className="paper-prompt">{stem}</p>}{options.length > 0 && <div className="paper-options" aria-label="题目选项">
+    {options.map((option, index) => <p key={index}>{option}</p>)}
+  </div>}</>;
+}
+
+export function QuestionSource({ scan, question }: { scan: Scan; question: Question }) {
+  const parent = scan.questions.find(q => q.id === question.parentQuestionId && q.id !== question.id);
+  return <details className="question-source"><summary>题目来源</summary><dl>
+    <dt>来源照片</dt><dd>{scan.originalName || '原文件名未记录'}</dd>
+    <dt>原题位置</dt><dd>{parent ? `第 ${parent.number || '待核对'} 大题 · ` : ''}第 {question.number || '待核对'} 题</dd>
+    <dt>科目</dt><dd>{question.subject || '待确认'}</dd>
+    <dt>来源说明</dt><dd>{scan.source || '未登记'}</dd>
+  </dl></details>;
+}
+
 export function QuestionPaper({ question, questions, image, original, onImageError }: {
   question: Question; questions: Question[]; image?: QuestionImage; original: boolean; onImageError?: () => void;
 }) {
@@ -21,18 +38,22 @@ export function QuestionPaper({ question, questions, image, original, onImageErr
   const parent = questions.find(q => q.id === question.parentQuestionId && q.id !== question.id);
   const shared = questions.flatMap(q => q.regions).filter(r => question.sharedRegionIds?.includes(r.id));
   // Without a separately marked figure, a text reconstruction could silently lose a diagram.
-  const typeset = !original && !!prompt && !shared.some(r => r.kind === 'stem');
+  const typeset = !original && question.confirmed && (!parent || parent.confirmed) && !!prompt && figures.length > 0 && !shared.some(r => r.kind === 'stem');
   const rectangles = questionRectangles(question, questions, original ? 'original' : 'paper');
+  const brokenContext = (!!question.parentQuestionId && !parent) || question.sharedRegionIds?.some(id => !questions.some(q => q.regions.some(r => r.id === id)));
   return <div className={`question-paper ${original ? 'is-original' : 'is-typeset'}`}>
     {original && <output className="paper-view-label">原图题框 · 第 {question.number || '—'} 题</output>}
     {typeset ? <>
       {parent && questionPrompt(parent) && <div className="paper-context"><small>共用题干</small><p>{questionPrompt(parent)}</p></div>}
-      <p className="paper-prompt">{prompt}</p>
+      <PaperText text={prompt} />
       {image && (figures.length ? <CroppedRegions image={image} rectangles={figures} label="原题配图" onImageError={onImageError} />
         : rectangles.length > 0 && <div className="paper-source-fallback"><small>原题题框（含配图）</small><CroppedRegions image={image} rectangles={rectangles} label="原题题干与配图" onImageError={onImageError} /></div>)}
-    </> : image && rectangles.length ? <CroppedRegions image={image} rectangles={rectangles} label={original ? '这道题的原图题框' : '原题题干与配图'} onImageError={onImageError} />
-      : <>{!original && prompt && <p className="paper-prompt">{prompt}</p>}</>}
+    </> : image && rectangles.length ? <div className={original ? undefined : 'paper-source-fallback'}>
+      {!original && <small>原题题框（含配图）</small>}<CroppedRegions image={image} rectangles={rectangles} label={original ? '这道题的原图题框' : '原题题干与配图'} onImageError={onImageError} />
+    </div> : <>{!original && prompt && <PaperText text={prompt} />}</>}
     {!rectangles.length && <p className="paper-image-note">尚未框选题图，可进入详情补充。</p>}
+    {brokenContext && <output className="paper-incomplete">共用题干或配图的来源不完整，请进入详情核对。</output>}
+    {!image && <p className="paper-incomplete">题图未就绪，当前内容尚不完整。</p>}
   </div>;
 }
 
@@ -71,7 +92,8 @@ export function QuestionCard({ scan, question, images, onOpen, actions }: {
     {hasRegions && (nearby || original) && state.status === 'error' && <div className="paper-image-unavailable"><output>{Capacitor.getPlatform() === 'android' ? '本机题图暂不可用' : '题图暂时无法读取'}</output>
       <small>{state.message}</small>
       <button type="button" onClick={() => images.retry(scan.id)}>重试读取</button>
-      {Capacitor.getPlatform() === 'android' && <button type="button" onClick={() => images.retry(scan.id, true)}>从云端读取这张题图</button>}</div>}
+      {Capacitor.getPlatform() === 'android' && <><button type="button" onClick={() => images.retry(scan.id, true)}>恢复题图到本机</button><small>从云端下载一次并保存，之后优先读本机。</small></>}</div>}
+    <QuestionSource scan={scan} question={question} />
     {actions}
     <footer className="question-card-footer"><small>{summary}</small><button type="button" onClick={onOpen}>题目详情 <ChevronRight size={15} /></button></footer>
   </article>;
