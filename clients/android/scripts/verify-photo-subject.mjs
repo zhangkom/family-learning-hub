@@ -7,7 +7,7 @@ const out = 'test-results/photo-subject';
 fs.mkdirSync(out, { recursive: true });
 const base = process.env.CLIENT_URL || 'http://127.0.0.1:3178';
 assert.equal(new URL(base).hostname, '127.0.0.1');
-const api = 'http://127.0.0.1:3298/family-learning/api/mobile/v1';
+const api = 'https://123.207.232.151/family-learning/api/mobile/v1';
 const now = new Date().toISOString();
 const checks = [], errors = [], layouts = [];
 function fresh(id, studentId = 'large') { return { id, studentId, subject: '数学', source: '合成设计验收', originalName: `${id}（合成测试）.png`, mimeType: 'image/png', size: 1000, createdAt: now, revision: 1, status: 'needs_review', questions: [] }; }
@@ -58,6 +58,7 @@ await (async()=> {
  async function back(){ await page.getByRole('button',{name:'返回资料列表'}).click(); }
  async function open(id){
   await page.getByRole('navigation',{name:'主要页面'}).getByRole('button',{name:/题目/}).click();
+  await page.getByRole('button',{name:'原题照片',exact:true}).click();
   await page.getByRole('button',{name:new RegExp(id+'（合成测试）')}).click();
   await page.waitForFunction(()=>{const b=[...document.querySelectorAll('button')].find(b=>b.textContent.includes('框选一道题'));return b&&!b.matches(':disabled');});
  }
@@ -66,7 +67,7 @@ await (async()=> {
  try {
   await page.goto(base);
   await page.getByRole('navigation',{name:'账户'}).getByRole('button',{name:'登录',exact:true}).click();
-  await page.getByLabel('家庭服务地址').fill(api);
+  if (await page.getByLabel('家庭服务地址').count()) await page.getByLabel('家庭服务地址').fill(api);
   await page.getByLabel('账号',{exact:true}).fill('design-qa');
   await page.getByLabel('密码',{exact:true}).fill('123456');
   await page.getByRole('button',{name:'登录',exact:true}).click();

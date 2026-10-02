@@ -67,8 +67,8 @@ export function createDriveServices(api: FamilyApi): DriveServices {
       }
     },
     ...(native ? {
-      pick: async (scope: CloudScope, limit: number, signal: AbortSignal, folderRange = false) => {
-        const bridge = await nativeBridge(); return fromNative(await bridge.pickOriginals(scope.owner, scope.studentId, limit, { purpose: 'cloud-original', signal, ...(folderRange ? { folderRange: true } : {}) }), scope, bridge);
+      pick: async (scope: CloudScope, limit: number, signal: AbortSignal, folderRange = false, albumRange = false) => {
+        const bridge = await nativeBridge(); return fromNative(await bridge.pickOriginals(scope.owner, scope.studentId, limit, { purpose: 'cloud-original', signal, ...(folderRange ? { folderRange: true } : {}), ...(albumRange ? { albumRange: true } : {}) }), scope, bridge);
       },
       recover: async (scope: CloudScope, _limit: number, signal: AbortSignal) => {
         const bridge = await nativeBridge();

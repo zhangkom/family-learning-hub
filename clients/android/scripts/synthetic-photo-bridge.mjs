@@ -78,7 +78,7 @@ export function installSyntheticPhotoBridge({ api, initialToken = 'test-A', init
         return createOriginal(args.owner, args.studentId);
       }
       if (method === 'pickOriginalBatch') {
-        store('lastPicker', { folderRange: !!args.folderRange, purpose: args.purpose });
+        store('lastPicker', { folderRange: !!args.folderRange, albumRange: !!args.albumRange, purpose: args.purpose });
         const batch = { schemaVersion: 1, batchId: crypto.randomUUID(), studentId: args.studentId, purpose: args.purpose, state: 'ready', limit: Math.max(args.limit, albumCount), createdAt: Date.now(),
           items: Array.from({ length: albumCount }, (_, index) => ({ index, originalId: crypto.randomUUID(), status: 'pending' })) };
         store(batchKey(args.owner, batch.batchId), batch); return batch;

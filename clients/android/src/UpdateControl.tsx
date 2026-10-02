@@ -19,20 +19,19 @@ function useUpdates() {
   const mounted = useRef(true);
   const available = !!release && release.versionCode > appVersionCode;
 
-  const check = useCallback(async (manual = false) => {
+  const check = useCallback(async () => {
     if (busy.current) return;
     busy.current = true;
     setChecking(true);
     setError('');
     setNotice('');
-    if (manual) setExpanded(true);
+    setExpanded(false);
     try {
       const next = await checkRelease();
       if (!mounted.current) return;
       if (current.current?.sha256 !== next.sha256) { setReady(false); setPermission(false); setTransferNotice(''); }
       current.current = next;
       setRelease(next);
-      setNotice(next.versionCode > appVersionCode ? '' : '已是最新版本');
     } catch (e) {
       if (mounted.current) setError(e instanceof Error ? e.message : '检查更新失败，请稍后重试');
     } finally {
@@ -70,6 +69,7 @@ function useUpdates() {
   async function install() {
     if (!release || !available || busy.current) return;
     busy.current = true;
+    setExpanded(true);
     setError('');
     setPermission(false);
     try {
@@ -117,29 +117,26 @@ export function UpdateControl() {
   const phaseText = { delta: '正在下载增量包', full: '正在下载完整包', prepare: '正在合成新版', verify: '正在校验安装包', fallback: '正在切换完整包' }[phase];
   return <section className="app-update" aria-label="应用更新">
     <div className="update-actions">
-      {available && <button type="button" className="update-badge" onClick={() => setExpanded(!expanded)} aria-expanded={expanded}>● 发现新版本 {release!.version}</button>}
-      <button type="button" className="update-check" onClick={() => void update.check(true)} disabled={checking || downloading}>
+      <button type="button" className="update-check" onClick={() => void update.check()} disabled={checking || downloading}>
         {checking ? '正在检查…' : '检查更新'}
       </button>
+      {available ? Capacitor.isNativePlatform()
+        ? <button type="button" className="primary update-download" disabled={checking || downloading} onClick={() => void update.install()}>{downloading ? `更新中 ${progress}%` : ready ? '继续安装' : '下载更新'}</button>
+        : <a className="update-download" href={release!.downloadUrl} target="_blank" rel="noopener noreferrer">下载更新</a>
+        : release && !checking && !error && <output className="update-current">已是最新版本</output>}
     </div>
     {expanded && <div className="update-details">
       {available && <>
         <strong>{appName} {release!.version} · {(release!.bytes / 1_000_000).toFixed(2)} MB</strong>
         <p>{release!.notes}</p>
         {delta && <p>预计增量下载 {(delta.bytes / 1_000_000).toFixed(2)} MB，减少约 {Math.round((1 - delta.bytes / release!.bytes) * 100)}% 下载量；不适用时自动下载完整包。</p>}
-        <p className="hint">覆盖升级会保留登录和学习资料。请先保存正在编辑的内容。</p>
-        {downloading ? <output aria-live="polite"><progress value={progress} max="100" /><span>{phaseText}{phase === 'delta' || phase === 'full' ? ` ${progress}%` : '…'}</span></output>
-          : Capacitor.isNativePlatform()
-            ? <div className="button-row">
-                {permission && <button type="button" onClick={() => void update.settings()}>允许安装更新</button>}
-                <button type="button" className="primary" disabled={checking} onClick={() => void update.install()}>{ready ? '继续安装' : '下载并安装'}</button>
-              </div>
-            : <a href={release!.downloadUrl} target="_blank" rel="noopener noreferrer">下载 APK，在安卓设备安装</a>}
+        {downloading && <output aria-live="polite"><progress value={progress} max="100" /><span>{phaseText}{phase === 'delta' || phase === 'full' ? ` ${progress}%` : '…'}</span></output>}
+        {permission && <button type="button" onClick={() => void update.settings()}>允许安装更新</button>}
       </>}
       {notice && <output>{notice}</output>}
       {transferNotice && <output className="hint">{transferNotice}</output>}
-      {error && <p role="alert">{error}</p>}
       <button type="button" className="update-check" onClick={() => setExpanded(false)}>收起</button>
     </div>}
+    {error && <p role="alert" className="update-error">{error}</p>}
   </section>;
 }

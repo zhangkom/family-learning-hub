@@ -14,6 +14,7 @@ const students = [
 const scans = Array.from({ length: 20 }, (_, index) => ({ id: `scan-${index}`, studentId: 'student-a', subject: '数学', source: '合成验证',
   originalName: index === 0 ? '含多个题目和较长文件名的数学作业练习资料.png' : `数学作业-${index}.png`, mimeType: 'image/png', size: 200,
   createdAt: new Date().toISOString(), revision: 1, status: index % 2 ? 'ready' : 'needs_review', questions: [] }));
+scans[0].questions = ['数学', '物理', '数学'].map((subject, index) => ({ id: `q-${index}`, number: String(index + 1), subject, prompt: `${subject}合成题目 ${index + 1}`, knowledgePoints: ['单位换算', '单位换算'], confirmed: index !== 1, regions: [], answerSteps: [], uncertainties: [], ...(index < 2 ? { wrongBook: { savedAt: new Date().toISOString() } } : {}) }));
 const browser = await chromium.launch({ headless: true, channel: process.env.PLAYWRIGHT_CHANNEL || 'chrome' });
 const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
 const errors = [], geometry = [];
@@ -47,7 +48,7 @@ await page.route('**/*', async (route) => {
   if (url.href === `${site}downloads/android/latest.json`) return send({ version, versionCode: androidVersionCode, channel: 'release', bytes: 7000000, sha256: 'a'.repeat(64), downloadUrl: `${site}downloads/android/family-learning-${version}-release-1234567.apk`, notes: '合成版本' });
   if (url.href === `${api}/setup`) return send({ enabled: true, needsSetup: false });
   if (url.href === `${api}/session/login`) return send({ token: 'synthetic-token', user: { id: 'synthetic-family', username: '测试家庭' }, expiresAt: Date.now() + 60000 });
-  if (url.href === `${api}/students`) return send({ students });
+  if (url.pathname.endsWith('/students')) return send({ students: students.map((student, index) => ({ ...student, overview: { scanCount: index ? 0 : 20, questionCount: index ? 0 : 3, wrongQuestionCount: index ? 0 : 2, needsReviewCount: index ? 0 : 10, cloudPhotoCount: index ? 8 : 45 } })) });
   if (url.pathname.endsWith('/scans') && request.method() === 'GET') return send({ scans: url.searchParams.get('studentId') === 'student-a' ? scans : [], recognition: true });
   errors.push(`Unexpected request ${url.pathname}`);
   return route.abort('blockedbyclient');
@@ -90,27 +91,57 @@ try {
   await page.locator('.home-record-card').first().waitFor();
   await page.getByRole('button', { name: /拍照收题/ }).click();
   await page.getByText('系统相机未获允许。可以从相册选图，或在系统设置中检查相机的权限后重试。', { exact: true }).waitFor();
-  await page.getByRole('button', { name: '返回题目资料', exact: true }).click();
+  await page.getByRole('button', { name: '返回首页', exact: true }).click();
   await page.getByRole('button', { name: /相册选图/ }).click();
   assert.equal(await page.getByRole('alert').count(), 0);
   await page.evaluate(() => { window.galleryMode = 'photo'; });
   await page.getByRole('button', { name: '从相册添加', exact: true }).click();
   await page.getByRole('button', { name: '完成选择，查看待上传', exact: true }).click();
   await page.getByRole('button', { name: '确认并上传', exact: true }).waitFor();
-  assert.equal(await page.locator('.bottom-nav button[aria-current="page"]').textContent(), '题目');
+  assert.equal(await page.locator('.bottom-nav button[aria-current="page"]').textContent(), '首页');
   await page.getByLabel('当前学生').selectOption('student-b');
   assert.equal(await page.getByRole('button', { name: '确认并上传', exact: true }).count(), 0);
   await page.getByRole('navigation', { name: '主要页面' }).getByRole('button', { name: '我的', exact: true }).click();
-  await page.getByText('权限与隐私', { exact: true }).click();
-  await page.getByRole('button', { name: '查看系统应用设置', exact: true }).click();
+  await page.locator('.student-profile-card').first().getByText('已整理 3 道题 · 云盘保存 45 张', { exact: true }).waitFor();
+  assert.equal(await page.getByText('权限与隐私', { exact: true }).count(), 0);
+  assert.equal(await page.locator('.profile-account-actions button').count(), 3);
+  assert.equal(await page.locator('.student-profile-card').count(), 2);
+  assert.match(await page.locator('.student-profile-card').nth(1).textContent(), /已整理 0 道题 · 云盘保存 8 张/);
+  for (const width of [320, 390, 768]) {
+    await page.setViewportSize({ width, height: 844 });
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+    await page.screenshot({ path: `test-results/profile-${width}.png`, fullPage: true });
+  }
+  await page.locator('.student-profile-card').first().click();
+  await page.getByRole('heading', { name: '题目与学习', exact: true }).waitFor();
+  assert.equal(await page.getByRole('button', { name: /拍照收题|相册选图|批量上传图片/ }).count(), 0);
+  assert.equal(await page.locator('.wrong-question-card').count(), 2);
+  await page.getByRole('button', { name: '数学 1 道错题', exact: true }).click();
+  assert.equal(await page.locator('.wrong-question-card').count(), 1);
+  await page.getByRole('button', { name: '全部科目', exact: true }).click();
+  await page.getByRole('button', { name: '知识点归纳', exact: true }).click();
+  await page.getByRole('region', { name: '知识点归纳', exact: true }).waitFor();
+  assert.equal(await page.locator('.knowledge-card').count(), 2);
+  await page.locator('.knowledge-card').first().locator('summary').click();
+  assert.equal(await page.locator('.knowledge-card').first().locator('.wrong-question-card').count(), 2);
+  await page.screenshot({ path: 'test-results/knowledge-768.png', fullPage: true });
+  await page.getByRole('button', { name: '原题照片', exact: true }).click();
+  assert.equal(await page.locator('.record-card').count(), 20);
+  assert.equal(await page.locator('.home-record-card').count(), 0);
+  for (const width of [320, 390, 768]) {
+    await page.setViewportSize({ width, height: 844 });
+    await page.getByRole('button', { name: '错题本', exact: true }).click();
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+    await page.screenshot({ path: `test-results/questions-${width}.png`, fullPage: true });
+  }
   const calls = await page.evaluate(() => window.nativeCalls);
   assert.equal(calls.some(({ method }) => ['requestPermissions', 'install', 'openInstallSettings'].includes(method)), false);
   assert.deepEqual(calls.filter(({ plugin }) => plugin === 'Camera').map(({ method }) => method), ['takePhoto', 'chooseFromGallery', 'chooseFromGallery']);
-  assert.equal(calls.filter(({ plugin }) => plugin === 'AppSettings').length, 1);
+  assert.equal(calls.filter(({ plugin }) => plugin === 'AppSettings').length, 0);
   assert.equal(calls.find(({ method }) => method === 'takePhoto').args.saveToGallery, false);
   assert.equal(calls.find(({ method }) => method === 'chooseFromGallery').args.mediaType, 0);
   assert.deepEqual(errors, []);
   writeFileSync('test-results/home-permission-verification.json', JSON.stringify({ version, checkedAt: new Date().toISOString(), syntheticOnly: true, nativeBridgeSimulated: true, nativeDeviceTested: false,
-    geometry, checks: ['no permissions at startup/login', 'camera only after tap', 'denial leaves gallery usable', 'cancel is not an error', 'selected image saves local draft', 'student isolation', 'no automatic install authorization', 'app settings only after tap', 'home capped at one record; complete list on separate tab'] }, null, 2));
+    geometry, checks: ['no permissions at startup/login', 'camera only after tap', 'denial leaves gallery usable', 'cancel is not an error', 'selected image saves local draft', 'student isolation', 'no automatic install authorization', 'no privacy entry on My page', 'account actions grouped', 'distinct student overview cards', 'question library has no upload actions', 'home capped at one record; complete list on separate tab'] }, null, 2));
   console.log('Compact home and permission timing passed using synthetic API/native bridge. Not a physical-device test.');
 } finally { await browser.close(); }

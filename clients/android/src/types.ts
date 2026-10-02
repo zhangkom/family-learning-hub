@@ -9,6 +9,10 @@ export type Student = {
   grade?: string;
   createdAt: string;
 };
+export type StudentOverview = {
+  scanCount: number; questionCount: number; wrongQuestionCount: number; needsReviewCount: number; cloudPhotoCount: number;
+};
+export type StudentOverviewReply = { students: (Student & { overview?: StudentOverview })[]; unassignedScanCount?: number };
 export type Region = {
   id: string;
   kind: 'stem' | 'figure' | 'answer' | 'annotation';

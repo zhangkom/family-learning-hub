@@ -87,6 +87,8 @@ try {
   await page.setViewportSize({ width: 320, height: 740 }); assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
   await page.screenshot({ path: path.join(out, 'cloud-real-api-320.png') });
   assert.equal(modelCalls, 0); assert.equal(external, 0); assert.deepEqual(errors, []);
+  const nativeStudentResponse = await fetch(api + '/students', { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify({ name: '相册范围布局合成验收' }) });
+  assert.equal(nativeStudentResponse.status, 201); const nativeStudent = (await nativeStudentResponse.json()).student;
   const nativeContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
   await nativeContext.addInitScript(installSyntheticPhotoBridge, { api, initialToken: login.token, initialUserId: login.user.id });
   const nativePage = await nativeContext.newPage(); nativePage.setDefaultTimeout(30000); nativePage.on('pageerror', e => errors.push(e.message));
@@ -100,21 +102,47 @@ try {
     }
     return route.continue();
   });
-  await nativePage.goto(origin); await nativePage.getByLabel('当前学生').selectOption(student.id);
+  await nativePage.goto(origin); await nativePage.getByLabel('当前学生').selectOption(nativeStudent.id);
+  const layoutChecks = [];
+  for (const width of [320, 390, 768]) {
+    await nativePage.setViewportSize({ width, height: 844 });
+    for (const tab of ['首页', '题目', '我的']) {
+      await nativePage.getByRole('navigation', { name: '主要页面' }).getByRole('button', { name: tab, exact: true }).click();
+      assert.equal(await nativePage.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `${tab} ${width} overflow`);
+      await nativePage.screenshot({ path: path.join(out, `layout-${tab}-${width}.png`), fullPage: true });
+    }
+    await nativePage.getByRole('navigation', { name: '主要页面' }).getByRole('button', { name: '首页', exact: true }).click();
+  }
   await nativePage.getByRole('button', { name: /^批量上传图片/ }).click();
-  await nativePage.getByRole('button', { name: '按文件夹选范围 / 全选', exact: true }).click();
+  for (const width of [320, 390, 768]) {
+    await nativePage.setViewportSize({ width, height: 740 });
+    const boxes = await nativePage.locator('.cloud-pick-actions button').evaluateAll(buttons => buttons.map(button => { const r = button.getBoundingClientRect(); return { top: r.top, bottom: r.bottom, height: r.height, width: r.width }; }));
+    assert.equal(boxes.length, 3); assert.ok(boxes.every(b => b.height >= 44 && b.bottom <= 740));
+    assert.ok(Math.max(...boxes.map(b => b.top)) - Math.min(...boxes.map(b => b.top)) < 1, 'Three picker buttons must share one row');
+    assert.equal(await nativePage.evaluate(() => document.documentElement.scrollWidth <= innerWidth && document.documentElement.scrollHeight <= innerHeight + 1), true, `Empty cloud page should fit ${width}`);
+    layoutChecks.push({ width, pickerButtonsSameRow: true, emptyDriveFitsOneScreen: true });
+    await nativePage.screenshot({ path: path.join(out, `cloud-compact-${width}.png`), fullPage: true });
+  }
+  await nativePage.getByRole('button', { name: '相册选择', exact: true }).click();
   await nativePage.waitForFunction(() => document.querySelectorAll('.cloud-job').length === 2);
-  const names = await nativePage.locator('.cloud-job strong').allTextContents();
+  assert.equal(await nativePage.evaluate(() => JSON.parse(localStorage.getItem('host-test:lastPicker')).albumRange), true);
+  await nativePage.getByRole('button', { name: '文件夹范围', exact: true }).click();
+  await nativePage.waitForFunction(() => document.querySelectorAll('.cloud-job').length === 4);
   assert.equal(await nativePage.evaluate(() => JSON.parse(localStorage.getItem('host-test:lastPicker')).folderRange), true);
+  await nativePage.getByRole('button', { name: '系统相册多选', exact: true }).click();
+  await nativePage.waitForFunction(() => document.querySelectorAll('.cloud-job').length === 6);
+  assert.equal(await nativePage.evaluate(() => !!JSON.parse(localStorage.getItem('host-test:lastPicker')).albumRange), false);
+  assert.equal(nativeReceipts.length, 0, 'Selection must not upload automatically');
+  const names = await nativePage.locator('.cloud-job strong').allTextContents();
   assert.ok(names.every(name => name.startsWith('IMG_') && name.endsWith('.png')));
   await nativePage.reload(); await nativePage.getByLabel('当前学生').waitFor(); await nativePage.getByRole('button', { name: /^批量上传图片/ }).click();
   await nativePage.getByRole('button', { name: '开始上传', exact: true }).click();
-  await nativePage.waitForFunction(() => document.querySelectorAll('.cloud-job-completed').length === 2);
+  await nativePage.waitForFunction(() => document.querySelectorAll('.cloud-job-completed').length === 6);
   assert.deepEqual(nativeReceipts.map(photo => photo.originalName).sort((a, b) => a.localeCompare(b)), [...names].sort((a, b) => a.localeCompare(b)));
   await nativePage.screenshot({ path: path.join(out, 'native-original-names.png') });
   await nativeContext.close(); assert.equal(external, 0); assert.deepEqual(errors, []);
   const result = { checkedAt: new Date().toISOString(), syntheticOnly: true, realLocalBackend: true, nativeDeviceTested: false, count: photos.length, uploadAttempts: attempts,
-    batchSizes: uniqueBatches.map(batch => batch.expectedCount), originalNamesPreserved: true, nativeNamesSurviveRestartAndUpload: true, nativeFolderModeWired: true, nativeFolderDialogTested: false, originalHashVerified: true, downloadHashVerified: true, durableQueueRecovery: true, lostReceiptRecoveredWithoutDuplicate: true, noScansCreated: true, modelCalls, external, errors };
+    batchSizes: uniqueBatches.map(batch => batch.expectedCount), layoutChecks, originalNamesPreserved: true, nativeNamesSurviveRestartAndUpload: true, nativeAlbumModeWired: true, nativeSystemModeWired: true, nativeAlbumDialogTested: false, nativeFolderModeWired: true, nativeFolderDialogTested: false, originalHashVerified: true, downloadHashVerified: true, durableQueueRecovery: true, lostReceiptRecoveredWithoutDuplicate: true, noScansCreated: true, modelCalls, external, errors };
   await writeFile(path.join(out, 'cloud-real-api-result.json'), JSON.stringify(result, null, 2)); console.log(JSON.stringify(result));
 } catch (error) { await page.screenshot({ path: path.join(out, 'cloud-real-api-failure.png') }); console.error((await page.locator('body').innerText()).slice(0, 1800)); throw error; }
 finally { await browser.close(); await server.close(); }

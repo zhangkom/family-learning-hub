@@ -9,7 +9,6 @@ import { useEffect } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { App as NativeApp } from '@capacitor/app';
 import { BottomNavigation, type HomePage } from './BottomNavigation';
-import { PermissionInfo } from './PermissionInfo';
 import { BrandMark } from './Brand';
 import { FeatureCatalog } from './FeatureCatalog';
 import { appName, appVersion } from './release';
@@ -125,8 +124,7 @@ export function GuestHome({
         {page === 'me' && <div className="profile-page">
           <section className="profile-card guest-profile"><span className="guest-intro-icon"><UserRound size={30} /></span><h1>一家人，各自进步</h1><p>一个家庭账号，管理多个孩子的学习档案。</p><div className="button-row"><button className="primary" onClick={() => onAuth('login')}>登录</button><button onClick={() => onAuth('register')}>注册</button></div></section>
           <section className="profile-card"><h2>学生档案</h2><p>登录后添加、切换学生，题目与作答分别保存。</p></section>
-          <PermissionInfo />
-          <section className="profile-card"><h2>关于{appName}</h2><p>当前版本 {appVersion}</p><p className="hint">可拍照、选图、识别与校对。分步辅导、举一反三和学习报告正在准备中。</p></section>
+          <section className="profile-card"><h2>关于{appName}</h2><p>当前版本 {appVersion}</p><UpdateControl /></section>
         </div>}
       </main>
       <BottomNavigation page={page} onNavigate={onNavigate} />

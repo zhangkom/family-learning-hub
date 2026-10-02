@@ -36,4 +36,4 @@
 .photo-library-card time{font-size:14px;overflow-wrap:anywhere}
 .photo-library-card p{font-size:13px;color:#566b61}
 .photo-library-note{padding:12px;background:#eeeede;border-radius:10px}
-@media(max-width:380px){.photo-prep,.photo-library{padding:12px;border-radius:12px}.photo-prep h2,.photo-library h2{font-size:21px}.photo-prep button,.photo-library button{padding:8px 10px}.photo-prep-actions button{flex:1 1 100%}.photo-library-card{grid-template-columns:58px 1fr;gap:9px}.photo-library-card img{width:58px}}
+@media(max-width:380px){.photo-prep,.photo-library{padding:12px;border-radius:12px}.photo-prep h2,.photo-library h2{font-size:21px}.photo-prep button,.photo-library button{padding:8px 10px}.photo-prep-actions button{flex:1 1 110px}.photo-library-card{grid-template-columns:58px 1fr;gap:9px}.photo-library-card img{width:58px}}

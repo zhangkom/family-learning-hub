@@ -66,7 +66,7 @@ try {
   await page.getByText('本批上传结束：成功 209 张，失败 1 张。未确认成功的照片仍留在本机，可继续上传。', { exact: true }).waitFor();
   assert.equal(uploads.length, 210); assert.equal(records.size, 210); assert.equal(peak, 1); assert.equal(await page.locator('.draft-card').count(), 1);
   const failed = uploads[33].id;
-  await page.reload(); await login(); await page.getByRole('navigation', { name: '主要页面' }).getByRole('button', { name: /^题目/ }).click();
+  await page.reload(); await login(); await page.getByRole('navigation', { name: '主要页面' }).getByRole('button', { name: /^首页/ }).click();
   await page.getByRole('button', { name: /确认并批量上传（1 张）/ }).click();
   await page.getByText('本批上传结束：成功 1 张，失败 0 张。未确认成功的照片仍留在本机，可继续上传。', { exact: true }).waitFor();
   assert.equal(uploads.at(-1).id, failed); assert.equal(records.size, 210); assert.equal(await page.locator('.draft-card').count(), 0);
@@ -96,7 +96,7 @@ try {
   checks.push('合成原生桥连续拍摄两张，逐张预览确认进入同一待提交队列，确认前不上传');
   await page.evaluate(() => window.hostPhotoTest.album(2)); await page.getByRole('button', { name: /相册选图/ }).click();
   await page.getByRole('heading', { name: '已选 2 张', exact: true }).waitFor();
-  await page.getByRole('button', { name: '按文件夹选范围 / 全选', exact: true }).click(); assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('host-test:lastPicker')).folderRange), true); await page.getByRole('heading', { name: '已选 4 张', exact: true }).waitFor();
+  await page.getByRole('button', { name: '文件夹范围', exact: true }).click(); assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('host-test:lastPicker')).folderRange), true); await page.getByRole('heading', { name: '已选 4 张', exact: true }).waitFor();
   await page.getByRole('button', { name: '完成选择，逐张调整', exact: true }).click();
   for (let n = 1; n <= 4; n++) {
     await page.getByText(`逐张调整 · 第 ${n} / 4 张`, { exact: true }).waitFor();

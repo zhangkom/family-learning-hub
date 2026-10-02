@@ -1,5 +1,6 @@
 import type { Login, Question, Scan, Student, User, WrongBookItem, TutoringReviewInput } from './types';
 import type { CandidateReply } from './candidates';
+import type { StudentOverviewReply } from './types';
 import type { PhotoDelivery } from './photo-processing/delivery';
 import { verifyProcessedReceipt } from './photo-processing/receipt';
 
@@ -96,6 +97,9 @@ export class FamilyApi {
   }
   me() {
     return this.request<{ user: User }>('/session');
+  }
+  studentOverview(signal?: AbortSignal) {
+    return this.request<StudentOverviewReply>('/students?overview=1', 'GET', undefined, signal);
   }
   changeUsername(username: string, currentPassword: string) {
     return this.request<Login>('/account/username', 'POST', { username, currentPassword });

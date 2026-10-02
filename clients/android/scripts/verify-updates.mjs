@@ -32,23 +32,22 @@ await page.route('**/*', async (route) => {
 try {
   await page.goto(client);
   await page.getByLabel('版本与更新', { exact: true }).click();
-  await page.getByRole('button', { name: /发现新版本 0.3.0/ }).click();
-  await page.getByText(next.changelog, { exact: true }).waitFor();
-  assert.equal(await page.getByRole('link', { name: '下载 APK，在安卓设备安装' }).getAttribute('href'), next.downloadUrl);
+  assert.equal(await page.getByRole('link', { name: '下载更新' }).getAttribute('href'), next.downloadUrl);
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  assert.equal(await page.locator('.update-actions').evaluate(el => { const a=el.children[0].getBoundingClientRect(), b=el.children[1].getBoundingClientRect(); return Math.abs(a.top-b.top)<5; }), true);
   mkdirSync('test-results', { recursive: true });
   await page.screenshot({ path: 'test-results/update-available.png', fullPage: true });
   mode = 'same'; await page.getByRole('button', { name: '检查更新', exact: true }).click();
   await page.getByText('已是最新版本', { exact: true }).waitFor();
-  assert.equal(await page.getByRole('button', { name: /发现新版本/ }).count(), 0);
+  assert.equal(await page.getByRole('link', { name: '下载更新' }).count(), 0);
   mode = 'old'; await page.getByRole('button', { name: '检查更新', exact: true }).click();
   await page.getByRole('button', { name: '检查更新', exact: true }).waitFor();
-  assert.equal(await page.getByRole('link', { name: /下载 APK/ }).count(), 0);
+  assert.equal(await page.getByRole('link', { name: '下载更新' }).count(), 0);
   mode = 'offline'; await page.getByRole('button', { name: '检查更新', exact: true }).click();
   await page.getByText('暂时无法检查更新，请稍后重试', { exact: true }).waitFor();
   assert.equal(await page.getByText('已是最新版本', { exact: true }).count(), 0);
   mode = 'new'; await page.getByRole('button', { name: '检查更新', exact: true }).click();
-  await page.getByRole('button', { name: /发现新版本/ }).waitFor();
+  await page.getByRole('link', { name: '下载更新' }).waitFor();
 
   // Exercise the native UI state transitions with a simulated Capacitor bridge.
   // This verifies the UI contract, not Android system permission/installer behavior.
@@ -88,19 +87,19 @@ try {
   });
   await page.reload();
   await page.getByLabel('版本与更新', { exact: true }).click();
-  await page.getByRole('button', { name: /发现新版本/ }).click();
   await page.evaluate(() => { window.failDownload = true; });
-  await page.getByRole('button', { name: '下载并安装', exact: true }).click();
+  await page.getByRole('button', { name: '下载更新', exact: true }).click();
   await page.getByText('安装包校验未通过，请重新下载', { exact: true }).waitFor();
   assert.equal(await page.evaluate(() => window.updateCalls.includes('install')), false);
   await page.evaluate(() => { window.failDownload = false; });
-  await page.getByRole('button', { name: '下载并安装', exact: true }).click();
+  await page.getByRole('button', { name: '下载更新', exact: true }).click();
   await page.getByRole('button', { name: '允许安装更新', exact: true }).click();
   await page.getByRole('button', { name: '继续安装', exact: true }).click();
   await page.getByText('已打开系统安装页面。如果取消了安装，可以再次点击“继续安装”。', { exact: true }).waitFor();
   assert.deepEqual(await page.evaluate(() => window.updateCalls), ['download', 'download', 'install', 'openInstallSettings', 'install']);
   assert.equal(await page.evaluate(() => window.downloadArguments.sha256), next.sha256);
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  assert.equal(await page.locator('.update-actions').evaluate(el => { const a=el.children[0].getBoundingClientRect(), b=el.children[1].getBoundingClientRect(); return Math.abs(a.top-b.top)<5; }), true);
   await page.screenshot({ path: 'test-results/update-native-simulation.png', fullPage: true });
   next.deltas = [{ format: 'zai-copy-v1', fromVersionCode: androidVersionCode, baseBytes: 6700000,
     baseSha256: 'a'.repeat(64), bytes: 150000, sha256: 'c'.repeat(64),
@@ -108,17 +107,16 @@ try {
   for (const outcome of ['success', 'fallback']) {
     await page.reload();
     await page.getByLabel('版本与更新', { exact: true }).click();
-    await page.getByRole('button', { name: /发现新版本/ }).click();
-    await page.getByText(/预计增量下载 0.15 MB/).waitFor();
-    assert.deepEqual(await page.evaluate(() => window.updateCalls), []);
+      assert.deepEqual(await page.evaluate(() => window.updateCalls), []);
     await page.evaluate((value) => { window.simulateDelta = value; window.updatePermission = true; }, outcome);
-    await page.getByRole('button', { name: '下载并安装', exact: true }).click();
+    await page.getByRole('button', { name: '下载更新', exact: true }).click();
+    await page.getByText(/预计增量下载 0.15 MB/).waitFor();
     await page.getByText(outcome === 'success' ? '增量更新已合成并校验完成。' : '增量更新未能完成，已使用完整安装包。', { exact: true }).waitFor();
     assert.deepEqual(await page.evaluate(() => window.updateCalls), ['download', 'install']);
     assert.deepEqual(await page.evaluate(() => window.downloadArguments.deltas), next.deltas);
   }
   assert.deepEqual(errors, []);
   writeFileSync('test-results/update-verification.json', JSON.stringify({ version, checkedAt: new Date().toISOString(), requests, mockedOnly: true, nativeDeviceTested: false,
-    passed: ['automatic badge', 'manual check', 'same/older version no downgrade', 'offline retry', 'immutable download URL', 'no credentials', '390px layout', 'simulated download failure stops install', 'simulated permission and install retry without redownload', 'compatible delta size shown without auto download', 'simulated delta success and full fallback'] }, null, 2));
+    passed: ['automatic update dot and inline download', 'manual check', 'same/older version no downgrade', 'offline retry', 'immutable download URL', 'no credentials', '390px layout', 'simulated download failure stops install', 'simulated permission and install retry without redownload', 'compatible delta size shown during requested download', 'simulated delta success and full fallback'] }, null, 2));
   console.log('Update browser flow and simulated native bridge passed. No production calls or actual installation.');
 } finally { await browser.close(); }

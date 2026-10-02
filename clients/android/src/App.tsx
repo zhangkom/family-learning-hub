@@ -10,11 +10,12 @@ import { PhotoPreparation, OriginalPhotoLibrary, photoProcessingAvailable, impor
 import { CloudPhotoDrive } from './cloud-drive/CloudPhotoDrive';
 import { activeCamera, beginCamera, cancelCamera, clearUnfinishedCamera, stageCamera, restoredCamera, listCameraResults, removeCameraResult, cameraResultEvent, type CameraResult } from './photo-processing/camera-handoff';
 import { Review } from './Review';
-import { type Scan, type Student } from './types';
+import { type Scan, type Student, type StudentOverviewReply } from './types';
 import { appName, appVersion, familyWebsite } from './release';
 import { restoreSession, type Auth } from './restore-session';
 import { UpdateControl } from './UpdateControl';
 import { HomeView, type HomePage } from './HomeView';
+import type { LibraryMode } from './QuestionLibrary';
 import { captureFailure } from './permissions';
 import { AuthForm, type AuthMode } from './AuthForm';
 import { GuestHome } from './GuestHome';
@@ -203,7 +204,7 @@ function Home({
     scopeGeneration.current++;
     captureAbort.current?.abort(); setBusy(false);
     collectionRef.current = null; setCollection(null); setPreparationBatch(null);
-    setPreparing(null); setOriginalsOpen(false); setHomePage('library'); setLibraryMode('photos');
+    setPreparing(null); setOriginalsOpen(false); setHomePage('home');
   }, []);
   useEffect(() => {
     if (!Capacitor.isNativePlatform() || (!originalsOpen && !collection)) return;
@@ -214,7 +215,10 @@ function Home({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useLayoutEffect(() => { live.current = true; return () => { live.current = false; scopeGeneration.current++; uploadAbort.current?.abort(); captureAbort.current?.abort(); }; }, []);
   const [homePage, setHomePage] = useState<HomePage>(initialPage);
-  const [libraryMode, setLibraryMode] = useState<'photos' | 'wrong'>('photos');
+  const [libraryMode, setLibraryMode] = useState<LibraryMode>('wrong');
+  const [studentOverview, setStudentOverview] = useState<StudentOverviewReply | null>(null);
+  const [overviewError, setOverviewError] = useState('');
+  const [overviewRevision, setOverviewRevision] = useState(0);
   const [openQuestion, setOpenQuestion] = useState('');
   const [students, setStudents] = useState<Student[]>([]),
     [selected, setSelected] = useState(readSetting(selectionKey(owner)));
@@ -234,6 +238,17 @@ function Home({
     requestNumber = useRef(0);
   activeStudent.current = selected;
   const student = students.find((s) => s.id === selected);
+  useEffect(() => {
+    if (homePage !== 'me') return;
+    const controller = new AbortController();
+    setStudentOverview(null); setOverviewError('');
+    void api.studentOverview(controller.signal).then(result => {
+      if (controller.signal.aborted) return;
+      if (result.students.some(item => !item.overview)) throw new Error('统计暂不可用，请稍后刷新');
+      setStudentOverview(result);
+    }).catch(error => { if (!controller.signal.aborted) setOverviewError(message(error)); });
+    return () => controller.abort();
+  }, [api, homePage, students.length, overviewRevision]);
   const refreshPhotoQueue = useCallback(() => {
     if (!live.current || !activeStudent.current) return;
     const result = listPhotoDeliveries(owner, activeStudent.current);
@@ -336,8 +351,7 @@ function Home({
       await refreshDrafts();
       if (!live.current || activeStudent.current !== studentId) return;
       setNotice('照片已保存为本机草稿，确认清晰完整后上传');
-      setHomePage('library');
-      setLibraryMode('photos');
+      setHomePage('home');
       window.scrollTo({ top: 0 });
     },
     [owner, refreshDrafts],
@@ -469,7 +483,7 @@ function Home({
   }
   function finishCollection() {
     const batch = collectionRef.current; if (!batch || busy || !collectionSize(batch)) return;
-    updateCollection(null); setHomePage('library'); setLibraryMode('photos');
+    updateCollection(null); setHomePage('home');
     if (batch.originals.length) { setPreparationBatch({ photos: batch.originals, index: 0, nativeBatchIds: batch.nativeBatchIds || [] }); setPreparing(batch.originals[0]); }
     else setNotice(`${batch.drafts.length} 张照片已保存为本机草稿，可检查后批量上传。`);
   }
@@ -497,7 +511,7 @@ function Home({
         }
       } catch (e) { if (live.current && generation === scopeGeneration.current) setError(`照片已保存；相册批次收尾未完成：${message(e)}`); }
       finally {
-        if (live.current && generation === scopeGeneration.current) { setBusy(false); setPreparationBatch(null); setPreparing(null); setHomePage('library'); setLibraryMode('photos'); }
+        if (live.current && generation === scopeGeneration.current) { setBusy(false); setPreparationBatch(null); setPreparing(null); setHomePage('home'); }
       }
     }
   }
@@ -615,7 +629,7 @@ function Home({
       if (!live.current || viewGeneration !== scopeGeneration.current || delivery.record.studentId !== activeStudent.current) return;
       setNotice('处理图已保存为本机待提交。检查后点击上传；原片仍保留。');
     }} /></>;
-  if (originalsOpen && student) return <main><div className="button-row"><button onClick={closeLocalPhotos}>返回题目资料</button></div>
+  if (originalsOpen && student) return <main><div className="button-row"><button onClick={closeLocalPhotos}>返回首页</button></div>
     <OriginalPhotoLibrary owner={owner} studentId={selected} studentLabel={student.name} onResume={original => {
       if (live.current && viewGeneration === scopeGeneration.current && original.studentId === activeStudent.current) { setOriginalsOpen(false); setPreparing(original); }
     }} /></main>;
@@ -640,6 +654,7 @@ function Home({
     );
   return <>
     <HomeView username={auth.user.username} students={students} selected={selected} records={records}
+      studentOverview={studentOverview} overviewError={overviewError} onRefreshOverview={() => setOverviewRevision(value => value + 1)}
       onUpdateAccount={async (kind, value, currentPassword) => {
         const next = kind === 'username' ? await api.changeUsername(value, currentPassword) : await api.changePassword(value, currentPassword);
         if (next.user.id !== auth.user.id) throw new Error('账号信息不匹配，请重新登录。');
@@ -650,7 +665,7 @@ function Home({
       localDrafts={localDrafts} busy={busy} uploading={uploading} refreshing={refreshing}
       processedCount={photoQueue.length + photoQueueIssues.length} onOpenOriginals={localPhotosEnabled ? () => setOriginalsOpen(true) : undefined}
       onOpenCloud={() => setCloudOpen(true)}
-      batchUploads={<section className="batch-upload-panel" aria-label="拍题批量上传">
+      batchUploads={(photoQueue.length + localDrafts.filter(item => item.studentId === selected).length > 0 || !!batchProgress || uploading === 'batch') ? <section className="batch-upload-panel" aria-label="拍题批量上传">
         <strong>照片按每组200张依次上传</strong><p className="hint">照片清晰完整后，确认上传当前孩子的待提交照片。处理图原片仍留在手机。</p>
         <div className="button-row"><button className="primary" disabled={busy || !!uploading || !(photoQueue.length + localDrafts.filter(item => item.studentId === selected).length)} onClick={() => void uploadMany()}>
           确认并批量上传（{photoQueue.length + localDrafts.filter(item => item.studentId === selected).length} 张）</button>
@@ -658,13 +673,13 @@ function Home({
         {batchProgress && <><output>已处理 {batchProgress.completed} / {batchProgress.total} 张 · 成功 {batchProgress.succeeded} · 失败 {batchProgress.failed.length}{batchProgress.stopped ? ' · 已停止' : ''}</output>
           <progress max={batchProgress.total} value={batchProgress.completed} />
           {!!batchProgress.failed.length && <details><summary>查看失败原因；未成功项可继续上传</summary><ul>{batchProgress.failed.map(item => <li key={item.id}>照片 {item.id.slice(0, 8)}：{item.reason}</li>)}</ul></details>}</>}
-      </section>}
+      </section> : null}
       processedPending={<>{photoQueue.map(record => <PreparedDraftCard key={record.id} record={record} uploading={uploading === record.id} disabled={!!uploading}
         onUpload={() => void uploadPhoto(record)} onRemove={() => { try { removePhotoDelivery(owner, selected, record.id); refreshPhotoQueue(); } catch(e) { setError(message(e)); } }} />)}
         {photoQueueIssues.map(issue => <article key={issue.key} className="draft-card"><div><strong>待提交记录 {issue.id.slice(0, 8)}</strong><p role="alert">{issue.message}</p>
           <div className="button-row"><button onClick={() => setOriginalsOpen(true)}>从本机原片重新处理</button>
             <button disabled={!!uploading} onClick={() => { try { removeDamagedPhotoDelivery(owner, selected, issue.key); refreshPhotoQueue(); } catch(e) { setError(message(e)); } }}>移除这条损坏记录，保留原片</button></div></div></article>)}</>}
-      cameraRecovery={Capacitor.isNativePlatform() ? <><div className="button-row"><button disabled={busy} onClick={() => void recoverCamera()}>读取上次相机照片</button>
+      cameraRecovery={Capacitor.isNativePlatform() ? <><div className="button-row library-recovery-actions"><button disabled={busy} onClick={() => void recoverCamera()}>读取上次相机照片</button>
         {localPhotosEnabled && <button disabled={busy || !!uploading} onClick={() => void recoverGallery()}>恢复相册批次</button>}
         {cameraWaiting && <button disabled={busy} onClick={() => { try { clearUnfinishedCamera(owner); setCameraWaiting(false); } catch(e) { setError(message(e)); } }}>取消未完成的相机操作</button>}</div>
         {cameraFailures.map(({ result, message: reason }) => <article className="draft-card" key={result.id}><div><strong>上次照片暂时无法读取</strong>

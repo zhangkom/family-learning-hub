@@ -27,6 +27,13 @@ describe('native cloud adapter contract', () => {
     expect(result.items.map(item => item.name)).toEqual([original.originalName, original.originalName]);
     expect(result.items[0].id).not.toBe(result.items[1].id);
   });
+  it('opens the gallery range picker without changing original names or starting upload', async () => {
+    bridge.pickOriginals.mockResolvedValue({ batchId: 'album-range', originals: [original], failures: [], cancelled: false });
+    const result = await createDriveServices(api).pick!(scope, 200, signal, false, true);
+    expect(bridge.pickOriginals).toHaveBeenCalledWith(scope.owner, scope.studentId, 200, { purpose: 'cloud-original', albumRange: true, signal });
+    expect(result.items[0].name).toBe(original.originalName);
+    expect(bridge.readCloudOriginalUpload).not.toHaveBeenCalled();
+  });
   it('recovers completed batches and preserves stable original IDs', async () => {
     bridge.listOriginalBatches.mockResolvedValue({ batches: [{ batchId: 'complete', studentId: scope.studentId, purpose: 'cloud-original', state: 'completed', createdAt: 1 }] });
     bridge.resumeOriginalBatch.mockResolvedValue({ batchId: 'complete', originals: [original], failures: [], cancelled: false });

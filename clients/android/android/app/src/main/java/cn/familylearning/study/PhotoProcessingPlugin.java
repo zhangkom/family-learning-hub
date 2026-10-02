@@ -137,6 +137,16 @@ public class PhotoProcessingPlugin extends Plugin {
                 // Capacitor serializes these non-sensitive identifiers for an activity/process restore.
                 call.getData().put("batchId",b.id);
                 boolean folder=Boolean.TRUE.equals(call.getBoolean("folderRange"));
+                boolean album=Boolean.TRUE.equals(call.getBoolean("albumRange"));
+                if(album&&folder)throw new IllegalArgumentException("请选择一种相册方式");
+                if(album) {
+                    Intent gallery=new Intent(getContext(),AlbumRangeActivity.class);
+                    gallery.putExtra("ownerKey",root.getName());gallery.putExtra("batchId",b.id);gallery.putExtra("studentId",student);
+                    getActivity().runOnUiThread(()-> {
+                        try {startActivityForResult(call,gallery,"albumRangeSelected");}
+                        catch(Exception e) {busy.set(false);call.reject("无法打开相册范围选择，请使用系统相册多选","PHOTO_PICKER");}
+                    });return;
+                }
                 Intent intent=new Intent(folder?Intent.ACTION_OPEN_DOCUMENT_TREE:Intent.ACTION_OPEN_DOCUMENT);
                 if(!folder) {
                     intent.addCategory(Intent.CATEGORY_OPENABLE);intent.setType("image/*");
@@ -149,6 +159,15 @@ public class PhotoProcessingPlugin extends Plugin {
                     catch(Exception e) {busy.set(false);call.reject("无法打开系统相册，请稍后重试","PHOTO_PICKER");}
                 });
             } catch(Exception e) {busy.set(false);call.reject("无法建立相册批次，请检查选择数量与本机空间","PHOTO_INVALID");}
+        });
+    }
+    @ActivityCallback private void albumRangeSelected(PluginCall call,ActivityResult result) {
+        busy.set(false);if(call==null)return;
+        run(call,()-> {
+            PhotoBatchStore b=batch(call);
+            // The activity commits URI metadata before returning; avoid Binder-size limits on large selections.
+            if(b.state.equals("selecting"))b.cancel();
+            return batchResult(b);
         });
     }
     @ActivityCallback private void originalFolderSelected(PluginCall call,ActivityResult result) {

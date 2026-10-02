@@ -20,14 +20,14 @@ export function CaptureBatch({ collection, studentLabel, busy, error, progress, 
   const count = collectionSize(collection);
   return <main className="capture-batch">
     <div className="section-line"><div><span className="eyebrow">{studentLabel} · 拍题收集</span><h1>已选 {count} 张</h1></div>
-      <button disabled={busy} onClick={onClose}>返回题目资料</button></div>
-    <p>可连续拍摄或从相册多选，也可继续添加。照片先保存在本机，确认后再上传。</p>
+      <button disabled={busy} onClick={onClose}>返回首页</button></div>
+    <p className="hint">先保存在本机，可继续添加；确认后再上传。</p>
     <div className="capture-batch-actions">
       <button className="primary" disabled={busy} onClick={() => onCapture('camera')}>继续拍照</button>
       <button disabled={busy} onClick={() => onCapture('gallery')}>从相册添加</button>
-      {onFolderRange && <button disabled={busy} onClick={onFolderRange}>按文件夹选范围 / 全选</button>}
-      <button className="primary" disabled={busy || !count} onClick={onFinish}>{collection.originals.length ? '完成选择，逐张调整' : '完成选择，查看待上传'}</button>
+      {onFolderRange && <button disabled={busy} onClick={onFolderRange}>文件夹范围</button>}
     </div>
+    <div className="capture-batch-next"><span>{count ? `已选 ${count} 张` : '添加照片后继续'}</span><button className="primary" disabled={busy || !count} onClick={onFinish}>{collection.originals.length ? '完成选择，逐张调整' : '完成选择，查看待上传'}</button></div>
     {busy && <output>{progress || '正在保存照片，请稍候…'}</output>}
     {error && <p role="alert" className="error">{error}</p>}
     {!count && !busy && <p className="hint">尚未添加照片。取消拍摄后，也可以继续添加。</p>}

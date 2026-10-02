@@ -5,12 +5,17 @@ import { fileURLToPath } from 'node:url';
 const allowed = new Set([
   'android.permission.INTERNET',
   'android.permission.REQUEST_INSTALL_PACKAGES',
+  'android.permission.READ_EXTERNAL_STORAGE',
+  'android.permission.READ_MEDIA_IMAGES',
+  'android.permission.READ_MEDIA_VISUAL_USER_SELECTED',
   'cn.familylearning.study.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION',
 ]);
 export function auditPermissions(output) {
   if (!/^package: cn\.familylearning\.study\s*$/m.test(output)) throw new Error('Unexpected APK package');
   const permissions = [...output.matchAll(/^uses-permission[^:]*: name='([^']+)'/gm)].map((match) => match[1]);
   if (!permissions.includes('android.permission.INTERNET')) throw new Error('APK permission output is incomplete');
+  const legacy = output.split('\n').find(line => line.includes("name='android.permission.READ_EXTERNAL_STORAGE'"));
+  if (legacy && !/maxSdkVersion='32'/.test(legacy)) throw new Error('Legacy photo access must stop at SDK 32');
   const unexpected = permissions.filter((permission) => !allowed.has(permission));
   if (unexpected.length) throw new Error(`Unexpected APK permissions: ${unexpected.join(', ')}`);
   return { permissionsVerified: true, permissions: [...new Set(permissions)].sort((a, b) => a.localeCompare(b)) };

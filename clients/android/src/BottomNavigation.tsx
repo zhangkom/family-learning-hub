@@ -12,7 +12,7 @@ export function BottomNavigation({ page, onNavigate, pending = false }: {
       <button type="button" key={key} aria-current={page === key ? 'page' : undefined}
         onClick={() => { onNavigate(key); window.scrollTo({ top: 0 }); }}>
         <Icon size={21} /><span>{pageNames[key]}</span>
-        {key === 'library' && pending && <span className="nav-dot" aria-label="有照片待上传" />}
+        {key === 'home' && pending && <span className="nav-dot" aria-label="有照片待上传" />}
         {key === 'me' && <UpdateDot />}
       </button>)}
   </nav>;

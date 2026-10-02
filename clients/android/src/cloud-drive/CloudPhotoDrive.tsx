@@ -80,13 +80,13 @@ function DriveSession({ api, owner, studentId, studentLabel, onClose, onOpenOrig
     setNotice(result.cancelled && !accepted.length ? '已取消选图' : accepted.length ? `已保存 ${accepted.length} 张到本机待上传，按每组最多 ${limits.maxBatch} 张自动分组，请点“开始上传”。` : '没有新的图片需要加入');
     setError([...result.failures, ...rejected].join('；'));
   }
-  async function select(recover = false, folderRange = false) {
+  async function select(recover = false, folderRange = false, albumRange = false) {
     const signal = controller.current?.signal; if (locked || !signal) return;
     setError(''); setNotice('');
     if (!services.native && !recover) { input.current?.click(); return; }
     setPicking(true);
     try {
-      const result = recover ? await services.recover?.({ owner, studentId }, batchSize, signal) : await services.pick?.({ owner, studentId }, batchSize, signal, folderRange);
+      const result = recover ? await services.recover?.({ owner, studentId }, batchSize, signal) : await services.pick?.({ owner, studentId }, batchSize, signal, folderRange, albumRange);
       if (!result) throw new Error('此设备暂不支持此选图方式');
       await addPicked(result);
     } catch (e) { if (live.current && !signal.aborted) setError(message(e)); }
@@ -125,15 +125,20 @@ function DriveSession({ api, owner, studentId, studentLabel, onClose, onOpenOrig
   const bytesWaiting = queue.jobs.filter(job => job.status !== 'completed').reduce((sum, job) => sum + job.size, 0);
   return <section className="cloud-drive" aria-labelledby="cloud-drive-title">
     <header className="cloud-header"><button type="button" onClick={close} aria-label="返回上一页">‹ 返回</button><span className="cloud-child">{studentLabel || '当前孩子'}</span></header>
-    <div className="cloud-hero"><span className="cloud-eyebrow">知燃 AI · 私有图片云盘</span><h2 id="cloud-drive-title">把原图安心存好</h2><p>当前归属：<strong>{studentLabel || '当前孩子'}</strong>。只保存你选择的原图，不自动分析题目。</p></div>
-    {onOpenOriginals && <div className="cloud-panel"><p>云盘用于备份；收题和调整照片可以直接使用手机保留的原片。</p><button type="button" disabled={locked} onClick={onOpenOriginals}>从本机照片收题</button></div>}
-    <div className="cloud-select"><div><h3>批量上传图片</h3><p>每组最多 {batchSize} 张，超出自动分组 · 原图保存</p></div>
-      <button type="button" className="cloud-primary" disabled={locked || !limits} onClick={() => void select()}>{picking ? '正在读取选图…' : services.native ? '从相册选择图片' : '选择图片'}</button>
-      {services.native && <button type="button" disabled={locked || !limits} onClick={() => void select(false, true)}>按文件夹选范围 / 全选</button>}
+    <div className="cloud-hero"><h2 id="cloud-drive-title">图片云盘</h2><p>原图备份 · 保留原文件名 · 分析优先读本机</p></div>
+    <div className="cloud-select"><div className="cloud-select-heading"><h3>批量上传图片</h3><p>每组 {batchSize} 张，超出自动分组</p></div>
+      <div className="cloud-pick-actions">
+        <button type="button" className="cloud-primary" disabled={locked || !limits} onClick={() => void select(false, false, true)}>{picking ? '读取中…' : services.native ? '相册选择' : '选择图片'}</button>
+        {services.native && <button type="button" disabled={locked || !limits} onClick={() => void select(false, true)}>文件夹范围</button>}
+        {services.recover && <button type="button" disabled={locked} onClick={() => void select(true)}>恢复上次</button>}
+      </div>
       <input ref={input} type="file" multiple accept={limits?.mimeTypes.join(',') || 'image/jpeg,image/png,image/webp'} aria-label="选择云盘图片文件" hidden onChange={e => { const files = Array.from(e.currentTarget.files || []); e.currentTarget.value = ''; if (files.length) void filesSelected(files); }} />
-      {services.recover && <button type="button" disabled={locked} onClick={() => void select(true)}>恢复上次选图</button>}
-      {services.native && <p className="cloud-hint">图片多时可选择照片所在文件夹，再指定起始、结束图片或全选；按文件名排序。新导入的图片保留原文件名。</p>}
-      <p className="cloud-hint">{limits ? `支持 JPEG、PNG、WebP；单张最多 ${sizeLabel(limits.maxFileBytes)}。不支持的图片会明确提示，不会压缩替换原件。` : '正在读取云盘限制…'}</p>
+      {services.native && <p className="cloud-hint">相册里点第一张，滚动后点最后一张，即可选中整段。</p>}
+      <div className="cloud-secondary-actions">
+        {services.native && <button type="button" disabled={locked || !limits} onClick={() => void select()}>系统相册多选</button>}
+        {onOpenOriginals && <button type="button" disabled={locked} onClick={onOpenOriginals}>从本机照片收题</button>}
+        <details className="cloud-help"><summary>选图说明</summary><p>相册范围选择按照片时间由新到旧，首次使用需授权读取照片；文件夹范围按文件名排序。只导入确认的图片，点“开始上传”后才发送到云盘，不自动分析。</p><p>{limits ? `支持 JPEG、PNG、WebP；单张最多 ${sizeLabel(limits.maxFileBytes)}。` : '正在读取云盘限制…'}</p></details>
+      </div>
     </div>
     {(error || queue.error) && <p role="alert" className="cloud-error">{error || queue.error}</p>}{notice && <output className="cloud-notice">{notice}</output>}
     {recoveryAction && <button type="button" disabled={locked} onClick={() => void discardRecovery()}>忽略这批未导入项，保留原片</button>}
@@ -148,9 +153,9 @@ function DriveSession({ api, owner, studentId, studentLabel, onClose, onOpenOrig
           <div className="cloud-job-actions">{['failed', 'paused'].includes(job.status) && <button type="button" disabled={locked} onClick={() => void start(job.id)} aria-label={`重试 ${job.name}`}>重试</button>}
           <button type="button" disabled={locked} onClick={() => void remove(job.id)} aria-label={`${job.status === 'completed' ? '清理记录' : '移除待上传'} ${job.name}`}>{job.status === 'completed' ? '清理记录' : '移除'}</button></div></li>)}</ol>
         <p className="cloud-hint">移除只清理本机上传记录，不会删除相册原图或云盘图片。</p>
-      </> : <p className="cloud-empty">先选择图片，确认后再上传。你的相册不会被自动扫描。</p>}
+      </> : <p className="cloud-empty">选择的照片会出现在这里，确认后再上传。</p>}
     </section>
-    <section className="cloud-panel" aria-labelledby="cloud-photos-title"><div className="cloud-section-heading"><h3 id="cloud-photos-title">{studentLabel || '当前孩子'}的云图</h3><button type="button" disabled={listing || !limits} onClick={() => void refresh()}>刷新</button></div>
+    <section className="cloud-panel" aria-labelledby="cloud-photos-title"><div className="cloud-section-heading"><h3 id="cloud-photos-title">已存云图</h3><button type="button" disabled={listing || !limits} onClick={() => void refresh()}>刷新</button></div>
       {photos.storage && <p className="cloud-hint">家庭云盘已用 {sizeLabel(photos.storage.usedBytes)} / {sizeLabel(photos.storage.limitBytes)}</p>}
       <div className="cloud-grid">{photos.photos.map(photo => <article className="cloud-photo" key={photo.id}>
         <button type="button" className="cloud-photo-open" onClick={() => setViewing(photo)} aria-label={`预览 ${photo.originalName}`}><PrivatePreview photo={photo} services={services} /><span>{photo.originalName}</span></button>

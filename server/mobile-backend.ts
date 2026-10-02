@@ -18,6 +18,7 @@ import {
   type FamilyUser,
 } from './family-backend';
 import { getFamilyStore, type FamilyStore } from './family-store';
+import { studentOverview } from './student-overview';
 import { listScans, readScanFile } from './scan-files';
 import {
   MobileError,
@@ -179,7 +180,8 @@ async function dispatch(
     });
   }
   if (parts.length === 1 && parts[0] === 'students') {
-    if (method === 'GET') return json({ students: store.students(user.id) });
+    if (method === 'GET') return json(new URL(request.url).searchParams.get('overview') === '1'
+      ? await studentOverview(store, user.id) : { students: store.students(user.id) });
     if (method !== 'POST') throw new HttpError(405, '请求方式不支持');
     const body = await readJson(request, 8192);
     if (

@@ -48,6 +48,12 @@ describe('durable sequential original batches', () => {
     expect(result.originals).toHaveLength(100); expect(result.failures).toEqual([]); expect(maximum).toBe(1);
     expect(fetcher).not.toHaveBeenCalled(); expect(mocks.native.forgetOriginalBatch).not.toHaveBeenCalled();
   });
+  it('passes gallery range mode and rejects conflicting picker modes before opening a picker', async () => {
+    await expect(pickOriginals('owner', 'student', 200, { folderRange: true, albumRange: true })).rejects.toThrow('一种相册');
+    expect(mocks.native.pickOriginalBatch).not.toHaveBeenCalled();
+    await pickOriginals('owner', 'student', 200, { albumRange: true });
+    expect(mocks.native.pickOriginalBatch).toHaveBeenCalledWith({ owner: 'owner', studentId: 'student', limit: 200, purpose: 'processed', albumRange: true });
+  });
   it.each([0, 2147483648, 1.5])('rejects invalid group parameter %s before picker', async limit => {
     await expect(pickOriginals('owner', 'student', limit)).rejects.toThrow('分组参数'); expect(mocks.native.pickOriginalBatch).not.toHaveBeenCalled();
   });

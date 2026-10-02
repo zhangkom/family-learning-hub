@@ -14,7 +14,8 @@ import {
   runNextJob,
 } from './scan-jobs';
 import { ownedScan } from './mobile-service';
-import { readStoredScan, saveScan } from './scan-files';
+import { readStoredScan, saveScan, writeStoredScan } from './scan-files';
+import type { ScanRecord } from '../lib/scans';
 import { blankScanQuestion } from '../lib/scans';
 import {
   validateQuestions,
@@ -163,6 +164,32 @@ afterEach(() => {
   rmSync(target, { recursive: true, force: true });
 });
 describe('mobile authentication and students', () => {
+  it('reports per-student counts without leaking other owners or guessing historical ownership', async () => {
+    const first = store.addStudent(account, '同名孩子'), second = store.addStudent(account, '同名孩子');
+    const owner = store.scanOwner(account);
+    const make = (studentId: string | undefined, patch: Partial<ScanRecord> = {}): ScanRecord => ({
+      id: randomUUID(), studentId, subject: '', source: '合成', originalName: 'secret.png', mimeType: 'image/png', size: 12,
+      status: 'needs_review', createdAt: new Date().toISOString(), fileUrl: '/private-photo', revision: 1,
+      structuredQuestions: [{ ...question(), wrongBook: { savedAt: new Date().toISOString() } }, question('q2')], ...patch,
+    });
+    for (const record of [make(first.id), make(first.id, { status: 'ready' }), make(second.id), make(first.id, { deletedAt: new Date().toISOString() }), make(undefined), make(undefined, { child: 'dabao' })]) {
+      writeStoredScan(store, owner, record, 'test');
+    }
+    writeStoredScan(store, 'unrelated-family', make(first.id), 'test');
+    const batch = randomUUID(), now = new Date().toISOString();
+    store.db.prepare('INSERT INTO cloud_photo_batches VALUES (?,?,?,?,?,?)').run(batch, account, first.id, randomUUID(), 2, '{}');
+    for (let i = 0; i < 2; i++) store.db.prepare('INSERT INTO cloud_photos VALUES (?,?,?,?,?,?,?,?,?)').run(randomUUID(), account, first.id, batch, randomUUID(), 'a'.repeat(64), 12, now, '{}');
+    const response = await call('students?overview=1');
+    expect(response.status).toBe(200);
+    const data = await response.json() as unknown as { students: { id: string; overview: Record<string, number> }[]; unassignedScanCount: number };
+    expect(data.students.find(item => item.id === first.id)?.overview).toEqual({ scanCount: 2, questionCount: 4, wrongQuestionCount: 2, needsReviewCount: 1, cloudPhotoCount: 2 });
+    expect(data.students.find(item => item.id === second.id)?.overview).toEqual({ scanCount: 1, questionCount: 2, wrongQuestionCount: 1, needsReviewCount: 1, cloudPhotoCount: 0 });
+    expect(data.students.find(item => item.id === 'dabao')?.overview.scanCount).toBe(1);
+    expect(data.unassignedScanCount).toBe(1);
+    expect(JSON.stringify(data)).not.toMatch(/secret.png|private-photo|2\+3/);
+    expect(await (await call('students')).json()).not.toHaveProperty('unassignedScanCount');
+    expect((await call('students?overview=1', 'GET', undefined, '')).status).toBe(401);
+  });
   it('isolates bearer and cookie sessions, hashes tokens, and revokes one device on logout', async () => {
     expect(token).toMatch(/^[a-f0-9]{64}$/);
     expect(
