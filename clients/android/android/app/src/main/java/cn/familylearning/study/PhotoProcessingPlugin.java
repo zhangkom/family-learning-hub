@@ -7,6 +7,11 @@ import android.graphics.Color;
 import android.graphics.Matrix;
 import android.graphics.Paint;
 import android.net.Uri;
+import android.app.Activity;
+import android.content.Intent;
+import android.content.ClipData;
+import android.provider.DocumentsContract;
+import androidx.activity.result.ActivityResult;
 import androidx.exifinterface.media.ExifInterface;
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
@@ -14,6 +19,7 @@ import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
+import com.getcapacitor.annotation.ActivityCallback;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -31,34 +37,43 @@ public class PhotoProcessingPlugin extends Plugin {
     private static final long MAX_UPLOAD_BYTES = 8L * 1024 * 1024;
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private final AtomicBoolean busy = new AtomicBoolean();
+    private final AtomicBoolean downloading = new AtomicBoolean();
+    private volatile CloudOriginalDownload.Job downloadJob;
+    private volatile PluginCall downloadCall;
     private interface Task { JSObject run() throws Exception; }
 
     private void run(PluginCall call, Task task) {
         if (!busy.compareAndSet(false, true)) { call.reject("正在处理另一张照片，请稍候", "PHOTO_BUSY"); return; }
         try {
             worker.execute(() -> {
-                try { call.resolve(task.run()); }
-                catch (IllegalArgumentException e) { call.reject(e.getMessage(), "PHOTO_INVALID"); }
-                catch (OutOfMemoryError e) { call.reject("手机可用内存不足，请关闭其他应用后重试", "PHOTO_MEMORY"); }
-                catch (Exception e) { call.reject("照片处理未完成，请检查本机空间并重试", "PHOTO_IO"); }
+                JSObject result;
+                try { result=task.run(); }
+                catch (IllegalArgumentException e) { call.reject(e.getMessage(), "PHOTO_INVALID"); return; }
+                catch (OutOfMemoryError e) { call.reject("手机可用内存不足，请关闭其他应用后重试", "PHOTO_MEMORY"); return; }
+                catch (Exception e) { call.reject("照片处理未完成，请检查本机空间并重试", "PHOTO_IO"); return; }
                 finally { busy.set(false); }
+                call.resolve(result);
             });
         } catch (RuntimeException e) { busy.set(false); call.reject("照片处理已停止", "PHOTO_STOPPED"); }
     }
-    @Override protected void handleOnDestroy() { worker.shutdown(); }
+    @Override protected void handleOnDestroy() { CloudOriginalDownload.Job job=downloadJob;if(job!=null)job.cancel();worker.shutdown(); }
 
     @PluginMethod public void importPhoto(PluginCall call) {
-        run(call, () -> {
-            File root = ownerRoot(call);
-            String studentId = call.getString("studentId");
-            if(studentId==null||studentId.trim().isEmpty()||studentId.length()>200)
-                throw new IllegalArgumentException("请先选择学生");
-            String input = call.getString("uri");
+        run(call, () -> importAt(ownerRoot(call),call.getString("studentId"),call.getString("uri"),UUID.randomUUID().toString()));
+    }
+    private JSObject importAt(File root,String studentId,String input,String id) throws Exception {
+            PhotoBatchStore.checkStudent(studentId);
+            File pending = new File(root, ".import-" + id), target = new File(root, id);
+            // Stable IDs in the batch manifest close the crash window between file commit and item commit.
+            if(new File(target,"record.json").isFile()) {
+                JSObject existing=originalResult(target);
+                if(!studentId.equals(existing.getString("studentId"))) throw new IllegalArgumentException("原片学生归属不匹配");
+                return existing;
+            }
             if (input == null || input.length() > 8192) throw new IllegalArgumentException("未取得本机照片地址");
             if (root.getUsableSpace() < MAX_SOURCE_BYTES + 64L*1024*1024)
                 throw new IllegalArgumentException("本机空间不足，请先导出或清理旧照片");
-            String id = UUID.randomUUID().toString();
-            File pending = new File(root, ".import-" + id), target = new File(root, id);
+            if(pending.exists()) removeTree(pending,root);
             mkdir(pending);
             boolean saved = false;
             try {
@@ -94,10 +109,189 @@ public class PhotoProcessingPlugin extends Plugin {
                 saved=true;
                 return originalResult(target);
             } finally { if(!saved) removeTree(pending,root); }
-        });
     }
 
     @PluginMethod public void getOriginal(PluginCall call) { run(call, () -> originalResult(photoDir(call))); }
+
+    @PluginMethod public void pickOriginalBatch(PluginCall call) {
+        if(downloading.get()){call.reject("请先完成当前原图保存","DOWNLOAD_BUSY");return;}
+        if(!busy.compareAndSet(false,true)) {call.reject("正在处理另一张照片，请稍候","PHOTO_BUSY");return;}
+        worker.execute(() -> {
+            try {
+                PhotoBatchStore b=PhotoBatchStore.create(ownerRoot(call),call.getString("studentId"),call.getString("purpose","processed"),integer(call,"limit",100,1,100));
+                // Capacitor serializes these non-sensitive identifiers for an activity/process restore.
+                call.getData().put("batchId",b.id);
+                Intent intent=new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                intent.addCategory(Intent.CATEGORY_OPENABLE);intent.setType("image/*");
+                intent.putExtra(Intent.EXTRA_MIME_TYPES,new String[]{"image/jpeg","image/png","image/webp"});
+                intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE,b.limit>1);
+                intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+                getActivity().runOnUiThread(() -> {
+                    try {startActivityForResult(call,intent,"originalBatchSelected");}
+                    catch(Exception e) {busy.set(false);call.reject("无法打开系统相册，请稍后重试","PHOTO_PICKER");}
+                });
+            } catch(Exception e) {busy.set(false);call.reject("无法建立相册批次，请检查选择数量与本机空间","PHOTO_INVALID");}
+        });
+    }
+    @ActivityCallback private void originalBatchSelected(PluginCall call,ActivityResult result) {
+        busy.set(false);
+        if(call==null)return; // The durable selecting record is still visible for explicit cancellation.
+        run(call,() -> {
+            PhotoBatchStore b=batch(call);
+            if(b.state.equals("cancelled")) return batchResult(b);
+            Intent data=result.getData();
+            if(result.getResultCode()!=Activity.RESULT_OK||data==null) {b.cancel();return batchResult(b);}
+            List<String> uris=new ArrayList<>();
+            ClipData clips=data.getClipData();
+            if(clips!=null) for(int i=0;i<clips.getItemCount();i++)uris.add(clips.getItemAt(i).getUri().toString());
+            else if(data.getData()!=null)uris.add(data.getData().toString());
+            try {b.select(uris);} catch(IllegalArgumentException e) {b.cancel();throw e;}
+            for(int i=0;i<b.items.size();i++) {
+                try {getContext().getContentResolver().takePersistableUriPermission(Uri.parse(b.items.get(i).uri),Intent.FLAG_GRANT_READ_URI_PERMISSION);}
+                catch(SecurityException e) {b.failed(i,"此图片来源未保留读取权限；可在当前会话重试，或重新选择照片");}
+            }
+            return batchResult(b);
+        });
+    }
+    private PhotoBatchStore batch(PluginCall call) throws Exception {
+        return PhotoBatchStore.load(ownerRoot(call),call.getString("batchId"),call.getString("studentId"));
+    }
+    private static JSObject batchResult(PhotoBatchStore b) throws Exception {
+        JSObject result=new JSObject(); result.put("schemaVersion",1);result.put("batchId",b.id);result.put("studentId",b.studentId);
+        result.put("purpose",b.purpose);result.put("state",b.state);result.put("limit",b.limit);result.put("createdAt",b.createdAt);
+        JSArray items=new JSArray();
+        for(int n=0;n<b.items.size();n++) {PhotoBatchStore.Item item=b.items.get(n);JSObject value=new JSObject();
+            value.put("index",n);value.put("originalId",item.originalId);value.put("status",item.status);
+            if(!item.error.isEmpty())value.put("error",item.error);items.put(value);
+        }
+        result.put("items",items);return result;
+    }
+    @PluginMethod public void getOriginalBatch(PluginCall call) {run(call,()->batchResult(batch(call)));}
+    @PluginMethod public void listOriginalBatches(PluginCall call) {
+        run(call,()-> {
+            String student=call.getString("studentId"),purpose=call.getString("purpose");PhotoBatchStore.checkStudent(student);
+            if(purpose!=null)PhotoBatchStore.checkPurpose(purpose);
+            JSArray batches=new JSArray();for(PhotoBatchStore b:PhotoBatchStore.list(ownerRoot(call)))
+                if(b.studentId.equals(student)&&(purpose==null||purpose.equals(b.purpose)))batches.put(batchResult(b));
+            JSObject result=new JSObject();result.put("batches",batches);return result;
+        });
+    }
+    @PluginMethod public void importBatchItem(PluginCall call) {
+        run(call,()-> {
+            PhotoBatchStore b=batch(call);int index=integer(call,"index",-1,0,99);
+            if(b.state.equals("cancelled")||b.state.equals("selecting"))throw new IllegalArgumentException("此照片批次尚未选择或已取消");
+            PhotoBatchStore.Item item=b.item(index);String uri=item.uri;JSObject original=null;
+            try { JSObject imported=importAt(ownerRoot(call),b.studentId,item.uri,item.originalId);b.imported(index);original=imported; }
+            catch(IllegalArgumentException e) {b.failed(index,e.getMessage());}
+            catch(OutOfMemoryError e) {b.failed(index,"手机可用内存不足，可关闭其他应用后单张重试");}
+            catch(Exception e) {b.failed(index,"照片未导入，可重试；若来源文件已移动或失去权限，请重新选择");}
+            if(original!=null)releaseUnusedGrant(uri);
+            JSObject result=new JSObject();result.put("batch",batchResult(b));if(original!=null)result.put("original",original);return result;
+        });
+    }
+    @PluginMethod public void cancelOriginalBatch(PluginCall call) {
+        run(call,()-> {PhotoBatchStore b=batch(call);List<String> uris=new ArrayList<>();for(PhotoBatchStore.Item i:b.items)uris.add(i.uri);
+            b.cancel();for(String uri:uris)releaseUnusedGrant(uri);return batchResult(b);});
+    }
+    @PluginMethod public void forgetOriginalBatch(PluginCall call) {
+        run(call,()-> {PhotoBatchStore b=batch(call);
+            if(!b.state.equals("completed")&&!b.state.equals("cancelled"))throw new IllegalArgumentException("请先完成导入或明确取消该批次");
+            deleteFile(new File(b.file.getPath()+".bak"));deleteFile(new File(b.file.getPath()+".part"));deleteFile(b.file);return new JSObject();});
+    }
+    private void releaseUnusedGrant(String uri) {
+        if(uri==null||uri.isEmpty())return;
+        try {
+            File roots=new File(getContext().getFilesDir(),"photo-originals-v1");File[] owners=roots.listFiles(File::isDirectory);
+            if(owners==null)return;
+            // An identical source URI may still belong to another pending batch/account.
+            for(File root:owners)for(PhotoBatchStore b:PhotoBatchStore.list(root))for(PhotoBatchStore.Item item:b.items)if(uri.equals(item.uri))return;
+            getContext().getContentResolver().releasePersistableUriPermission(Uri.parse(uri),Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        } catch(Exception ignored) { /* Never delete an original or revoke a shared grant when uncertain. */ }
+    }
+
+    private File downloads() throws IOException {
+        File dir=new File(getContext().getCacheDir(),"cloud-original-downloads-v1");mkdir(dir);return dir;
+    }
+    private File downloadFile(String id) throws IOException {
+        if(!validId(id))throw new IllegalArgumentException("下载编号无效");return new File(downloads(),id+".verified");
+    }
+    private static JSObject downloadResult(boolean saved) {JSObject r=new JSObject();r.put("saved",saved);r.put("cancelled",!saved);return r;}
+    @PluginMethod public void downloadCloudOriginal(PluginCall call) {
+        final String token=call.getString("token");
+        // Activity calls can be serialized by Capacitor. Credentials must disappear BEFORE launch/save.
+        call.getData().remove("token");
+        if(busy.get()){call.reject("请先完成当前照片操作","PHOTO_BUSY");return;}
+        if(!downloading.compareAndSet(false,true)){call.reject("请先完成当前原图保存","DOWNLOAD_BUSY");return;}
+        CloudOriginalDownload.Job job=new CloudOriginalDownload.Job();downloadJob=job;downloadCall=call;
+        worker.execute(()-> {
+            File part=null,verified=null;
+            try {
+                String id=call.getString("requestId");verified=downloadFile(id);part=new File(downloads(),id+".part");
+                // Only abandoned temporaries age out. A recent verified file may await an activity restore.
+                File[] abandoned=downloads().listFiles();if(abandoned!=null)for(File f:abandoned)
+                    if(f.lastModified()<System.currentTimeMillis()-24L*60*60*1000)deleteFile(f);
+                long bytes=integer(call,"bytes",-1,1,(int)MAX_SOURCE_BYTES);
+                String mime=call.getString("mime"),sha=call.getString("sha256");
+                CloudOriginalDownload.validate(bytes,sha,mime,token);
+                boolean debug=(getContext().getApplicationInfo().flags&android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE)!=0;
+                java.net.URL url=CloudOriginalDownload.url(call.getString("base"),call.getString("path"),debug);
+                if(downloads().getUsableSpace()<bytes+32L*1024*1024)throw new IOException("insufficient private space");
+                job.download(url,token,bytes,sha,mime,part);job.check();
+                if(!part.renameTo(verified))throw new IOException("download commit failed");
+                call.getData().remove("base");call.getData().remove("path");
+                Intent intent=new Intent(Intent.ACTION_CREATE_DOCUMENT);intent.addCategory(Intent.CATEGORY_OPENABLE);intent.setType(mime);
+                intent.putExtra(Intent.EXTRA_TITLE,CloudOriginalDownload.safeName(call.getString("name"),mime));
+                getActivity().runOnUiThread(()-> {
+                    try {job.check();startActivityForResult(call,intent,"cloudOriginalDestination");}
+                    catch(Exception e) {
+                        cleanupDownload(call);
+                        if(job.cancelled.get())call.resolve(downloadResult(false));
+                        else call.reject("无法打开系统保存位置，请重新下载保存","DOWNLOAD_SAVE_FAILED");
+                    }
+                });
+            } catch(Exception e) {
+                cleanupDownload(call);
+                if(job.cancelled.get())call.resolve(downloadResult(false));
+                else call.reject("原图下载未完成或校验失败，未保存；请检查网络与存储后重试","DOWNLOAD_FAILED");
+            }
+        });
+    }
+    @PluginMethod public void cancelCloudOriginalDownload(PluginCall call) {
+        PluginCall active=downloadCall;
+        if(active!=null&&Objects.equals(active.getString("requestId"),call.getString("requestId"))) {
+            active.getData().put("cancelled",true);CloudOriginalDownload.Job job=downloadJob;if(job!=null)job.cancel();
+        }
+        call.resolve();
+    }
+    @ActivityCallback private void cloudOriginalDestination(PluginCall call,ActivityResult result) {
+        if(call==null){downloading.set(false);return;}
+        worker.execute(()-> {
+            Uri destination=result.getData()==null?null:result.getData().getData();boolean saved=false;
+            try {
+                if(result.getResultCode()!=Activity.RESULT_OK||destination==null||Boolean.TRUE.equals(call.getBoolean("cancelled"))) {call.resolve(downloadResult(false));return;}
+                if(!"content".equals(destination.getScheme()))throw new IOException("invalid output uri");
+                File source=downloadFile(call.getString("requestId"));
+                CloudOriginalDownload.verify(source,integer(call,"bytes",-1,1,(int)MAX_SOURCE_BYTES),call.getString("sha256"));
+                try(InputStream in=new FileInputStream(source);OutputStream out=getContext().getContentResolver().openOutputStream(destination,"wt")) {
+                    if(out==null)throw new IOException("output unavailable");byte[] buffer=new byte[65536];int n;
+                    while((n=in.read(buffer))!=-1) {if(Boolean.TRUE.equals(call.getBoolean("cancelled")))throw new java.io.InterruptedIOException();out.write(buffer,0,n);}out.flush();
+                }
+                saved=true;call.resolve(downloadResult(true));
+            } catch(Exception e) {
+                if(Boolean.TRUE.equals(call.getBoolean("cancelled")))call.resolve(downloadResult(false));
+                else call.reject("原图未能保存到所选位置，请重新下载保存","DOWNLOAD_SAVE_FAILED");
+            } finally {
+                if(!saved&&destination!=null&&result.getResultCode()==Activity.RESULT_OK) {
+                    try {DocumentsContract.deleteDocument(getContext().getContentResolver(),destination);}catch(Exception ignored){}
+                }
+                cleanupDownload(call);
+            }
+        });
+    }
+    private void cleanupDownload(PluginCall call) {
+        try {String id=call.getString("requestId");deleteFile(downloadFile(id));deleteFile(new File(downloads(),id+".part"));}catch(Exception ignored){}
+        downloadJob=null;downloadCall=null;downloading.set(false);
+    }
 
     @PluginMethod public void listOriginals(PluginCall call) {
         run(call, () -> {
