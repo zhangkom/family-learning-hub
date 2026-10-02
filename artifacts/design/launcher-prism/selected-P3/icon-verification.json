@@ -1,0 +1,23 @@
+{
+  "selectedProposal": "P3",
+  "selectedName": "光谱切面",
+  "foregroundLayerDp": 108,
+  "safeZoneDp": 66,
+  "legacyDensities": 5,
+  "masks": [
+    "rounded-square",
+    "circle"
+  ],
+  "previewSizes": [
+    192,
+    64,
+    48,
+    32
+  ],
+  "monochromeLayer": true,
+  "approvedImageSha256": "2ec982949110dceefc977bf5d20d1d21117b6beab53f388ca63826c963f479e1",
+  "comparisonBackground": "#FFFFFF",
+  "maximumChannelDifference": 0,
+  "meanChannelDifference": 0,
+  "nativeDeviceTested": false
+}

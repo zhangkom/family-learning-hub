@@ -1,0 +1,71 @@
+{
+  "selectedProposal": "P3",
+  "selectedName": "光谱切面",
+  "status": "ready-for-integration",
+  "released": false,
+  "design": {
+    "background": [
+      "#242850",
+      "#141831"
+    ],
+    "left": [
+      "#F0FFFA",
+      "#5DE5D6"
+    ],
+    "right": [
+      "#BEACFF",
+      "#7264DC"
+    ],
+    "bottom": [
+      "#67BDFC",
+      "#B59CF7"
+    ],
+    "externalLightBeams": false
+  },
+  "preview": "artifacts/design/launcher-prism/selected-P3/launcher-preview.png",
+  "generator": "clients/android/scripts/build-launcher-icons.mjs",
+  "nativeResources": "clients/android/android/app/src/main/res",
+  "inAppMark": "clients/android/src/Brand.tsx",
+  "verification": {
+    "nativeResourceCompile": "app:mergeDebugResources passed",
+    "typescript": "passed",
+    "scopedLint": "Brand.tsx and build-launcher-icons.mjs passed",
+    "maximumApprovedPixelChannelDifference": 0,
+    "previewSizes": [
+      192,
+      64,
+      48,
+      32
+    ],
+    "monochrome": true,
+    "nativeDeviceTested": false
+  },
+  "publicationOwner": "ai教育服务总线程-final",
+  "documentationNote": "将 docs/android-client.md 0.3.9 图标章节中旧候选A外伸色光描述改为P3光谱切面，并以统一发版的版本与验证结果为准。",
+  "files": [
+    {
+      "name": "icon-verification.json",
+      "sha256": "32945bc6dba5aebc41b9cfddcd25bcaa5a7cb46622ce3975d09a77045f86476a"
+    },
+    {
+      "name": "launcher-preview.png",
+      "sha256": "af9d48d2286c9bad442e4f4767dc21f4dd44d4dcd356b075bce0a7cc8121f99b"
+    },
+    {
+      "name": "prism-icon.png",
+      "sha256": "2ec982949110dceefc977bf5d20d1d21117b6beab53f388ca63826c963f479e1"
+    },
+    {
+      "name": "prism-icon.svg",
+      "sha256": "23d4a13cb6b7bff850db14ab91c169fa02ecb3ccf7aad2f43bf17fb60ed87f34"
+    },
+    {
+      "name": "prism-round.png",
+      "sha256": "a9c0ee6e72a165421e590dab2dd7ceffde1a129a74e0e398818d5e75fd7dff01"
+    },
+    {
+      "name": "prism-themed.png",
+      "sha256": "de433ae65282f9b4d84bd8565d7a54ada01c210a140bbad3d56539a38403b2ee"
+    }
+  ]
+}
