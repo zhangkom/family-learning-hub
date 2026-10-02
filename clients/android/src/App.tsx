@@ -16,7 +16,7 @@ import { appName, appVersion } from './release';
 import { restoreSession, type Auth } from './restore-session';
 import { UpdateControl } from './UpdateControl';
 import { HomeView, type HomePage } from './HomeView';
-import type { LibraryMode } from './QuestionLibrary';
+import type { LibraryMode, LibraryContext } from './QuestionLibrary';
 import { captureFailure } from './permissions';
 import { AuthForm, type AuthMode } from './AuthForm';
 import { GuestHome } from './GuestHome';
@@ -219,6 +219,8 @@ function Home({
   const [learningView, setLearningView] = useState<LearningView | null>(null);
   const [learningRevision, setLearningRevision] = useState(0);
   const [libraryMode, setLibraryMode] = useState<LibraryMode>('wrong');
+  // Home survives source details and learning views; the account-keyed parent isolates accounts.
+  const [libraryContext, setLibraryContext] = useState<LibraryContext>({ subject: '全部', order: 'newest', dimension: '' });
   const [studentOverview, setStudentOverview] = useState<StudentOverviewReply | null>(null);
   const [overviewError, setOverviewError] = useState('');
   const [overviewRevision, setOverviewRevision] = useState(0);
@@ -262,6 +264,7 @@ function Home({
     if (id === activeStudent.current) return;
     scopeGeneration.current++; activeStudent.current = id; uploadAbort.current?.abort(); captureAbort.current?.abort();
     setRecords([]); setLearningView(null);
+    setLibraryContext({ subject: '全部', order: 'newest', dimension: '' });
     updateCollection(null); setPreparationBatch(null); setBatchProgress(null); setCloudOpen(false);
     setPreparing(null); setOriginalsOpen(false); setPhotoQueue([]); setPhotoQueueIssues([]); setCameraFailures([]); setBusy(false); setSelected(id);
   }
@@ -671,6 +674,7 @@ function Home({
       }}
       page={homePage} onNavigate={setHomePage}
       libraryMode={libraryMode} onLibraryMode={setLibraryMode}
+      libraryContext={libraryContext} onLibraryContext={setLibraryContext}
       localDrafts={localDrafts} busy={busy} uploading={uploading} refreshing={refreshing}
       processedCount={photoQueue.length + photoQueueIssues.length} onOpenOriginals={localPhotosEnabled ? () => setOriginalsOpen(true) : undefined}
       onOpenCloud={() => setCloudOpen(true)}

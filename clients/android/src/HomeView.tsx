@@ -7,7 +7,7 @@ import { BrandMark } from './Brand';
 import { appName } from './release';
 import { statusNames, type Scan, type Student } from './types';
 import type { Draft } from './drafts';
-import { QuestionLibrary, type LibraryMode } from './QuestionLibrary';
+import { QuestionLibrary, type LibraryMode, type LibraryContext } from './QuestionLibrary';
 import type { StudentOverviewReply } from './types';
 import { AccountSettings, type AccountChange } from './AccountSettings';
 import type { FamilyApi } from './api';
@@ -22,6 +22,7 @@ type Props = {
   busy: boolean; uploading: string; refreshing: boolean; recognition: boolean; error: string; notice: string;
   page: HomePage; onNavigate: (page: HomePage) => void;
   libraryMode: LibraryMode; onLibraryMode: (mode: LibraryMode) => void;
+  libraryContext: LibraryContext; onLibraryContext: (context: LibraryContext) => void;
   studentOverview: StudentOverviewReply | null; overviewError: string; onRefreshOverview: () => void;
   onSelect: (id: string) => void; onCapture: (source: 'camera' | 'gallery') => void;
   learningRevision: number; onLearn: (mode: LearningMode, source?: { scanId: string; questionId: string }, sessionId?: string) => void;
@@ -98,7 +99,8 @@ export function HomeView(props: Props) {
 
       {tab === 'library' && <>
         <div className="section-line library-heading"><div><h1>题目</h1></div><button disabled={refreshing || !student} onClick={props.onRefresh}><RefreshCw size={17} className={refreshing ? 'spin' : ''} />刷新</button></div>
-        {student ? <QuestionLibrary key={`${props.owner}|${student.id}`} api={props.api} owner={props.owner} studentId={student.id} learning={learning.rows} onLearn={props.onLearn} records={records} mode={props.libraryMode} onMode={props.onLibraryMode} onOpen={props.onOpenScan} renderScan={scanCard} refreshing={refreshing} /> : <div className="empty"><p>先添加学生档案，题目会按孩子分别整理。</p><button className="primary" onClick={addStudent}>添加学生</button></div>}
+        {student ? <QuestionLibrary key={`${props.owner}|${student.id}`} api={props.api} owner={props.owner} studentId={student.id} learning={learning.rows} onLearn={props.onLearn} records={records} mode={props.libraryMode} onMode={props.onLibraryMode}
+          context={props.libraryContext} onContext={props.onLibraryContext} onOpen={props.onOpenScan} renderScan={scanCard} refreshing={refreshing} /> : <div className="empty"><p>先添加学生档案，题目会按孩子分别整理。</p><button className="primary" onClick={addStudent}>添加学生</button></div>}
       </>}
 
       {tab === 'me' && <div className="profile-page">

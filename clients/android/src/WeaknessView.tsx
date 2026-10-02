@@ -7,7 +7,8 @@ import type { Scan } from './types';
 import { readLearningDraft, writeLearningDraft } from './learning-history';
 import { AbilityRadar } from './AbilityRadar';
 
-export function WeaknessView({ api, owner, studentId, subject, records, onOpen, onLearn }: {
+export function WeaknessView({ api, owner, studentId, subject, records, onOpen, onLearn, selectedDimension, onSelectDimension }: {
+  selectedDimension: string; onSelectDimension: (dimension: string) => void;
   api: FamilyApi; owner: string; studentId: string; subject: string; records: Scan[];
   onOpen: (scan: Scan, questionId?: string) => void;
   onLearn: (mode: LearningMode, source?: { scanId: string; questionId: string }, sessionId?: string) => void;
@@ -15,7 +16,6 @@ export function WeaknessView({ api, owner, studentId, subject, records, onOpen, 
   const [overview, setOverview] = useState<WeaknessOverview | null>(null), [error, setError] = useState('');
   const [readError, setReadError] = useState('');
   const [busy, setBusy] = useState(false), [tick, setTick] = useState(0);
-  const [selectedDimension, setSelectedDimension] = useState('');
   const live = useRef(true), lock = useRef(false), operation = useRef<AbortController | null>(null);
   const version = records.map(scan => `${scan.id}:${scan.revision}`).join('|');
   useEffect(() => { live.current = true; return () => { live.current = false; operation.current?.abort(); }; }, []);
@@ -63,7 +63,7 @@ export function WeaknessView({ api, owner, studentId, subject, records, onOpen, 
     {(error || readError) && <p role="alert" className="error">{error || readError} <button onClick={() => { setError(''); setReadError(''); setTick(x => x + 1); }}>重新读取</button></p>}
     {!overview ? <output>正在整理可分析的错题…</output> : <>
       {report?.stale && <output className="weakness-stale">错题或学习记录已有变化，下面是上一次图谱；请更新分析。</output>}
-      {axes.length > 0 && <AbilityRadar subject={subject} axes={axes} selectedId={selectedAxis?.id || ''} onSelect={setSelectedDimension} />}
+      {axes.length > 0 && <AbilityRadar subject={subject} axes={axes} selectedId={selectedAxis?.id || ''} onSelect={onSelectDimension} />}
       <p className="ability-score-note">点击维度查看错题与补强方向。参考分依据 AI 批改，不代表长期掌握。</p>
       <section className="weakness-materials"><div><strong>{subject || '全部科目'} · {overview.materials.total} 道错题</strong><p>可分析 {overview.materials.eligible} 道{overview.materials.needsReview ? ` · ${overview.materials.needsReview} 道需先校对` : ''}</p></div>
         <button className="primary" disabled={busy || pending || !overview.enabled || overview.materials.selected < 2 || !!report && !report.stale} onClick={() => void run()}><RefreshCw size={16} />{pending ? '正在分析…' : report ? report.stale ? '更新分析' : report.status === 'failed' ? '分析未完成' : '图谱已更新' : '分析多道错题'}</button>
