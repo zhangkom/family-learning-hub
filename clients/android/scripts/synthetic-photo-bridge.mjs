@@ -7,13 +7,22 @@ export function installSyntheticPhotoBridge({ api, initialToken = 'test-A', init
   let processingDelay = 0;
   const listeners = new Map();
   const sourceKey = (owner, id) => 'original:' + JSON.stringify([owner, id]);
-  const image = (jpeg = false) => {
+  const rotations = [
+    [1,0,0,0,1,0,0,0,1], [0,-1,1,1,0,0,0,0,1],
+    [-1,0,1,0,-1,1,0,0,1], [0,1,0,-1,0,1,0,0,1],
+  ];
+  const image = (jpeg = false, turns = 0) => {
     const canvas = document.createElement('canvas'); canvas.width = 900; canvas.height = 1200;
     const ctx = canvas.getContext('2d'); ctx.fillStyle = '#fffdf2'; ctx.fillRect(0, 0, 900, 1200);
     ctx.fillStyle = '#243e32'; ctx.font = '40px sans-serif'; ctx.fillText('合成验收 · 数学练习', 80, 120);
     ctx.font = '32px sans-serif'; ctx.fillText('1. 计算：x² + 2x + 1 = 0', 80, 240); ctx.fillText('2. 求 √(9 + 16)', 80, 400);
     ctx.strokeStyle = '#547e70'; ctx.strokeRect(90, 600, 500, 350);
-    return canvas.toDataURL(jpeg ? 'image/jpeg' : 'image/png', .94);
+    const output = document.createElement('canvas');
+    output.width = turns % 2 ? 1200 : 900; output.height = turns % 2 ? 900 : 1200;
+    const target = output.getContext('2d');
+    const matrix = [[1,0,0,1,0,0], [0,1,-1,0,1200,0], [-1,0,0,-1,900,1200], [0,-1,1,0,0,900]][turns];
+    target.setTransform(...matrix); target.drawImage(canvas, 0, 0);
+    return output.toDataURL(jpeg ? 'image/jpeg' : 'image/png', .94);
   };
   const blob = data => { const [header, base64] = data.split(','); return new Blob([Uint8Array.from(atob(base64), c => c.charCodeAt(0))], { type: header.slice(5).split(';')[0] }); };
   const info = async data => { const file = blob(data); return { bytes: file.size, sha256: [...new Uint8Array(await crypto.subtle.digest('SHA-256', await file.arrayBuffer()))].map(b => b.toString(16).padStart(2, '0')).join('') }; };
@@ -76,12 +85,16 @@ export function installSyntheticPhotoBridge({ api, initialToken = 'test-A', init
       if (method === 'process') {
         await new Promise(resolve => setTimeout(resolve, processingDelay));
         const original = read(sourceKey(args.owner, args.originalId), null); if (!original) throw new Error('Wrong account');
-        const outputId = crypto.randomUUID(), data = image(true), uri = uriFor(args.owner, original.originalId, outputId + '.jpg'); store('file:' + uri, data);
+        const turns = args.quarterTurns || 0;
+        if (!Number.isInteger(turns) || turns < 0 || turns > 3) throw new Error('Unsupported synthetic rotation');
+        if (JSON.stringify(args.corners) !== JSON.stringify([0,0,1,0,1,1,0,1]) || args.enhancement !== 'none')
+          throw new Error('This host fixture only implements full-photo rotation; use the preparation fixture for crop/light UI tests');
+        const outputId = crypto.randomUUID(), data = image(true, turns), uri = uriFor(args.owner, original.originalId, outputId + '.jpg'); store('file:' + uri, data);
         return { schemaVersion: 1, algorithmVersion: 'android-photo-v1', originalId: original.originalId, studentId: original.studentId, outputId,
-          sourceSha256: original.sha256, ...(await info(data)), mime: 'image/jpeg', width: 900, height: 1200, sourceWidth: 900, sourceHeight: 1200,
+          sourceSha256: original.sha256, ...(await info(data)), mime: 'image/jpeg', width: turns % 2 ? 1200 : 900, height: turns % 2 ? 900 : 1200, sourceWidth: 900, sourceHeight: 1200,
           decodedWidth: 900, decodedHeight: 1200, exifOrientation: 1, sourceSpace: 'exif-upright-normalized-edges', outputSpace: 'normalized-edges',
           corners: args.corners, quarterTurns: args.quarterTurns, enhancement: args.enhancement, maxEdge: 3072, jpegQuality: 94,
-          sourceToOutput: [1,0,0,0,1,0,0,0,1], outputToSource: [1,0,0,0,1,0,0,0,1], createdAt: Date.now(), uri,
+          sourceToOutput: rotations[turns], outputToSource: rotations[(4 - turns) % 4], createdAt: Date.now(), uri,
           quality: { advisoryOnly: true, warnings: [], laplacianVariance: 80, darkFraction: .02, backgroundRange: 20, percentile10: 100, percentile90: 240 } };
       }
       throw new Error('Unexpected bridge operation: ' + method);

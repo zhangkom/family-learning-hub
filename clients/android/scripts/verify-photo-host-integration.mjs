@@ -54,11 +54,16 @@ try {
   await page.getByRole('button', { name: /拍照收题/ }).click();
   await page.getByRole('heading', { name: '把题目拍清楚' }).waitFor();
   await button('取消，保留原片').click(); await button('本机原片').click();
-  await button('继续处理').click(); await button('生成预览').click();
+  await button('继续处理').click();
+  await page.locator('.photo-prep-tools').getByRole('button', { name: /90/ }).click();
+  await button('生成预览').click();
   await page.waitForFunction(() => ![...document.querySelectorAll('button')].find(b => b.textContent === '确认使用处理图')?.disabled);
   await button('确认使用处理图').click(); await button('上传处理图').waitFor();
   assert.equal(uploadAttempts, 0);
   const [delivery] = await queue(); assert.ok(delivery); assert.equal(delivery.studentId, student.id);
+  assert.equal(delivery.prepared.quarterTurns, 1);
+  assert.equal(delivery.prepared.width, 1200); assert.equal(delivery.prepared.height, 900);
+  assert.deepEqual(delivery.prepared.sourceToOutput, [0,-1,1,1,0,0,0,0,1]);
   await button('上传处理图').click(); await page.getByRole('alert').filter({ hasText: '待提交照片已保留' }).waitFor();
   assert.equal((await queue()).length, 1); assert.equal(firstReceipt.sourceKind, 'processed-photo');
   assert.equal(firstReceipt.processing.sourceSha256, delivery.original.sha256);
@@ -81,7 +86,7 @@ try {
   await page.waitForFunction(() => ![...document.querySelectorAll('button')].find(b => b.textContent === '自动找题')?.disabled);
   const candidateResponse = page.waitForResponse(response => response.url().endsWith('/candidate-regions'));
   await button('自动找题').click(); const candidate = await candidateResponse; assert.equal(candidate.status(), 200);
-  const suggestion = await candidate.json(); assert.deepEqual(suggestion.image, { width: 900, height: 1200 });
+  const suggestion = await candidate.json(); assert.deepEqual(suggestion.image, { width: 1200, height: 900 });
   if (suggestion.status === 'candidates') await button('放弃本轮剩余建议').click();
   else await page.getByText('暂时没有找到可用的建议框，请手动框题。', { exact: true }).waitFor();
   await button('框选一道题').click(); await page.locator('.paper-scroll').scrollIntoViewIfNeeded();
@@ -107,6 +112,7 @@ try {
     originalPreserved: true, originalOnlyOnPhone: true, explicitConfirmationBeforeUpload: true,
     lostAcknowledgementRecovered: true, retryCreatesNoDuplicate: true, restartQueueRecovery: true,
     uploadedHashVerified: true, metadataReceiptMatches: true, reviewPreservesProcessingMetadata: true,
+    rotatedUploadVerified: true, quarterTurns: processing.quarterTurns, processedDimensions: { width: processing.width, height: processing.height },
     candidateStatus: suggestion.status, candidateImage: suggestion.image, uploadAttempts, externalRequests, mockedUpdateChecks, analysisCalls, errors };
   writeFileSync('test-results/photo-host-integration.json', JSON.stringify(report, null, 2)); console.log(JSON.stringify(report));
 } catch (error) {
