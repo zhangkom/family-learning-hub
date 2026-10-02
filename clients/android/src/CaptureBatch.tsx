@@ -39,6 +39,6 @@ export function CaptureBatch({ collection, studentLabel, busy, error, progress, 
       {collection.drafts.map(draft => <article key={draft.id}><DraftThumbnail draft={draft} /><span>{draft.name}</span>
         <button disabled={busy} onClick={() => onRemove(draft.id)}>移出本批</button></article>)}
     </div>
-    <p className="hint">移出本批或返回时，已保存的本机原片和草稿仍会保留。</p>
+    <p className="hint">移出本批的照片不会随本批上传，手机原片仍保留。返回时，其他已选照片保留在本机。</p>
   </main>;
 }

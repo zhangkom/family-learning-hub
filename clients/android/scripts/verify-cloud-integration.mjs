@@ -20,7 +20,7 @@ const studentResponse = await fetch(api + '/students', { method: 'POST', headers
 assert.equal(studentResponse.status, 201); const student = (await studentResponse.json()).student;
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
 const context = await browser.newContext({ viewport: { width: 390, height: 844 }, acceptDownloads: true });
-await context.addInitScript(api => localStorage.setItem('family-learning:server', api), api);
+await context.addInitScript(api => { if (/^https?:$/.test(location.protocol)) localStorage.setItem('family-learning:server', api); }, api);
 const page = await context.newPage(); page.setDefaultTimeout(30000);
 const errors = [], receipts = []; let attempts = 0, modelCalls = 0, external = 0, lostReceipt;
 page.on('pageerror', error => errors.push(error.message));

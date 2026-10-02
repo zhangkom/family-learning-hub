@@ -1,5 +1,6 @@
 // Browser-only synthetic native bridge. No device or image-quality claim; no external requests.
 export function installSyntheticPhotoBridge({ api, initialToken = 'test-A', initialUserId = 'A', missingSourceUris = [] }) {
+  if (!/^https?:$/.test(location.protocol)) return;
   localStorage.setItem('family-learning:server', api);
   const store = (key, value) => localStorage.setItem('host-test:' + key, JSON.stringify(value));
   const read = (key, fallback) => JSON.parse(localStorage.getItem('host-test:' + key) || JSON.stringify(fallback));

@@ -475,6 +475,17 @@ function Home({
     if (batch.originals.length) { setPreparationBatch({ photos: batch.originals, index: 0, nativeBatchIds: batch.nativeBatchIds || [] }); setPreparing(batch.originals[0]); }
     else setNotice(`${batch.drafts.length} 张照片已保存为本机草稿，可检查后批量上传。`);
   }
+  async function removeCollectedPhoto(id: string) {
+    const batch = collectionRef.current, generation = scopeGeneration.current;
+    if (!batch || busy) return;
+    setBusy(true);
+    try {
+      if (batch.drafts.some(item => item.id === id)) { await drafts.remove(id); await refreshDrafts(); }
+      if (live.current && generation === scopeGeneration.current && collectionRef.current === batch)
+        updateCollection({ ...batch, originals: batch.originals.filter(item => item.originalId !== id), drafts: batch.drafts.filter(item => item.id !== id) });
+    } catch (e) { if (live.current && generation === scopeGeneration.current) setError(message(e)); }
+    finally { if (live.current && generation === scopeGeneration.current) setBusy(false); }
+  }
   function advancePreparation() {
     if (preparationBatch && preparationBatch.index + 1 < preparationBatch.photos.length) {
       const next = { ...preparationBatch, index: preparationBatch.index + 1 }; setPreparationBatch(next); setPreparing(next.photos[next.index]);
@@ -585,7 +596,7 @@ function Home({
   if (cloudOpen && student) return <CloudPhotoDrive key={`${owner}/${selected}`} api={api} owner={owner} studentId={selected} studentLabel={student.name} onClose={() => setCloudOpen(false)} />;
   if (collection && collection.studentId === selected) return <><CaptureBatch collection={collection} studentLabel={student?.name || '当前孩子'} busy={busy} error={error} progress={captureProgress}
     onCapture={source => void capture(source)} onFinish={finishCollection} onClose={closeLocalPhotos}
-    onRemove={id => updateCollection({ ...collection, originals: collection.originals.filter(item => item.originalId !== id), drafts: collection.drafts.filter(item => item.id !== id) })} />{fileInputs}</>;
+    onRemove={id => void removeCollectedPhoto(id)} />{fileInputs}</>;
   if (preparing && preparing.studentId === selected) return <>
     {preparationBatch && <div className="capture-batch-progress"><div className="section-line"><strong>逐张调整 · 第 {preparationBatch.index + 1} / {preparationBatch.photos.length} 张</strong>
       <button onClick={advancePreparation}>跳过这张，保留原片</button></div><p className="hint">确认当前照片后进入下一张，全部确认后可以批量上传。</p></div>}

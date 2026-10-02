@@ -49,7 +49,7 @@ async function routes(context) {
 let page;
 try {
   const context = await browser.newContext({ viewport: { width: 390, height: 844 } }); await routes(context);
-  await context.addInitScript(api => localStorage.setItem('family-learning:server', api), api);
+  await context.addInitScript(api => { if (/^https?:$/.test(location.protocol)) localStorage.setItem('family-learning:server', api); }, api);
   page = await context.newPage();
   const button = name => page.getByRole('button', { name, exact: true });
   const login = async () => { await button('登录').click(); await page.getByLabel('账号', { exact: true }).fill('synthetic'); await page.getByLabel('密码', { exact: true }).fill('synthetic-password'); await page.locator('form').getByRole('button', { name: '登录', exact: true }).click(); await page.getByLabel('当前学生').waitFor(); };
