@@ -1,0 +1,232 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createHash, randomUUID } from 'node:crypto';
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { join, resolve, sep } from 'node:path';
+import { FamilyStore } from './family-store';
+import { handleMobile } from './mobile-backend';
+import { writeStoredScan, readStoredScan } from './scan-files';
+import { weaknessById, type StoredWeakness } from './weakness-reports';
+import { weaknessMaterials } from './weakness-materials';
+import { analyzeWeakness, validateWeaknessResult } from './weakness-model';
+import { claimWeaknessJob, finishWeaknessJob, runNextWeaknessJob, WEAKNESS_LEASE_MS } from './weakness-jobs';
+import { ModelGatewayError } from './model-gateway';
+import type { WeaknessReport, WeaknessOverview } from '../lib/weakness';
+import type { ScanRecord } from '../lib/scans';
+import type { Question } from '../lib/mobile';
+
+let root: string, store: FamilyStore, student: string, second: string, scan: ScanRecord;
+const token = 'c'.repeat(64), otherToken = 'd'.repeat(64), hash = (text: string) => createHash('sha256').update(text).digest('hex');
+function call(path: string, method = 'GET', body?: unknown, auth = token) {
+  return handleMobile(new Request('https://family.example/family-learning/api/mobile/v1/' + path, { method,
+    headers: { Origin: 'https://localhost', Authorization: 'Bearer ' + auth }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) }), path.split('?')[0].split('/'), store);
+}
+async function ok(path: string, method = 'GET', body?: unknown) {
+  const response = await call(path, method, body), data = await response.json() as WeaknessOverview & { report: WeaknessReport };
+  expect(response.status, JSON.stringify(data)).toBeLessThan(300); return data;
+}
+const overview = (subject = '') => ok(`weakness-reports?studentId=${student}&subject=${encodeURIComponent(subject)}`);
+async function start(subject = '') { return (await ok('weakness-reports', 'POST', { requestId: randomUUID(), studentId: student, subject, materialVersion: (await overview(subject)).materials.version })).report; }
+const get = (r: WeaknessReport) => ok(`weakness-reports/${r.id}`);
+function question(n: number, subject: Question['subject'] = '数学'): Question {
+  return { id: `q${n}`, number: String(n), subject, prompt: `已知 x=${n}，求 x+4 的值。`, diagram: '', knowledgePoints: ['代入计算'], regions: [], answerSteps: [], uncertainties: [], confirmed: true, wrongBook: { savedAt: new Date().toISOString() } };
+}
+function update(questions: Question[], extra: Partial<ScanRecord> = {}) {
+  scan = { ...scan, ...extra, revision: scan.revision + 1, structuredQuestions: questions };
+  writeStoredScan(store, 'a', scan, 'synthetic');
+}
+function resultFor(report: StoredWeakness, basis = 'wrong_question_pattern') {
+  return [{ summary: '基于错题分布的 AI 待核对学习建议，仍需结合实际作答核对。', focuses: [{ title: '代入条件与数量关系', subject: '数学', dimensionId: 'calculation', knowledgePoints: ['代入计算'], priority: 'high', basis,
+    reason: '这些错题共同涉及把条件代入关系式，可优先练习。', practiceDirection: '写出已知条件并逐步代入，使用新条件独立复测。',
+    evidence: report.input.slice(0, 2).map(source => ({ sourceId: source.id, kind: basis === 'answer_evidence' ? 'student_answer' : 'question', quote: basis === 'answer_evidence' ? source.studentEvidence[0]?.text : source.prompt, reason: '该题提供相同类型的代入条件。' })) }], limitations: ['仅分析选入的错题，结论需要核对。'] }];
+}
+const analyze = vi.fn(async (report: StoredWeakness) => validateWeaknessResult(resultFor(report), report));
+beforeEach(() => {
+  mkdirSync('work', { recursive: true }); root = mkdtempSync(resolve('work/weakness-report-')); store = new FamilyStore(join(root, 'family.sqlite')); analyze.mockClear();
+  vi.stubEnv('FAMILY_DATA_DIR', root); vi.stubEnv('FAMILY_PUBLIC_ORIGIN', 'https://family.example'); vi.stubEnv('FAMILY_MOBILE_ORIGINS', 'https://localhost');
+  vi.stubEnv('FAMILY_RECOGNITION_ENABLED', 'true'); vi.stubEnv('FAMILY_AI_API_KEY', 'synthetic'); vi.stubEnv('FAMILY_AI_MODEL', 'synthetic'); vi.stubEnv('FAMILY_AI_BASE_URL', 'https://model.example/v1');
+  vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('No real model calls permitted')));
+  for (const [id, t] of [['a', token], ['b', otherToken]]) {
+    store.db.prepare('INSERT INTO accounts VALUES (?,?,?,?)').run(id, id, 'unusable-test-password', Date.now());
+    store.db.prepare('INSERT INTO mobile_sessions VALUES (?,?,?,?,?)').run(hash(t), id, Date.now() + 1000000, 'synthetic', Date.now());
+  }
+  student = store.addStudent('a', '甲').id; second = store.addStudent('a', '乙').id; store.addStudent('b', '丙');
+  scan = { id: randomUUID(), studentId: student, subject: '数学', source: '合成测试', originalName: 'synthetic.png', mimeType: 'image/png', size: 0,
+    status: 'ready', createdAt: new Date().toISOString(), fileUrl: '', revision: 1, structuredQuestions: [question(1), question(2)] };
+  writeStoredScan(store, 'a', scan, 'synthetic');
+});
+afterEach(() => { store.close(); vi.unstubAllEnvs(); vi.unstubAllGlobals(); expect(root.startsWith(resolve('work') + sep)).toBe(true); rmSync(root, { recursive: true, force: true }); });
+
+describe('weakness analysis API and persistent worker', () => {
+  it('analyzes real wrong-book inputs once and returns evidence links without internal model material', async () => {
+    const m = await overview(); expect(m.materials).toMatchObject({ total: 2, selected: 2, needsReview: 0 });
+    expect(m.axes).toHaveLength(36); expect(m.axes.every(a => a.score === null)).toBe(true);
+    const body = { studentId: student, requestId: randomUUID(), materialVersion: m.materials.version };
+    const report = (await ok('weakness-reports', 'POST', body)).report;
+    expect((await ok('weakness-reports', 'POST', body)).report.id).toBe(report.id);
+    expect((await call('weakness-reports', 'POST', { ...body, subject: '物理' })).status).toBe(409);
+    expect(await runNextWeaknessJob(store, analyze)).toBe(true); expect(await runNextWeaknessJob(store, analyze)).toBe(false);
+    const done = (await get(report)).report; expect(done.status).toBe('ready'); expect(done.stale).toBe(false);
+    expect(done.result!.axes).toHaveLength(36); expect(done.result!.axes.every(a => a.score === null)).toBe(true);
+    expect(done.result!.focuses[0]).toMatchObject({ basis: 'wrong_question_pattern', needsReview: true });
+    expect(done.result!.focuses[0].evidence.map(e => e.sourceId)).toEqual(done.sources.map(s => s.id));
+    expect(done).not.toHaveProperty('input'); expect(done).not.toHaveProperty('jobId'); expect(analyze).toHaveBeenCalledTimes(1);
+    expect((await overview()).report!.id).toBe(done.id);
+  });
+  it('isolates families and students and restricts scope to owned, explicitly assigned wrong-book questions', async () => {
+    const report = await start();
+    expect((await call(`weakness-reports/${report.id}`, 'GET', undefined, otherToken)).status).toBe(404);
+    expect((await call(`weakness-reports/${report.id}/retry`, 'POST', { revision: report.revision }, otherToken)).status).toBe(404);
+    expect((await call(`weakness-reports?studentId=${student}`, 'GET', undefined, otherToken)).status).toBe(404);
+    expect((await ok(`weakness-reports?studentId=${second}`)).materials.total).toBe(0);
+    update([question(1), { ...question(2), wrongBook: undefined }, question(3, '物理')]);
+    expect((await overview('数学')).materials.total).toBe(1); expect((await overview('物理')).materials.total).toBe(1);
+    update(scan.structuredQuestions!, { studentId: undefined, child: 'dabao' });
+    expect((await overview()).materials.total).toBe(0);
+  });
+  it('requires two confirmed questions, exposes pending sources, and rejects changed material versions', async () => {
+    const version = (await overview()).materials.version;
+    update([question(1), { ...question(2), confirmed: false }, { ...question(3), prompt: '' }]);
+    const m = await overview(); expect(m.materials).toMatchObject({ total: 3, selected: 1, needsReview: 2, pendingMore: 0 });
+    expect(m.materials.pendingSources.map(p => p.questionId)).toEqual(['q2', 'q3']);
+    expect((await call('weakness-reports', 'POST', { studentId: student, requestId: randomUUID(), materialVersion: version })).status).toBe(409);
+    expect((await call('weakness-reports', 'POST', { studentId: student, requestId: randomUUID(), materialVersion: m.materials.version })).status).toBe(400);
+  });
+  it('requires a same-subject pair and marks a report stale after the student grade changes', async () => {
+    update([question(1), question(2, '物理')]);
+    let m = await overview();
+    expect((await call('weakness-reports', 'POST', { studentId: student, requestId: randomUUID(), materialVersion: m.materials.version })).status).toBe(400);
+    update([question(1), question(2)]); const r = await start('数学');
+    store.db.prepare('UPDATE students SET grade=? WHERE account_id=? AND id=?').run('初二', 'a', student);
+    m = await overview('数学'); expect(m.axes).toHaveLength(6); expect(m.axes[0].grade).toBe('初二'); expect((await get(r)).report.stale).toBe(true);
+  });
+  it('shows explicit coverage rather than silently truncating a large library', async () => {
+    update(Array.from({ length: 34 }, (_, i) => question(i + 1)));
+    const m = await overview(); expect(m.materials).toMatchObject({ total: 34, eligible: 34, selected: 30, omitted: 4, limit: 30 });
+    const r = await start(); expect(r.coverage).toMatchObject({ selected: 30, omitted: 4 }); expect(r.sources).toHaveLength(30);
+    update(Array.from({ length: 60 }, (_, i) => ({ ...question(i + 1), confirmed: false })));
+    const pending = (await overview()).materials; expect(pending.pendingSources).toHaveLength(50); expect(pending.pendingMore).toBe(10);
+  });
+  it('keeps immutable input and marks results stale after edits, removals or newly collected questions', async () => {
+    const r = await start(), old = weaknessById(store, 'a', r.id).input[0].prompt;
+    update([question(1), { ...question(2), prompt: '新的题干内容' }, question(3)]);
+    expect((await get(r)).report.stale).toBe(true); expect(weaknessById(store, 'a', r.id).input[0].prompt).toBe(old);
+    await runNextWeaknessJob(store, analyze); expect((await get(r)).report).toMatchObject({ status: 'ready', stale: true });
+    expect((await overview()).materials.total).toBe(3);
+    update([], { deletedAt: new Date().toISOString() }); expect((await overview()).materials.total).toBe(0);
+  });
+  it('restores expired work after reopen and fences stale workers', async () => {
+    const r = await start(), first = claimWeaknessJob(store)!;
+    store.close(); store = new FamilyStore(join(root, 'family.sqlite'));
+    const secondJob = claimWeaknessJob(store, first.started + WEAKNESS_LEASE_MS + 1)!;
+    expect(secondJob.token).not.toBe(first.token);
+    expect(finishWeaknessJob(store, first, () => { throw new Error('must not apply'); })).toBe(false);
+    expect(finishWeaknessJob(store, secondJob, current => { current.result = validateWeaknessResult(resultFor(current), current); }, undefined, secondJob.started + 1)).toBe(true);
+    expect((await get(r)).report.status).toBe('ready');
+  });
+  it('retains failures for explicit retry and makes lost retry receipts idempotent', async () => {
+    const r = await start(); await runNextWeaknessJob(store, async () => { throw new ModelGatewayError('合成核验未通过', 'MODEL_OUTPUT', false); });
+    const failed = (await get(r)).report; expect(failed).toMatchObject({ status: 'failed', error: '合成核验未通过' });
+    const path = `weakness-reports/${r.id}/retry`, body = { revision: failed.revision };
+    const retry = (await ok(path, 'POST', body)).report; expect((await ok(path, 'POST', body)).report.revision).toBe(retry.revision);
+    expect(store.db.prepare('SELECT COUNT(*) n FROM weakness_jobs WHERE report_id=?').get(r.id)?.n).toBe(2);
+    await runNextWeaknessJob(store, analyze); expect((await get(r)).report.status).toBe('ready');
+  });
+  it('does not consume paused work or retry outdated snapshots', async () => {
+    const r = await start(); vi.stubEnv('FAMILY_RECOGNITION_ENABLED', 'false');
+    expect(await runNextWeaknessJob(store, analyze)).toBe(false); expect((await get(r)).report.status).toBe('queued');
+    vi.stubEnv('FAMILY_RECOGNITION_ENABLED', 'true'); await runNextWeaknessJob(store, async () => { throw new ModelGatewayError('合成错误', 'MODEL_OUTPUT', false); });
+    const failed = (await get(r)).report; update([question(1), question(2), question(3)]);
+    expect((await call(`weakness-reports/${r.id}/retry`, 'POST', { revision: failed.revision })).status).toBe(409);
+  });
+  it('rejects competing creates while a scope is active and only consumes a bounded daily model allowance', async () => {
+    vi.stubEnv('FAMILY_WEAKNESS_DAILY_LIMIT', '1');
+    const r = await start();
+    expect((await call('weakness-reports', 'POST', { studentId: student, requestId: randomUUID(), materialVersion: (await overview()).materials.version })).status).toBe(409);
+    await runNextWeaknessJob(store, analyze); const secondReport = await start();
+    await runNextWeaknessJob(store, analyze); expect((await get(secondReport)).report).toMatchObject({ status: 'failed' });
+    expect((await get(secondReport)).report.error).toContain('24小时'); expect(analyze).toHaveBeenCalledTimes(1);
+    expect((await get(r)).report.status).toBe('ready');
+  });
+  it('marks repeatedly abandoned leases failed instead of retrying forever', async () => {
+    const r = await start(), first = claimWeaknessJob(store)!;
+    expect(claimWeaknessJob(store, first.started + WEAKNESS_LEASE_MS + 1)!.attempt).toBe(2);
+    expect(claimWeaknessJob(store, first.started + 2 * WEAKNESS_LEASE_MS + 2)!.attempt).toBe(3);
+    expect(claimWeaknessJob(store, first.started + 3 * WEAKNESS_LEASE_MS + 3)).toBeNull();
+    expect((await get(r)).report).toMatchObject({ status: 'failed' });
+  });
+  it('does not analyze an unconfirmed shared parent or silently trim overlong question material', async () => {
+    update([{ ...question(1), parentQuestionId: 'q3' }, question(2), { ...question(3), confirmed: false, wrongBook: undefined }]);
+    expect((await overview()).materials).toMatchObject({ total: 2, selected: 1, needsReview: 1 });
+    update([{ ...question(1), prompt: '很长的合成条件'.repeat(7000) }, question(2)]);
+    const materials = (await overview()).materials;
+    expect(materials).toMatchObject({ total: 2, selected: 1, needsReview: 1 });
+    expect(materials.pendingSources[0].reason).toContain('过长');
+  });
+  it('includes only verified student writing and user-reviewed teaching material, never raw error hypotheses', () => {
+    const q = question(1); q.answerSteps = [
+      { id: 's1', order: 0, text: 'x+4=1+4=4', author: 'student', crossedOut: false, uncertain: false, regionIds: [] },
+      { id: 's2', order: 1, text: '教师说明', author: 'teacher', crossedOut: false, uncertain: false, regionIds: [] },
+      { id: 's3', order: 2, text: '不确定笔迹', author: 'student', crossedOut: false, uncertain: true, regionIds: [] },
+    ];
+    q.tutoring = { status: 'needs_review', result: { transcribedPrompt: '未经确认的转写', referenceAnswer: '5', explanation: '已核对的讲解', answerEvidence: [],
+      errorHypotheses: [{ text: '未经确认的错因', evidenceIndexes: [] }], uncertainties: [], generatedAt: '2026-10-02T00:00:00Z', needsReview: true } };
+    update([q, question(2)]); let input = weaknessMaterials(store, 'a', student, '').sources[0];
+    expect(input.studentEvidence).toEqual([{ text: 'x+4=1+4=4', kind: 'confirmed_answer' }]); expect(input.reviewedExplanation).toBeUndefined();
+    q.tutoring.review = { status: 'confirmed', reviewedAt: '2026-10-02T00:01:00Z', resultGeneratedAt: q.tutoring.result!.generatedAt }; update([q, question(2)]);
+    input = weaknessMaterials(store, 'a', student, '').sources[0]; expect(input.reviewedExplanation).toBe('已核对的讲解'); expect(JSON.stringify(input)).not.toContain('未经确认');
+  });
+  it('includes existing learning outcomes and invalidates an earlier report when an attempt changes', async () => {
+    const r = await start(), now = new Date().toISOString();
+    const s = { id: randomUUID(), studentId: student, mode: 'practice', revision: 1, createdAt: now, updatedAt: now,
+      source: { scanId: scan.id, questionId: 'q1', revision: scan.revision }, tasks: [{ kind: 'retest', prompt: '新的复测条件', attempts: [{ answer: '独立计算为5', helped: false, feedback: { verdict: 'correct', feedback: 'AI批改认为正确' } }] }] };
+    store.db.prepare('INSERT INTO learning_sessions VALUES (?,?,?,?,?,?,?)').run(s.id, 'a', student, randomUUID(), 'synthetic', now, JSON.stringify(s));
+    const input = weaknessMaterials(store, 'a', student, '').sources[0]; expect(input.studentEvidence[0]).toMatchObject({ result: 'retest:correct', helped: false, taskPrompt: '新的复测条件' });
+    expect((await get(r)).report.stale).toBe(true);
+  });
+  it('retains learning evidence across metadata-only revisions, but excludes it when original conditions really change', () => {
+    const now = new Date().toISOString(), original = JSON.parse(JSON.stringify(scan));
+    const session = { id: randomUUID(), studentId: student, mode: 'challenge', revision: 1, sourceRecord: original,
+      source: { scanId: scan.id, questionId: 'q1', revision: scan.revision }, tasks: [{ id: 't1', kind: 'retest', prompt: '独立复测题', attempts: [{ id: 'a1', answer: '5', helped: false, feedback: { verdict: 'correct', feedback: 'AI批改认为正确', evidence: ['5'] } }] }] };
+    store.db.prepare('INSERT INTO learning_sessions VALUES (?,?,?,?,?,?,?)').run(session.id, 'a', student, randomUUID(), 'synthetic', now, JSON.stringify(session));
+    update(scan.structuredQuestions!, { confirmedAt: now });
+    let input = weaknessMaterials(store, 'a', student, '').sources[0]; expect(input.studentEvidence[0]).toMatchObject({ result: 'retest:correct', mode: 'challenge' });
+    update(scan.structuredQuestions!.map(q => q.id === 'q1' ? { ...q, prompt: '实际条件已改动' } : q));
+    input = weaknessMaterials(store, 'a', student, '').sources[0]; expect(input.studentEvidence).toEqual([]);
+  });
+});
+
+describe('weakness model grounding', () => {
+  it('rejects forged IDs, forged quotes, one-question evidence and specific errors inferred from a prompt', async () => {
+    const r = await start(), saved = weaknessById(store, 'a', r.id);
+    const forged = resultFor(saved); forged[0].focuses[0].evidence[1].sourceId = 'another-child/q1'; expect(() => validateWeaknessResult(forged, saved)).toThrow();
+    const quote = resultFor(saved); quote[0].focuses[0].evidence[1].quote = '未写过的内容'; expect(() => validateWeaknessResult(quote, saved)).toThrow();
+    const duplicate = resultFor(saved); duplicate[0].focuses[0].evidence[1] = duplicate[0].focuses[0].evidence[0]; expect(() => validateWeaknessResult(duplicate, saved)).toThrow();
+    const blame = resultFor(saved); blame[0].focuses[0].reason = '学生粗心导致计算错误'; expect(() => validateWeaknessResult(blame, saved)).toThrow();
+    expect(() => validateWeaknessResult(resultFor(saved, 'answer_evidence'), saved)).toThrow();
+    const psychological = resultFor(saved); psychological[0].summary = '学生天生学不会'; expect(() => validateWeaknessResult(psychological, saved)).toThrow();
+  });
+  it('accepts tentative pattern suggestions without handwriting and safely returns no focus when evidence is insufficient', async () => {
+    const r = await start(), saved = weaknessById(store, 'a', r.id);
+    expect(validateWeaknessResult(resultFor(saved), saved).focuses[0].basis).toBe('wrong_question_pattern');
+    expect(validateWeaknessResult([{ summary: '共同方向证据不足', focuses: [], limitations: ['请补充同科目的其他错题与作答。'] }], saved).focuses).toEqual([]);
+  });
+  it('accepts specific tentative error directions only with actual writing from at least two questions', async () => {
+    update([1, 2].map(n => ({ ...question(n), answerSteps: [{ id: `s${n}`, order: 0, text: `x+4=${n}+4=4`, author: 'student', crossedOut: false, uncertain: false, regionIds: [] }] })));
+    const r = await start(), saved = weaknessById(store, 'a', r.id), response = resultFor(saved, 'answer_evidence');
+    response[0].focuses[0].reason = '已核对作答中的代入结果可能有计算错误，建议检查加法。';
+    expect(validateWeaknessResult(response, saved).focuses[0].basis).toBe('answer_evidence');
+  });
+  it('uses two text-only model requests and rejects failed independent grounding review', async () => {
+    const r = await start(), saved = weaknessById(store, 'a', r.id), requests: Record<string, unknown>[] = [];
+    let approved = true;
+    vi.stubGlobal('fetch', vi.fn(async (_url, options) => {
+      const body = JSON.parse(options.body); requests.push(body);
+      const response = String(body.messages[0].content).includes('依据核验老师') ? [{ approved, reason: '合成核验意见' }] : resultFor(saved);
+      return Response.json({ choices: [{ finish_reason: 'stop', message: { content: JSON.stringify({ questions: response }) } }] });
+    }));
+    expect((await analyzeWeakness(saved, {})).focuses).toHaveLength(1); expect(requests).toHaveLength(2);
+    expect(JSON.stringify(requests)).not.toContain('image_url'); expect(JSON.stringify(requests)).toContain('不可信');
+    approved = false; await expect(analyzeWeakness(saved, {})).rejects.toThrow('未通过复核');
+    expect(readStoredScan(store, 'a', scan.id)!.revision).toBe(scan.revision);
+  });
+});

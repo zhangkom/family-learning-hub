@@ -1,12 +1,11 @@
 import {
-  Camera,
   Cloud,
-  ImagePlus,
   Layers,
   UserRound,
 } from 'lucide-react';
 import { useEffect } from 'react';
 import { LearningModules } from './LearningModules';
+import { CaptureEntries } from './CaptureEntries';
 import { Capacitor } from '@capacitor/core';
 import { App as NativeApp } from '@capacitor/app';
 import { BottomNavigation, type HomePage } from './BottomNavigation';
@@ -63,21 +62,20 @@ export function GuestHome({
       </header>
       <main className={`dashboard guest-dashboard ${page === 'home' ? 'home-dashboard' : 'guest-secondary'}`}>
         {page === 'home' && <>
-        <LearningModules onPractice={() => onAuth('login', '融会贯通')} onChallenge={() => onAuth('login', '破茧成蝶')} onReview={() => onAuth('login', '错题本')} onKnowledge={() => onAuth('login', '知识点归纳')} />
+        <CaptureEntries onRecord={() => onAuth('login', '录错题')} onBatch={() => onAuth('login', '批量错题上传')} />
         <section className="learning-continue"><div><strong>从一道题，开始积累</strong><small>登录后按孩子保存与整理。</small></div><button onClick={() => onAuth('login')}>开始学习</button></section>
-        <nav className="learning-tools" aria-label="添加学习资料">
-          <button onClick={() => onAuth('login', '拍照收题')}><Camera size={22} /><span>拍照收题</span></button>
-          <button onClick={() => onAuth('login', '相册选图')}><ImagePlus size={22} /><span>相册选图</span></button>
-          <button onClick={() => onAuth('login', '图片云盘')}><Cloud size={22} /><span>图片云盘</span></button>
+        <nav className="home-resource-links" aria-label="资料管理">
+          <button onClick={() => onAuth('login', '图片云盘')}><Cloud size={17} /><span>图片云盘</span></button>
         </nav>
+        <LearningModules onPractice={() => onAuth('login', '融会贯通')} onChallenge={() => onAuth('login', '破茧成蝶')} onReview={() => onAuth('login', '错题本')} onKnowledge={() => onAuth('login', '能力图谱')} />
         </>}
         {page === 'library' && <>
           <div className="section-line library-heading"><div><h1>题目</h1></div></div>
           <section className="guest-intro-card">
             <span className="guest-intro-icon"><Layers size={32} /></span>
             <h2>按科目整理与复习</h2>
-            <p>登录后查看已有错题、知识点和原题照片。</p>
-            <div className="guest-benefits"><span>各科错题</span><span>知识点归纳</span><span>原题照片</span></div>
+            <p>保留完整图文原题，从多道错题找到需要重点补强的知识点。</p>
+            <div className="guest-benefits"><span>错题本</span><span>能力图谱</span></div>
             <div className="button-row"><button className="primary" onClick={() => onAuth('login', '题目资料')}>登录查看题目</button><button onClick={() => onAuth('register', '题目资料')}>注册</button></div>
           </section>
         </>}

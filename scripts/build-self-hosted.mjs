@@ -1,7 +1,6 @@
 import {
   readFileSync,
   writeFileSync,
-  copyFileSync,
   existsSync,
   lstatSync,
   realpathSync,
@@ -69,11 +68,18 @@ if (result.status === 0) {
       'process.chdir(import.meta.dirname);\n\nstartProdServer({',
     ),
   );
-  copyFileSync(
-    'scripts/backup-family.mjs',
-    'dist/standalone/backup-family.mjs',
-  );
   const { build } = await import('vite');
+  // The scheduled backup tool is installed as one standalone file. Bundle its
+  // local atomic-publish helper too, so relocating it never loses a dependency.
+  await build({
+    configFile: false,
+    build: {
+      ssr: resolve('scripts/backup-family.mjs'),
+      outDir: 'dist/standalone',
+      emptyOutDir: false,
+      rolldownOptions: { output: { entryFileNames: 'backup-family.mjs' } },
+    },
+  });
   await build({
     configFile: false,
     build: {

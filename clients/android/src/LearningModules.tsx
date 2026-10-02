@@ -2,7 +2,7 @@ import { BookOpenCheck, ChevronRight, GitBranch, Mountain, Network } from 'lucid
 
 export function LearningModules({ onReview, onKnowledge, onPractice, onChallenge }: { onReview: () => void; onKnowledge: () => void; onPractice: () => void; onChallenge: () => void }) {
   return <section className="learning-entry" aria-label="学习栏目">
-    <h1>每次回看，都有新的收获。</h1>
+    <h2>学习栏目</h2>
     <div className="learning-grid">
       <button className="learning-module module-review" onClick={onReview}>
         <span className="module-top"><BookOpenCheck size={23} /><ChevronRight size={16} /></span>
@@ -14,7 +14,7 @@ export function LearningModules({ onReview, onKnowledge, onPractice, onChallenge
       </button>
       <button className="learning-module module-knowledge" onClick={onKnowledge}>
         <span className="module-top"><Network size={23} /><ChevronRight size={16} /></span>
-        <strong>知识星图</strong><small>串联概念 · 理清脉络</small>
+        <strong>知识星图</strong><small>发现薄弱 · 重点补强</small>
       </button>
       <button className="learning-module module-challenge" onClick={onChallenge}>
         <span className="module-top"><Mountain size={23} /><ChevronRight size={16} /></span>

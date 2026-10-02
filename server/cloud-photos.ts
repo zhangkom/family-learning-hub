@@ -9,7 +9,6 @@ import {
   lstatSync,
   copyFileSync,
   writeFileSync,
-  renameSync,
   rmSync,
   openSync,
   closeSync,
@@ -39,6 +38,7 @@ import {
 import { receiveCloudPhoto } from './cloud-photo-multipart';
 import { inspectCloudImage } from './cloud-image';
 import { currentName, checkPhotoName, validateNameChoice, replaceNamedPhotos } from './cloud-photo-names';
+import { publishDirectorySync } from '../scripts/atomic-directory-publish.mjs';
 
 function uuid(value: unknown) {
   if (typeof value !== 'string' || !cloudUuid.test(value.toLowerCase()))
@@ -317,7 +317,7 @@ async function uploadPhoto(
           durableFile(join(staging, 'original'));
           durableFile(join(staging, 'record.json'));
           durableDirectory(staging);
-          renameSync(staging, target);
+          publishDirectorySync(staging, target);
           durableDirectory(parent);
         } finally {
           if (existsSync(staging)) removeStaging(staging, parent);

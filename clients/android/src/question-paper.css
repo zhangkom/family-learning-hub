@@ -1,0 +1,6 @@
+.question-card .question-original-toggle { min-height:44px; padding:8px 12px; font-size:14px; font-weight:600; }
+.question-paper .paper-view-label { display:block; margin:0 0 12px; padding:8px 10px; color:#294f9b; background:#edf3ff; border-left:3px solid #476fca; font-size:14px; line-height:1.5; }
+.question-paper .paper-source-fallback { margin-top:16px; }
+.question-paper .paper-source-fallback > small { display:block; margin-bottom:8px; color:#607089; font-family:system-ui,sans-serif; font-size:12px; }
+.question-paper .question-crop img { max-width:none; max-height:none; object-fit:fill; }
+.question-card .paper-image-unavailable > small { display:block; overflow-wrap:anywhere; }

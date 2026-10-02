@@ -6,7 +6,6 @@ import {
   readFileSync,
   writeFileSync,
   copyFileSync,
-  renameSync,
   rmSync,
   chmodSync,
   lstatSync,
@@ -17,6 +16,7 @@ import {
 } from 'node:fs';
 import { resolve, join, sep } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
+import { publishDirectorySync } from './atomic-directory-publish.mjs';
 
 if (!process.env.FAMILY_DATA_DIR)
   throw new Error('FAMILY_DATA_DIR is required');
@@ -245,7 +245,7 @@ writeFileSync(
   JSON.stringify(manifest, null, 2),
   { mode: 0o600 },
 );
-renameSync(staging, join(directory, name));
+publishDirectorySync(staging, join(directory, name));
 const backups = readdirSync(directory)
   .filter((x) => /^family-\d{4}-\d{2}-\d{2}T[\dZ-]+$/.test(x))
   .sort()

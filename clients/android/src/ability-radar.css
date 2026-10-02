@@ -1,0 +1,46 @@
+.ability-radar {
+  --radar-brand: var(--brand, #315ced);
+  --radar-surface: var(--surface, #fff);
+  --radar-muted: var(--muted, #64748b);
+  --radar-line: var(--line, #e3e9f4);
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  color: inherit;
+}
+.ability-radar-heading { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 14px; }
+.ability-radar-heading strong { font-size: 18px; }
+.ability-radar-heading span, .ability-radar-caption { color: var(--radar-muted); font-size: 13px; }
+.ability-radar-plot { width: 100%; max-width: 620px; margin: 0 auto; }
+.ability-radar-svg { display: block; width: 100%; overflow: visible; touch-action: pan-y; }
+.ability-radar-grid { fill: none; stroke: var(--radar-line); stroke-width: 1; }
+.ability-radar-spoke { stroke: var(--radar-line); stroke-width: 1; }
+.ability-radar-axis-label { fill: currentColor; font-weight: 500; }
+.ability-radar-axis-value { fill: var(--radar-muted); font-weight: 400; font-variant-numeric: tabular-nums; }
+.ability-radar-score-area { fill: var(--radar-brand); fill-opacity: .13; stroke: var(--radar-brand); stroke-width: 2; stroke-linejoin: round; }
+.ability-radar-score-line { stroke: var(--radar-brand); stroke-width: 2; stroke-linecap: round; }
+.ability-radar-point { fill: var(--radar-brand); }
+.ability-radar-selection { fill: var(--radar-surface); stroke: var(--radar-brand); stroke-width: 2; }
+.ability-radar-unassessed rect { fill: var(--radar-surface); }
+.ability-radar-unassessed text { fill: var(--radar-muted); font-size: 14px; }
+.ability-radar-caption { margin: 0 0 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.ability-radar-empty { margin: 14px 0; color: var(--radar-muted); font-size: 14px; }
+.ability-radar-choices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; min-width: 0; margin: 0; padding: 0; border: 0; }
+.ability-radar .ability-radar-choice {
+  display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 2px;
+  width: 100%; min-width: 44px; min-height: 64px; padding: 8px 10px;
+  color: inherit; background: var(--radar-surface); border: 1px solid var(--radar-line);
+  border-radius: 10px; text-align: left; line-height: 1.5; white-space: normal; overflow-wrap: anywhere;
+}
+.ability-radar-choice span { font-size: 14px; font-weight: 600; }
+.ability-radar-choice small { color: var(--radar-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.ability-radar .ability-radar-choice[aria-pressed='true'] { border-color: var(--radar-brand); box-shadow: inset 3px 0 0 var(--radar-brand); }
+.ability-radar .ability-radar-choice:focus-visible { outline: 3px solid var(--radar-brand); outline-offset: 2px; }
+.ability-radar-detail { margin-top: 14px; padding-left: 12px; border-left: 3px solid var(--radar-brand); }
+.ability-radar-detail > div { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+.ability-radar-detail > div strong { font-size: 15px; }
+.ability-radar-detail > div span { color: var(--radar-muted); font-size: 14px; font-variant-numeric: tabular-nums; }
+.ability-radar-detail > p { margin-top: 3px; color: var(--radar-muted); font-size: 13px; line-height: 1.65; overflow-wrap: anywhere; }
+.ability-radar-detail > .ability-radar-summary { margin-top: 6px; color: inherit; font-size: 14px; }
+@media (min-width: 560px) { .ability-radar-choices { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (prefers-reduced-motion: reduce) { .ability-radar .ability-radar-choice { transition: none; } }

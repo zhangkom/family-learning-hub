@@ -59,7 +59,7 @@ async function goHome() { for (let i = 0; i < 4 && await page.locator('.learning
 async function screenshot(name, width) { await page.setViewportSize({ width, height: 844 }); assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true); await page.screenshot({ path: output + '/' + name + '-' + width + '.png', fullPage: true }); }
 try {
   await page.goto(client); await page.getByLabel('当前学生').selectOption(student.id);
-  await button('拍照收题').click(); await button('完成选择，逐张调整').click();
+  await button('录错题').click(); await button('完成选择，逐张调整').click();
   await button('生成预览').click(); await button('确认使用处理图').click();
   const uploaded = page.waitForResponse(r => r.url() === api + '/scans' && r.request().method() === 'POST');
   await button('上传处理图').click(); const scan = (await (await uploaded).json()).scan;
@@ -90,8 +90,8 @@ try {
   await screenshot('practice', 390); await screenshot('practice', 320);
   await goHome(); await nav('题目').click(); await button('全部').click();
   await page.locator('.question-learning-history').getByText(/已独立通过复测/).waitFor();
-  await button('知识点归纳').click(); await page.locator('.knowledge-card summary').filter({ hasText: '匀速运动' }).click();
-  await page.locator('.knowledge-card[open] .question-learning-history').waitFor();
+  await button('能力图谱').click(); await page.getByText('至少需要 2 道已核对题干的错题，才能交叉分析。',{exact:true}).waitFor();
+  assert.equal(await button('分析多道错题').isDisabled(),true);
   await nav('首页').click(); await page.getByRole('button', { name: /破茧成蝶/ }).click(); await page.locator('.learning-source-option').first().click();
   await page.getByLabel('卡在哪一步？', { exact: true }).fill('速度和时间应怎样配合使用？');
   await page.getByLabel('已经尝试了什么？（选填）').fill('我试过把速度与时间相加。');

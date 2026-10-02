@@ -3,7 +3,7 @@ const require = createRequire(import.meta.url);
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE_PATH || 'playwright');
 const fs = require('node:fs');
 const assert = require('node:assert/strict');
-const out = 'test-results/photo-subject';
+const out = process.env.PHOTO_QA_OUTPUT || 'test-results/photo-subject';
 fs.mkdirSync(out, { recursive: true });
 const base = process.env.CLIENT_URL || 'http://127.0.0.1:3178';
 assert.equal(new URL(base).hostname, '127.0.0.1');
@@ -58,8 +58,8 @@ await (async()=> {
  async function save(){ await page.getByRole('button',{name:'保存校对',exact:true}).click();await page.getByText('已保存题目框和手写步骤',{exact:true}).waitFor(); }
  async function back(){ await page.getByRole('button',{name:'返回资料列表'}).click(); }
  async function open(id){
-  await page.getByRole('navigation',{name:'主要页面'}).getByRole('button',{name:/题目/}).click();
-  await page.getByRole('button',{name:'原题照片',exact:true}).click();
+  await page.getByRole('navigation',{name:'主要页面'}).getByRole('button',{name:'首页',exact:true}).click();
+  await page.getByRole('navigation',{name:'资料管理'}).getByRole('button',{name:/^原题照片/}).click();
   await page.getByRole('button',{name:new RegExp(id+'（合成测试）')}).click();
   await page.waitForFunction(()=>{const b=[...document.querySelectorAll('button')].find(b=>b.textContent.includes('框选一道题'));return b&&!b.matches(':disabled');});
  }

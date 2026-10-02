@@ -32,6 +32,13 @@ export class QuestionImages {
     entry.cloud = cloud; entry.state = { status: 'loading' }; entry.queued = true;
     this.emit(entry); this.pump();
   }
+  imageFailed(scanId: string) {
+    const entry = this.entries.get(scanId);
+    if (!entry || entry.state.status !== 'ready' || this.disposed) return;
+    this.revoke(entry.state.image);
+    entry.state = { status: 'error', message: '题图显示失败，请重新读取本机照片' };
+    this.emit(entry);
+  }
   dispose() {
     this.disposed = true;
     for (const [key, entry] of this.entries) this.remove(key, entry);
@@ -67,9 +74,16 @@ export class QuestionImages {
 export async function decodeQuestionImage(file: Blob, signal: AbortSignal): Promise<QuestionImage> {
   signal.throwIfAborted();
   const url = URL.createObjectURL(file);
+  const image = new Image();
+  let cancel: (() => void) | undefined;
   try {
-    const image = new Image(); image.src = url; await image.decode(); signal.throwIfAborted();
+    const cancelled = new Promise<never>((_resolve, reject) => {
+      cancel = () => { image.src = ''; reject(signal.reason || new DOMException('Aborted', 'AbortError')); };
+      signal.addEventListener('abort', cancel, { once: true });
+    });
+    image.src = url; await Promise.race([image.decode(), cancelled]); signal.throwIfAborted();
     if (!image.naturalWidth || !image.naturalHeight) throw new Error('题图尺寸无法读取');
     return { url, width: image.naturalWidth, height: image.naturalHeight };
   } catch (error) { URL.revokeObjectURL(url); throw error; }
+  finally { if (cancel) signal.removeEventListener('abort', cancel); }
 }

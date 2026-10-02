@@ -218,7 +218,7 @@ function Home({
   const [homePage, setHomePage] = useState<HomePage>(initialPage);
   const [learningView, setLearningView] = useState<LearningView | null>(null);
   const [learningRevision, setLearningRevision] = useState(0);
-  const [libraryMode, setLibraryMode] = useState<LibraryMode>('all');
+  const [libraryMode, setLibraryMode] = useState<LibraryMode>('wrong');
   const [studentOverview, setStudentOverview] = useState<StudentOverviewReply | null>(null);
   const [overviewError, setOverviewError] = useState('');
   const [overviewRevision, setOverviewRevision] = useState(0);
@@ -429,7 +429,7 @@ function Home({
     setBusy(true); captureBusy.current = true;
     try {
       if ((source === 'gallery' || source === 'folder') && localPhotosEnabled) {
-        const result = await pickOriginals(owner, student.id, 2147483647, { purpose: 'processed', signal: abort.signal, folderRange: source === 'folder',
+        const result = await pickOriginals(owner, student.id, 2147483647, { purpose: 'processed', signal: abort.signal, folderRange: source === 'folder', albumRange: source === 'gallery',
           onProgress: progress => { if (live.current && generation === scopeGeneration.current) setCaptureProgress(`正在导入相册：已处理 ${progress.items.filter(item => item.status !== 'pending').length} / ${progress.items.length} 张`); } });
         if (live.current && generation === scopeGeneration.current && activeStudent.current === student.id) {
           const current = collectionRef.current;

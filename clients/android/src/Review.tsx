@@ -20,6 +20,7 @@ import {
 import { subjects, statusNames, type Subject, type Question, type Region, type Scan, type TutoringReviewInput } from './types';
 import { AnalysisStatus } from './AnalysisStatus';
 import { QuestionPaper } from './QuestionPaper';
+import { decodeQuestionImage } from './question-images';
 
 type Props = {
   api: FamilyApi;
@@ -60,6 +61,7 @@ export function Review({
     [dirty, setDirty] = useState(false),
     [busy, setBusy] = useState(false);
   const [allowCloudImage, setAllowCloudImage] = useState(false), [localImageMissing, setLocalImageMissing] = useState(false);
+  const [imageRetry, setImageRetry] = useState(0), [imageError, setImageError] = useState('');
   const [imageSource, setImageSource] = useState<'local' | 'cloud'>();
   const [notice, setNotice] = useState(''),
     [error, setError] = useState(''),
@@ -120,15 +122,16 @@ export function Review({
   useEffect(() => {
     const abort = new AbortController();
     let url = '';
-    setLocalImageMissing(false);
+    setLocalImageMissing(false); setImageError(''); setImage(''); setImageSize(undefined);
     void loadReviewImage(api, owner, reviewPhoto, allowCloudImage, abort.signal)
-      .then(({ file, source }) => {
-        url = URL.createObjectURL(file);
-        if (!abort.signal.aborted) { setImage(url); setImageSource(source); }
+      .then(async ({ file, source }) => {
+        const decoded = await decodeQuestionImage(file, abort.signal); url = decoded.url;
+        if (!abort.signal.aborted) { setImage(url); setImageSize({ width: decoded.width, height: decoded.height }); setImageSource(source); }
         else URL.revokeObjectURL(url);
       })
       .catch((e) => {
         if (!abort.signal.aborted) {
+          setImageError(e.message);
           if (Capacitor.getPlatform() === 'android' && !allowCloudImage) setLocalImageMissing(true);
           else setError(e.message);
         }
@@ -137,7 +140,7 @@ export function Review({
       abort.abort();
       if (url) URL.revokeObjectURL(url);
     };
-  }, [api, owner, reviewPhoto, allowCloudImage]);
+  }, [api, owner, reviewPhoto, allowCloudImage, imageRetry]);
   useEffect(() => {
     if (!draftReady || dirty || (!hasPendingAnalysis && !['queued', 'processing'].includes(scan.status)))
       return;
@@ -434,7 +437,8 @@ export function Review({
         </button>
       </header>
 
-      {localImageMissing && <section className="notice"><p>本机没有这张题图的可用副本。可以返回“本机原片”重新处理，或主动从云端恢复。</p>
+      {localImageMissing && <section className="notice"><p>暂时无法读取本机题图。可以重试读取，或主动从云端恢复这张题图。</p>
+        <button type="button" onClick={() => setImageRetry(value => value + 1)}>重试读取本机题图</button>
         <button type="button" onClick={() => setAllowCloudImage(true)}>从云端恢复这张题图</button></section>}
       <div className="review-status">
         <span className="status">
@@ -621,7 +625,10 @@ export function Review({
                   <button className="question-original-toggle" type="button" aria-pressed={originalQuestionId === question.id}
                     onClick={() => setOriginalQuestionId(originalQuestionId === question.id ? '' : question.id)}>{originalQuestionId === question.id ? '整理版' : '原图'}</button></header>
                 <QuestionPaper question={question} questions={questions} original={originalQuestionId === question.id}
-                  image={image && imageSize ? { url: image, ...imageSize } : undefined} />
+                  image={image && imageSize ? { url: image, ...imageSize } : undefined}
+                  onImageError={() => { setImage(''); setImageError('题图显示失败，请重新读取'); }} />
+                {!image && <output className="paper-image-note">{imageError || '正在读取题图…'}</output>}
+                {imageError && <button type="button" onClick={() => setImageRetry(value => value + 1)}>重试读取题图</button>}
               </section>
               <label className="confirm-check">
                 <input

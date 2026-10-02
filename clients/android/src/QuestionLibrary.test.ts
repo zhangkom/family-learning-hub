@@ -1,24 +1,27 @@
 import { describe, expect, it } from 'vitest';
-import { collectKnowledge } from './QuestionLibrary';
-import type { Question, Scan } from './types';
-
-const item = (id: string, subject: Question['subject'], knowledgePoints: string[]) => ({
-  scan: { id: `photo-${id}` } as Scan,
-  question: { id, subject, knowledgePoints } as Question,
-});
-describe('knowledge groups', () => {
-  it('counts a question once per trimmed point, excluding empty placeholders', () => {
-    const groups = collectKnowledge([item('1', '数学', [' 加法 ', '加法', '', '待确认'])]);
-    expect(groups).toHaveLength(1);
-    expect(groups[0].name).toBe('加法');
-    expect(groups[0].items.map(value => value.question.id)).toEqual(['1']);
+import { orderedWrongQuestions } from './wrong-book-order';
+import type { Scan } from './types';
+const scans = [
+  { id: 'old', createdAt: '2026-09-01T00:00:00Z', questions: [{ id: 'old-math', subject: '数学', wrongBook: { savedAt: '2026-10-02T00:00:00Z' } }] },
+  { id: 'new', createdAt: '2026-10-01T00:00:00Z', questions: [
+    { id: 'new-physics', subject: '物理', wrongBook: { savedAt: '2026-10-01T00:00:00Z' } },
+    { id: 'uncollected', subject: '数学' },
+    { id: 'new-math', subject: '数学', wrongBook: { savedAt: '2026-10-01T00:00:00Z' } },
+  ] },
+] as Scan[];
+describe('wrong book upload order', () => {
+  it('sorts uploads, ignoring later collection dates and retaining within-photo order', () => {
+    expect(orderedWrongQuestions(scans).map(x => x.question.id)).toEqual(['new-physics', 'new-math', 'old-math']);
+    expect(scans[0].id).toBe('old');
   });
-  it('keeps identically named points in different subjects separate', () => {
-    const groups = collectKnowledge([item('1', '数学', ['单位换算']), item('2', '物理', ['单位换算']), item('3', '数学', ['单位换算'])]);
-    expect(groups.map(group => [group.subject, group.items.length])).toEqual([['数学', 2], ['物理', 1]]);
-    expect(groups[1].items[0].scan.id).toBe('photo-2');
+  it('filters subjects from the same ordering, excluding uncollected questions', () => {
+    expect(orderedWrongQuestions(scans).filter(x => x.question.subject === '数学').map(x => x.question.id)).toEqual(['new-math', 'old-math']);
   });
-  it('retains unset subjects explicitly without guessing from the photo', () => {
-    expect(collectKnowledge([item('1', undefined, ['待选学科知识点'])])[0].subject).toBe('待选科目');
+  it('reverses upload dates, keeping within-photo sequence intact', () => {
+    expect(orderedWrongQuestions(scans, 'oldest').map(x => x.question.id)).toEqual(['old-math', 'new-physics', 'new-math']);
+  });
+  it('has stable order for tied or unknown historical timestamps', () => {
+    const tied = scans.map(scan => ({ ...scan, createdAt: 'unknown' }));
+    expect(orderedWrongQuestions(tied).map(x => x.question.id)).toEqual(['old-math', 'new-physics', 'new-math']);
   });
 });

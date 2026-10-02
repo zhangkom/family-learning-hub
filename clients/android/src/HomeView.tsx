@@ -1,7 +1,7 @@
 import type { LearningMode } from '../../../lib/learning-session';
 import { learningProgress, useLearningHistory } from './learning-history';
 import { useState, type ReactNode } from 'react';
-import { Camera, ChevronRight, Cloud, FileImage, ImagePlus, Plus, RefreshCw, UserRound } from 'lucide-react';
+import { ChevronRight, Cloud, FileImage, Plus, RefreshCw, UserRound } from 'lucide-react';
 import { BottomNavigation, type HomePage } from './BottomNavigation';
 import { BrandMark } from './Brand';
 import { appName } from './release';
@@ -12,6 +12,7 @@ import type { StudentOverviewReply } from './types';
 import { AccountSettings, type AccountChange } from './AccountSettings';
 import type { FamilyApi } from './api';
 import { LearningModules } from './LearningModules';
+import { CaptureEntries } from './CaptureEntries';
 
 export type { HomePage } from './BottomNavigation';
 
@@ -76,28 +77,28 @@ export function HomeView(props: Props) {
       {notice && <output className="notice">{notice}</output>}
 
       {tab === 'home' && <div className="home-content">
-        <LearningModules onPractice={() => props.onLearn('practice')} onChallenge={() => props.onLearn('challenge')} onReview={() => { props.onLibraryMode('wrong'); navigate('library'); }} onKnowledge={() => { props.onLibraryMode('knowledge'); navigate('library'); }} />
+        <CaptureEntries disabled={busy || !!uploading || !student} onRecord={() => props.onCapture('camera')} onBatch={() => props.onCapture('gallery')} />
         {!student ? <section className="home-empty"><h2>先建一个孩子的学习档案</h2><p>一家多个孩子，资料分别保存。</p><button className="primary" onClick={addStudent}><Plus size={17} />添加第一名学生</button></section>
           : continuing ? <section className="learning-continue" aria-label="继续学习"><div><strong>{continuing.mode === 'practice' ? '接着练习' : '继续突破'}</strong><small>{continuing.source.subject} · {learningProgress(continuing)}</small></div><button onClick={() => props.onLearn(continuing.mode, undefined, continuing.id)}>继续学习 <ChevronRight size={16} /></button></section>
           : <section className="learning-continue" aria-label="继续学习">
             <div><strong>{previous ? '接着上次学' : nextScan ? '从最近资料开始' : '从第一道题开始'}</strong><small>{nextScan ? nextQuestion ? `${nextQuestion.subject || '待选科目'} · 第 ${nextQuestion.number || '1'} 题` : `${nextScan.originalName} · ${statusNames[nextScan.status]}` : refreshing ? '正在读取学习资料…' : '拍照或选图，留下自己的学习记录。'}</small></div>
             {nextScan && <button onClick={() => props.onOpenScan(nextScan, nextQuestion?.id)}>继续学习 <ChevronRight size={16} /></button>}
           </section>}
-        <nav className="learning-tools" aria-label="添加学习资料">
-          <button disabled={busy || !!uploading || !student} onClick={() => props.onCapture('camera')}><Camera size={22} /><span>拍照收题</span></button>
-          <button disabled={busy || !!uploading || !student} onClick={() => props.onCapture('gallery')}><ImagePlus size={22} /><span>相册选图</span></button>
-          {props.onOpenCloud && <button disabled={busy || !!uploading || !student} onClick={props.onOpenCloud}><Cloud size={22} /><span>图片云盘</span></button>}
+        <nav className="home-resource-links" aria-label="资料管理">
+          <button disabled={busy || !student} onClick={() => { props.onLibraryMode('photos'); navigate('library'); }}><FileImage size={17} /><span>原题照片{records.some(s => !s.questions.length || s.questions.some(q => !q.wrongBook)) ? ' · 待整理' : ''}</span></button>
+          {props.onOpenCloud && <button disabled={busy || !!uploading || !student} onClick={props.onOpenCloud}><Cloud size={17} /><span>图片云盘</span></button>}
         </nav>
         {student && <div id="home-pending">          {props.batchUploads}
           {!!props.processedCount && <section className="draft-section"><div className="section-line"><h2>处理图待提交 · {props.processedCount}</h2><span className="hint">尚未发送 · 原片留在本机</span></div><div className="draft-grid">{props.processedPending}</div></section>}
           {pending.length > 0 && <section className="draft-section"><div className="section-line"><h2>待上传照片 · {pending.length}</h2><span className="hint">仅保存在本机</span></div><div className="draft-grid">{pending.map(props.renderDraft)}</div></section>}
 </div>}
+        <LearningModules onPractice={() => props.onLearn('practice')} onChallenge={() => props.onLearn('challenge')} onReview={() => { props.onLibraryMode('wrong'); navigate('library'); }} onKnowledge={() => { props.onLibraryMode('knowledge'); navigate('library'); }} />
         {student && (props.onOpenOriginals || props.cameraRecovery) && <details className="home-local-tools"><summary>本机照片与恢复</summary><div>{props.onOpenOriginals && <button disabled={busy} onClick={props.onOpenOriginals}>本机原片</button>}{props.cameraRecovery}</div></details>}
       </div>}
 
       {tab === 'library' && <>
         <div className="section-line library-heading"><div><h1>题目</h1></div><button disabled={refreshing || !student} onClick={props.onRefresh}><RefreshCw size={17} className={refreshing ? 'spin' : ''} />刷新</button></div>
-        {student ? <QuestionLibrary key={`${props.owner}|${student.id}`} api={props.api} owner={props.owner} learning={learning.rows} onLearn={props.onLearn} records={records} mode={props.libraryMode} onMode={props.onLibraryMode} onOpen={props.onOpenScan} renderScan={scanCard} refreshing={refreshing} /> : <div className="empty"><p>先添加学生档案，题目会按孩子分别整理。</p><button className="primary" onClick={addStudent}>添加学生</button></div>}
+        {student ? <QuestionLibrary key={`${props.owner}|${student.id}`} api={props.api} owner={props.owner} studentId={student.id} learning={learning.rows} onLearn={props.onLearn} records={records} mode={props.libraryMode} onMode={props.onLibraryMode} onOpen={props.onOpenScan} renderScan={scanCard} refreshing={refreshing} /> : <div className="empty"><p>先添加学生档案，题目会按孩子分别整理。</p><button className="primary" onClick={addStudent}>添加学生</button></div>}
       </>}
 
       {tab === 'me' && <div className="profile-page">

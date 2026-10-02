@@ -1,4 +1,5 @@
 import type { LearningSession, LearningSummary } from '../../../lib/learning-session';
+import type { WeaknessOverview, WeaknessReport } from '../../../lib/weakness';
 import type { Login, Question, Scan, Student, User, WrongBookItem, TutoringReviewInput } from './types';
 import type { CandidateReply } from './candidates';
 import type { StudentOverviewReply } from './types';
@@ -212,6 +213,15 @@ export class FamilyApi {
   }
   learningAction(session: LearningSession, action: 'hint' | 'solution' | 'attempt' | 'retry' | 'retest', body: Record<string, unknown>, signal?: AbortSignal) {
     return this.request<{ session: LearningSession }>(`/learning-sessions/${encodeURIComponent(session.id)}/${action}`, 'POST', { ...body, revision: session.revision }, signal);
+  }
+  weaknessOverview(studentId: string, subject = '', signal?: AbortSignal) {
+    return this.request<WeaknessOverview>(`/weakness-reports?studentId=${encodeURIComponent(studentId)}&subject=${encodeURIComponent(subject)}`, 'GET', undefined, signal);
+  }
+  createWeakness(body: { requestId: string; studentId: string; subject: string; materialVersion: string }, signal?: AbortSignal) {
+    return this.request<{ report: WeaknessReport }>('/weakness-reports', 'POST', body, signal);
+  }
+  retryWeakness(report: WeaknessReport, signal?: AbortSignal) {
+    return this.request<{ report: WeaknessReport }>(`/weakness-reports/${encodeURIComponent(report.id)}/retry`, 'POST', { revision: report.revision }, signal);
   }
   async image(id: string, signal?: AbortSignal) {
     const response = await fetch(

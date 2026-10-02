@@ -2,9 +2,11 @@ import { setTimeout } from 'node:timers/promises';
 import { getFamilyStore } from './family-store';
 import { runNextJob } from './scan-jobs';
 import { runNextLearningJob } from './learning-jobs';
+import { runNextWeaknessJob } from './weakness-jobs';
 
 const store = getFamilyStore();
-let stopping = false, learningFirst = false;
+let stopping = false, nextQueue = 0;
+const queues = [runNextJob, runNextLearningJob, runNextWeaknessJob];
 process.on('SIGTERM', () => {
   stopping = true;
 });
@@ -14,8 +16,12 @@ process.on('SIGINT', () => {
 try {
   while (!stopping) {
     try {
-      learningFirst = !learningFirst;
-      const worked = learningFirst ? await runNextLearningJob(store) || await runNextJob(store) : await runNextJob(store) || await runNextLearningJob(store);
+      let worked = false;
+      for (let attempt = 0; attempt < queues.length; attempt++) {
+        const index = nextQueue;
+        nextQueue = (nextQueue + 1) % queues.length;
+        if (await queues[index](store)) { worked = true; break; }
+      }
       if (!worked) await setTimeout(1000);
     } catch (e) {
       console.error(

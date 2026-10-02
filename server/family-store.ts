@@ -63,6 +63,11 @@ export class FamilyStore {
       CREATE TABLE IF NOT EXISTS learning_jobs (id TEXT PRIMARY KEY, session_id TEXT NOT NULL REFERENCES learning_sessions(id), status TEXT NOT NULL, operation TEXT NOT NULL, task_id TEXT, attempt_id TEXT, attempts INTEGER NOT NULL DEFAULT 0, available_at INTEGER NOT NULL, lease_until INTEGER NOT NULL DEFAULT 0, lease_token TEXT, error TEXT, created_at INTEGER NOT NULL);
       CREATE INDEX IF NOT EXISTS learning_jobs_ready ON learning_jobs(status,available_at,lease_until);
       CREATE UNIQUE INDEX IF NOT EXISTS learning_jobs_active ON learning_jobs(session_id) WHERE status IN ('queued','processing');
+      CREATE TABLE IF NOT EXISTS weakness_reports (id TEXT PRIMARY KEY, account_id TEXT NOT NULL REFERENCES accounts(id), student_id TEXT NOT NULL, request_id TEXT NOT NULL, fingerprint TEXT NOT NULL, updated_at TEXT NOT NULL, body TEXT NOT NULL, UNIQUE(account_id,request_id), FOREIGN KEY(account_id,student_id) REFERENCES students(account_id,id));
+      CREATE INDEX IF NOT EXISTS weakness_reports_student ON weakness_reports(account_id,student_id,updated_at DESC,id DESC);
+      CREATE TABLE IF NOT EXISTS weakness_jobs (id TEXT PRIMARY KEY, report_id TEXT NOT NULL REFERENCES weakness_reports(id), status TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, available_at INTEGER NOT NULL, lease_until INTEGER NOT NULL DEFAULT 0, lease_token TEXT, error TEXT, created_at INTEGER NOT NULL);
+      CREATE INDEX IF NOT EXISTS weakness_jobs_ready ON weakness_jobs(status,available_at,lease_until);
+      CREATE UNIQUE INDEX IF NOT EXISTS weakness_jobs_active ON weakness_jobs(report_id) WHERE status IN ('queued','processing');
     `);
     upgradeCloudPhotoBatches(this.db);
     // Null denotes the original whole-page recognition task. Older workers must

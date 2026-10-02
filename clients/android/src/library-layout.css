@@ -1,0 +1,84 @@
+.capture-entry-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; margin:4px 0 14px; }
+.capture-entry { display:flex; flex-direction:column; align-items:stretch; text-align:left; min-width:0; min-height:178px; padding:19px 18px 16px; border:0; border-radius:22px; white-space:normal; gap:9px; color:white; box-shadow:0 7px 18px #2455ba12; }
+.capture-entry-record { background:linear-gradient(135deg,#315fe7,#2349bd); }
+.capture-entry-batch { background:linear-gradient(135deg,#157976,#10635f); }
+.capture-entry-icon { display:flex; align-items:center; justify-content:space-between; margin-bottom:9px; opacity:.95; }
+.capture-entry strong { font-size:24px; line-height:1.3; letter-spacing:.2px; margin-top:auto; }
+.capture-entry strong span { display:block; }
+.capture-entry small { font-size:12px; line-height:1.6; color:#fff; opacity:.9; }
+button.capture-entry:hover:not(:disabled) { filter:brightness(1.08); color:#fff; }
+button.capture-entry:disabled { opacity:.55; }
+.home-resource-links { display:flex; gap:16px; align-items:center; margin:5px 0 10px; }
+.home-resource-links button { min-height:44px; padding:7px 0; border:0; background:transparent; color:#526984; gap:6px; font-size:13px; }
+.learning-entry { margin-top:17px; }
+.learning-entry h2 { font-size:16px; font-weight:600; color:#586b83; margin:0 0 10px; }
+.learning-module { min-height:111px; padding:13px 14px; gap:5px; border-radius:16px; }
+.learning-module strong { font-size:19px; letter-spacing:.5px; }
+.learning-module small { font-size:12px; }
+.module-top { margin-bottom:0; }
+.module-top svg { width:21px; height:21px; }
+.question-library .library-modes { gap:8px; margin:12px 0 20px; }
+.question-library .library-modes button { min-height:52px; padding:10px 8px; font-size:19px; font-weight:650; border-radius:13px; }
+.wrong-book-toolbar { display:flex; align-items:center; justify-content:space-between; gap:10px; margin:12px 0; }
+.wrong-book-toolbar h2 { font-size:18px; line-height:1.5; margin:0; }
+.wrong-book-toolbar select { width:auto; max-width:115px; font-size:14px; padding:8px; min-height:44px; border:1px solid #dce4ef; border-radius:10px; background:#fff; color:#526984; }
+.subject-filters { display:flex; flex-wrap:wrap; gap:7px; margin:0 0 18px; }
+.subject-filters button { font-size:15px; line-height:1.2; min-height:44px; padding:9px 14px; border-radius:10px; background:#fff; color:#53627b; }
+.subject-filters .selected { background:#e8efff; color:#234ebc; border-color:#99b2ef; font-weight:650; }
+.weakness-intro { display:flex; gap:10px; color:#42655f; margin:4px 0 14px; align-items:flex-start; }
+.weakness-intro svg { flex-shrink:0; margin-top:3px; }
+.weakness-intro p { margin:0; font-size:14px; line-height:1.7; }
+.weakness-materials { display:flex; flex-wrap:wrap; align-items:center; gap:12px; padding:16px; background:#edf5f5; border:1px solid #d6e7e5; border-radius:16px; }
+.weakness-materials > div { flex:1; min-width:135px; }
+.weakness-materials strong { font-size:16px; }
+.weakness-materials p { font-size:13px; line-height:1.7; margin:5px 0 0; color:#526e72; }
+.weakness-materials button { min-height:44px; font-size:14px; padding:10px 12px; }
+.weakness-materials .weakness-coverage { flex-basis:100%; margin:0; }
+.weakness-pending, .weakness-limitations { margin:12px 0; font-size:13px; color:#65748a; }
+.weakness-pending summary, .weakness-limitations summary, .weakness-evidence summary { min-height:44px; padding:12px 0; cursor:pointer; }
+.weakness-pending > div { display:flex; gap:12px; justify-content:space-between; align-items:center; padding:10px 0; border-top:1px solid #e5eaf0; }
+.weakness-pending small { display:block; margin-top:5px; line-height:1.7; }
+.weakness-pending button { flex-shrink:0; font-size:13px; min-height:44px; }
+.weakness-job, .weakness-stale { border-radius:12px; padding:14px; font-size:14px; line-height:1.8; background:#edf3ff; color:#48638a; }
+.weakness-stale { display:block; background:#fff5df; color:#795b25; margin:12px 0; }
+.weakness-result-caption { font-size:12px; color:#6a7a91; line-height:1.7; margin:16px 0 6px; }
+.weakness-summary { font-size:15px; line-height:1.85; color:#304457; }
+.weakness-focus { border:1px solid #dce7e9; border-radius:16px; padding:17px; margin:14px 0; background:#fff; }
+.weakness-focus header { display:flex; justify-content:space-between; align-items:center; gap:10px; font-size:12px; color:#62778a; }
+.weakness-priority { padding:4px 7px; border-radius:5px; background:#eaf2f4; color:#33666a; }
+.weakness-priority.high { background:#fff0db; color:#905716; }
+.weakness-focus h3 { font-size:18px; line-height:1.6; margin:12px 0 8px; }
+.weakness-focus p { font-size:14px; line-height:1.85; margin:7px 0 12px; overflow-wrap:anywhere; }
+.weakness-direction { background:#f3f7fa; padding:12px; border-radius:9px; }
+.weakness-direction strong { display:block; font-size:12px; color:#446b76; margin-bottom:5px; }
+.weakness-basis { font-size:12px; color:#758297; line-height:1.7; }
+.weakness-evidence { margin-top:9px; border-top:1px solid #e8edf2; font-size:13px; }
+.weakness-evidence > div { margin-bottom:15px; padding-top:8px; }
+.weakness-evidence strong { font-size:13px; color:#456377; }
+.weakness-evidence blockquote { margin:10px 0; padding:9px 12px; border-left:3px solid #bbcfdc; background:#f7f9fb; white-space:pre-wrap; overflow-wrap:anywhere; font-size:14px; line-height:1.75; }
+.weakness-evidence-actions { display:flex; flex-wrap:wrap; gap:8px; }
+.weakness-evidence-actions button { font-size:13px; min-height:44px; padding:8px 12px; }
+.weakness-limitations li { margin:7px 0; line-height:1.8; }
+.ability-score-note { color:#687c8b; font-size:12px; line-height:1.8; margin:8px 0 16px; }
+.ability-knowledge-tags { display:flex; flex-wrap:wrap; gap:6px; }
+.ability-knowledge-tags span { background:#eef5f4; border-radius:6px; padding:3px 7px; font-size:12px; color:#386e68; }
+.ability-performance { padding:4px 14px; background:#fff; border:1px solid #dce7e9; border-radius:14px; }
+.weakness-view .ability-radar-choices { grid-template-columns:repeat(3,minmax(0,1fr)); gap:7px; }
+.weakness-view .ability-radar-choice { padding:8px; }
+.weakness-view .ability-radar-choice small { font-size:11px; }
+@media (max-width:380px) {
+ .capture-entry-grid { gap:10px; }
+ .capture-entry { min-height:173px; padding:16px 13px 14px; border-radius:18px; }
+ .capture-entry strong { font-size:22px; }
+ .capture-entry small { font-size:11px; }
+ .learning-module { padding:12px; min-height:108px; }
+ .learning-module strong { font-size:18px; }
+ .learning-module small { font-size:11px; }
+ .home-resource-links { gap:12px; }
+ .home-resource-links button { font-size:12px; }
+ .question-library .library-modes button { font-size:18px; }
+ .subject-filters { gap:6px; }
+ .subject-filters button { padding:9px 12px; }
+ .wrong-book-toolbar h2 { font-size:17px; }
+ .weakness-focus { padding:14px; }
+}

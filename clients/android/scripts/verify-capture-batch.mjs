@@ -11,7 +11,7 @@ if (!process.env.PHOTO_QA_OUTPUT) throw new Error('Set PHOTO_QA_OUTPUT to a proj
 const out = path.resolve(process.env.PHOTO_QA_OUTPUT); await mkdir(out, { recursive: true });
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const origin = 'http://127.0.0.1:3297', api = origin + '/test-api';
-const server = await createServer({ root, server: { host: '127.0.0.1', port: 3297, strictPort: true } }); await server.listen();
+const server = await createServer({ root, server: { host: '127.0.0.1', port: 3297, strictPort: true, hmr: false, watch: null } }); await server.listen();
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
 const errors = [], checks = [], records = new Map(), uploads = []; let loseReceipt = true, active = 0, peak = 0, delay = 0, blockedExternal = 0;
 const students = ['a', 'b'].map(id => ({ id, name: '合成孩子' + id, createdAt: '2026-10-02T00:00:00Z' }));
@@ -29,6 +29,7 @@ async function routes(context) {
     if (endpoint === '/session') return send({ user: { id: 'A', username: '合成家庭' } });
     if (endpoint === '/session/login') return send({ token: 'test-A', user: { id: 'A', username: '合成家庭' } });
     if (endpoint === '/students') return send({ students });
+    if (endpoint === '/learning-sessions') return send({ sessions: [], more: false, enabled: true });
     if (endpoint === '/setup') return send({ enabled: true, processedPhotoMetadataVersion: 1 });
     if (endpoint === '/scans' && method === 'GET') return send({ scans: [...records.values()].filter(s => s.studentId === url.searchParams.get('studentId')), recognition: false });
     if (endpoint === '/scans' && method === 'POST') {
@@ -55,7 +56,7 @@ try {
   const login = async () => { await button('登录').click(); await page.getByLabel('账号', { exact: true }).fill('synthetic'); await page.getByLabel('密码', { exact: true }).fill('synthetic-password'); await page.locator('form').getByRole('button', { name: '登录', exact: true }).click(); await page.getByLabel('当前学生').waitFor(); };
   const select = async (label, count) => { const chooser = page.waitForEvent('filechooser'); await page.getByRole('button', { name: label, exact: typeof label === 'string' }).click(); const picker = await chooser; assert.equal(picker.isMultiple(), true); await picker.setFiles(files(count)); };
   await page.goto(origin); await login();
-  await select(/相册选图/, 205); await page.waitForFunction(() => document.querySelectorAll('.capture-batch-grid article').length === 205);
+  await select('批量错题上传', 205); await page.waitForFunction(() => document.querySelectorAll('.capture-batch-grid article').length === 205);
   await page.getByRole('heading', { name: '已选 205 张', exact: true }).waitFor();
   assert.equal(await button('继续拍照').isDisabled(), false); assert.equal(await button('从相册添加').isDisabled(), false); assert.equal(uploads.length, 0);
   await select('从相册添加', 5); await page.getByRole('heading', { name: '已选 210 张', exact: true }).waitFor();
@@ -71,7 +72,7 @@ try {
   await page.getByText('本批上传结束：成功 1 张，失败 0 张。未确认成功的照片仍留在本机，可继续上传。', { exact: true }).waitFor();
   assert.equal(uploads.at(-1).id, failed); assert.equal(records.size, 210); assert.equal(await page.locator('.draft-card').count(), 0);
   checks.push('210张顺序上传；丢失回执后209成功1失败；刷新恢复待提交项并用同ID重试，服务器仍只有210份');
-  await select(/相册选图/, 6); await page.waitForFunction(() => document.querySelectorAll('.capture-batch-grid article').length === 6);
+  await select('批量错题上传', 6); await page.waitForFunction(() => document.querySelectorAll('.capture-batch-grid article').length === 6);
   await button('移出本批').first().click(); await page.waitForFunction(() => document.querySelectorAll('.capture-batch-grid article').length === 5);
   await button('完成选择，查看待上传').click(); assert.equal(await page.locator('.draft-card').count(), 5); delay = 600;
   await page.getByRole('button', { name: /确认并批量上传（5 张）/ }).click(); await button('停止本批上传').click();
@@ -83,7 +84,7 @@ try {
   await context.close();
   const native = await browser.newContext({ viewport: { width: 390, height: 844 } }); await routes(native);
   await native.addInitScript(installSyntheticPhotoBridge, { api }); page = await native.newPage();
-  await page.goto(origin); await page.getByLabel('当前学生').waitFor(); await page.getByRole('button', { name: /拍照收题/ }).click();
+  await page.goto(origin); await page.getByLabel('当前学生').waitFor(); await page.getByRole('button', { name: '录错题', exact: true }).click();
   await page.getByRole('button', { name: '继续拍照', exact: true }).click();
   await page.getByRole('heading', { name: '已选 2 张', exact: true }).waitFor();
   await page.getByRole('button', { name: '完成选择，逐张调整', exact: true }).click();
@@ -94,7 +95,7 @@ try {
   await page.getByRole('button', { name: '生成预览', exact: true }).click(); await page.getByRole('button', { name: '确认使用处理图', exact: true }).click();
   await page.waitForFunction(() => [...document.querySelectorAll('button')].filter(button => button.textContent === '上传处理图').length === 2);
   checks.push('合成原生桥连续拍摄两张，逐张预览确认进入同一待提交队列，确认前不上传');
-  await page.evaluate(() => window.hostPhotoTest.album(2)); await page.getByRole('button', { name: /相册选图/ }).click();
+  await page.evaluate(() => window.hostPhotoTest.album(2)); await page.getByRole('button', { name: '批量错题上传', exact: true }).click();
   await page.getByRole('heading', { name: '已选 2 张', exact: true }).waitFor();
   await page.getByRole('button', { name: '文件夹范围', exact: true }).click(); assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('host-test:lastPicker')).folderRange), true); await page.getByRole('heading', { name: '已选 4 张', exact: true }).waitFor();
   await page.getByRole('button', { name: '完成选择，逐张调整', exact: true }).click();

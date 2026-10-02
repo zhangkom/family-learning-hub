@@ -14,7 +14,8 @@ const api = config.apiBase, origin = `http://127.0.0.1:${port}`;
 const require = createRequire(import.meta.url), { chromium } = require(process.env.PLAYWRIGHT_MODULE_PATH || 'playwright');
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const out = path.resolve(process.env.PHOTO_QA_OUTPUT); await mkdir(out, { recursive: true });
-const server = await createServer({ root, server: { host: '127.0.0.1', port, strictPort: true } }); await server.listen();
+// A QA browser must not be logged out by unrelated source edits during the 500-photo run.
+const server = await createServer({ root, server: { host: '127.0.0.1', port, strictPort: true, hmr: false, watch: null } }); await server.listen();
 const loginResponse = await fetch(api + '/session/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: config.username, password: config.password }) });
 assert.equal(loginResponse.status, 200); const login = await loginResponse.json();
 const headers = { Authorization: 'Bearer ' + login.token };

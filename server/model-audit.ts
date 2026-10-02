@@ -37,7 +37,7 @@ export type ModelFailureCode =
 export type AttemptAudit = ModelTrace & {
   jobId: string;
   attempt: number;
-  kind: 'question' | 'page' | 'learning';
+  kind: 'question' | 'page' | 'learning' | 'weakness';
   queuedAt: number;
   readyAt: number;
   startedAt: number;

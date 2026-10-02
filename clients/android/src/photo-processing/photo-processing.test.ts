@@ -89,6 +89,26 @@ describe('original export and processed-only recovery', () => {
     await expect(loadReviewImage(api, 'owner', scan, false, new AbortController().signal)).rejects.toThrow('校验失败');
     expect(image).not.toHaveBeenCalled();
   });
+  it('waits for a transient native worker conflict without turning it into a missing image or downloading', async () => {
+    const f = await fixture();
+    const image = vi.fn(); const api = { image } as unknown as FamilyApi;
+    mocks.plugin.getOriginal.mockRejectedValueOnce(Object.assign(new Error('正在处理另一张照片'), { code: 'PHOTO_BUSY' }));
+    const scan = { id: 'scan-1', studentId: original.studentId, sourceKind: 'processed-photo' as const, processing: f.result };
+    const loaded = await loadReviewImage(api, 'owner', scan, false, new AbortController().signal);
+    expect(loaded.source).toBe('local'); expect(mocks.plugin.getOriginal).toHaveBeenCalledTimes(2);
+    expect(image).not.toHaveBeenCalled(); expect(f.fetcher).toHaveBeenCalledTimes(1);
+  });
+  it('cancels a queued local retry when the student/page changes', async () => {
+    const f = await fixture();
+    const image = vi.fn(); const api = { image } as unknown as FamilyApi;
+    const abort = new AbortController();
+    mocks.plugin.getOriginal.mockRejectedValueOnce(Object.assign(new Error('正在处理另一张照片'), { code: 'PHOTO_BUSY' }));
+    const scan = { id: 'scan-1', studentId: original.studentId, sourceKind: 'processed-photo' as const, processing: f.result };
+    const pending = loadReviewImage(api, 'owner', scan, false, abort.signal);
+    await Promise.resolve(); abort.abort();
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+    expect(mocks.plugin.getOriginal).toHaveBeenCalledTimes(1); expect(f.fetcher).not.toHaveBeenCalled(); expect(image).not.toHaveBeenCalled();
+  });
   it('uses the server only after explicit recovery, and preserves browser access', async () => {
     const file = new Blob(['synthetic']); const image = vi.fn().mockResolvedValue(file);
     const api = { image } as unknown as FamilyApi;

@@ -10,6 +10,7 @@ import {
   symlinkSync,
   copyFileSync,
   statfsSync,
+  renameSync,
 } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
@@ -31,7 +32,7 @@ import {
 
 vi.mock('node:fs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs')>();
-  return { ...actual, statfsSync: vi.fn(actual.statfsSync) };
+  return { ...actual, statfsSync: vi.fn(actual.statfsSync), renameSync: vi.fn(actual.renameSync) };
 });
 
 let root: string,
@@ -47,7 +48,9 @@ const token = 'a'.repeat(64),
   api = 'https://learning.test/family-learning/api/mobile/v1/';
 const hash = (bytes: Uint8Array | string) =>
   createHash('sha256').update(bytes).digest('hex');
-beforeEach(() => {
+beforeEach(async () => {
+  vi.mocked(renameSync).mockReset();
+  vi.mocked(renameSync).mockImplementation((await vi.importActual<typeof import('node:fs')>('node:fs')).renameSync);
   mkdirSync(resolve('work'), { recursive: true });
   root = mkdtempSync(resolve('work/cloud-photo-test-'));
   data = join(root, 'data');
@@ -182,6 +185,42 @@ async function photo(
 }
 
 describe('private cloud photo API', () => {
+  it('keeps original bytes and the receipt in sync when Windows publication is briefly busy', async () => {
+    const b = await batch(), bytes = await jpeg(), originalRename = (await vi.importActual<typeof import('node:fs')>('node:fs')).renameSync;
+    let attempts = 0;
+    vi.mocked(renameSync).mockImplementation((source, target) => {
+      attempts++;
+      // No database success receipt may exist while publication is failing.
+      expect(store.db.prepare('SELECT COUNT(*) n FROM cloud_photos').get()?.n).toBe(0);
+      if (attempts <= 2) throw Object.assign(new Error('synthetic temporary busy'), { code: 'EBUSY' });
+      return originalRename(source, target);
+    });
+    const response = await upload(bytes, b.id);
+    if (process.platform === 'win32') {
+      expect(response.status, await response.clone().text()).toBe(201); expect(attempts).toBe(3);
+      const saved = (await response.json() as { photo: { id: string } }).photo;
+      expect(readFileSync(join(data, cloudHash(account), 'cloud-photos', saved.id, 'original'))).toEqual(bytes);
+      expect(store.db.prepare('SELECT COUNT(*) n FROM cloud_photos').get()?.n).toBe(1);
+    } else {
+      expect(response.status).toBe(500); expect(attempts).toBe(1); expect(store.db.prepare('SELECT COUNT(*) n FROM cloud_photos').get()?.n).toBe(0);
+    }
+  });
+  it('rolls back a permanently denied publication without changing existing originals or success receipts', async () => {
+    const previous = await photo(), oldPath = join(data, cloudHash(account), 'cloud-photos', previous.id, 'original'), before = readFileSync(oldPath);
+    const b = await batch(), denied = Object.assign(new Error('synthetic persistent denial'), { code: 'EPERM' });
+    vi.mocked(renameSync).mockClear(); vi.mocked(renameSync).mockImplementation(() => { throw denied; });
+    const response = await upload(await jpeg(), b.id); expect(response.status).toBe(500);
+    expect(renameSync).toHaveBeenCalledTimes(process.platform === 'win32' ? 5 : 1);
+    expect(store.db.prepare('SELECT COUNT(*) n FROM cloud_photos').get()?.n).toBe(1); expect(readFileSync(oldPath)).toEqual(before);
+    expect(readdirSync(join(data, cloudHash(account), 'cloud-photos')).filter(name => !name.startsWith('.'))).toEqual([previous.id]);
+    expect((await call('cloud-photos/' + previous.id + '/file')).status).toBe(200);
+  });
+  it('reports an out-of-space publication immediately without retry or success receipt', async () => {
+    const b = await batch(), error = Object.assign(new Error('synthetic full disk'), { code: 'ENOSPC' });
+    vi.mocked(renameSync).mockClear(); vi.mocked(renameSync).mockImplementation(() => { throw error; });
+    const response = await upload(await jpeg(), b.id); expect(response.status).toBe(503); expect(renameSync).toHaveBeenCalledTimes(1);
+    expect(store.db.prepare('SELECT COUNT(*) n FROM cloud_photos').get()?.n).toBe(0);
+  });
   it('advertises explicit limits, requires login/CORS and constrains owned batch creation', async () => {
     expect(
       (await (await call('setup')).text().then(JSON.parse)).cloudPhotos,

@@ -16,8 +16,9 @@ const questions = [
   q('q1', '1', '如图，在直角三角形 ABC 中，∠C = 90°，AC = 3，BC = 4。求斜边 AB 的长度。\nA. 3　 B. 4　 C. 5　 D. 7',
     [region('stem1', 'stem', .05, .06, .9, .32), region('figure1', 'figure', .3, .15, .4, .19), region('answer1', 'answer', .05, .39, .9, .08)], { wrongBook: { savedAt: now } }),
   q('q2', '2', '这段识别文字尚未包含图表，完整题图仍应保留。', [region('stem2', 'stem', .05, .51, .9, .24)], { knowledgePoints: ['统计图'], wrongBook: { savedAt: now } }),
-  q('q3', '3', '利用上题中的三角形，求其面积。', [region('stem3', 'stem', .05, .85, .9, .08)], { sharedRegionIds: ['figure1'], knowledgePoints: ['面积'] }),
-  q('q4', '4', '没有题框的历史题目，保留文字并提示补框。', [], { subject: '物理', knowledgePoints: [] }),
+  q('q3', '3', '利用上题中的三角形，求其面积。', [region('stem3', 'stem', .05, .85, .9, .08)], { sharedRegionIds: ['figure1'], knowledgePoints: ['面积'], wrongBook: { savedAt: now } }),
+  q('q4', '4', '没有题框的历史题目，保留文字并提示补框。', [], { subject: '物理', knowledgePoints: [], wrongBook: { savedAt: now } }),
+  q('q5', '5', '未收录的题目仍可从原题照片整理。', [region('stem5', 'stem', .05, .95, .9, .04)]),
 ];
 const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1400"><rect width="1000" height="1400" fill="white"/>
 <g fill="#1d2530" font-family="SimSun,serif" font-size="28"><text x="60" y="115">1. 如图，在直角三角形 ABC 中，∠C = 90°，</text><text x="60" y="165">AC = 3，BC = 4。求斜边 AB 的长度。</text>
@@ -29,6 +30,7 @@ const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1400">
 <path d="M260 800 V940 H760" fill="none" stroke="#273342" stroke-width="3"/><g fill="#41546b"><rect x="330" y="855" width="75" height="85"/><rect x="470" y="800" width="75" height="140"/><rect x="610" y="875" width="75" height="65"/></g>
 <g font-size="22" fill="#273342"><text x="330" y="978">一月</text><text x="470" y="978">二月</text><text x="610" y="978">三月</text></g></svg>`;
 const browser = await chromium.launch({ headless: true, channel: process.env.PLAYWRIGHT_CHANNEL || 'chrome' });
+let lastPage;
 try {
   const maker = await browser.newPage();
   const photo = await maker.evaluate(async svg => {
@@ -48,25 +50,34 @@ try {
     uprightWidth: 1000, uprightHeight: 1400, originalUri: 'file:///synthetic/original', previewUri: 'file:///synthetic/preview.jpg', createdAt: Date.now() };
   const scan = { id: 'paper-a', studentId: 'a', subject: '数学', source: '合成试卷', originalName: '合成几何与统计.jpg', mimeType: 'image/jpeg', size: photo.bytes, createdAt: now, revision: 1, status: 'ready', sourceKind: 'processed-photo', processing, questions };
   for (const native of [false, true]) {
-    const context = await browser.newContext({ viewport: { width: 390, height: 844 } }); const page = await context.newPage(); page.setDefaultTimeout(10000);
+    const context = await browser.newContext({ viewport: { width: 390, height: 844 } }); const page = await context.newPage(); lastPage = page; page.setDefaultTimeout(10000);
     const requests = { cloudImages: 0 }; let delayStudent = false;
     page.on('pageerror', error => errors.push(error.message));
-    if (native) await context.addInitScript(({ original, photo }) => {
-      window.nativeReads = 0; window.localMissing = false; window.androidBridge = {};
+    if (native) await context.addInitScript(({ original, photo, outputId }) => {
+      window.nativeReads = 0; window.localMissing = false; window.nativeBusy = true; window.androidBridge = {};
+      // Old WebViews without IntersectionObserver must still show and switch pictures.
+      window.IntersectionObserver = undefined;
       window.Capacitor = {
         PluginHeaders: ['App','SessionVault','AppUpdater','PhotoProcessing'].map(name => ({ name, methods: [
           ...['get','set','clear','getOriginal','listOriginals','listOriginalBatches','removeListener'].map(name => ({ name, rtype: 'promise' })), { name: 'addListener', rtype: 'callback' },
         ] })), nativeCallback() { return 'synthetic-event'; },
-        convertFileSrc() { window.nativeReads++; return photo.data; },
-        async nativePromise(plugin, method) {
+        convertFileSrc(uri) {
+          if (uri !== `file:///synthetic/${outputId}.jpg`) throw new Error('Incorrect processed-photo path: ' + uri);
+          window.nativeReads++; return photo.data;
+        },
+        async nativePromise(plugin, method, input) {
           if (plugin === 'SessionVault' && method === 'get') return { value: '' };
           if (method === 'listOriginalBatches') return { batches: [] };
           if (method === 'listOriginals') return { originals: [], total: 0 };
-          if (method === 'getOriginal') { if (window.localMissing) throw new Error('synthetic local missing'); return original; }
+          if (method === 'getOriginal') {
+            if (window.nativeBusy) { window.nativeBusy = false; throw Object.assign(new Error('正在处理另一张照片，请稍候'), { code: 'PHOTO_BUSY' }); }
+            if (input.originalId !== original.originalId || !input.owner.includes('paper-family')) throw new Error('Incorrect local-photo identity');
+            if (window.localMissing) throw new Error('synthetic local missing'); return original;
+          }
           return {};
         },
       };
-    }, { original, photo });
+    }, { original, photo, outputId });
     await page.route('**/*', async route => {
       const req = route.request(), url = new URL(req.url()); if (url.origin === new URL(client).origin) return route.continue();
       const send = data => route.fulfill({ contentType: 'application/json', body: JSON.stringify(data) });
@@ -82,10 +93,12 @@ try {
     });
     await page.goto(client);
     await page.getByRole('navigation', { name: '账户' }).getByRole('button', { name: '登录', exact: true }).click();
+    if (await page.getByLabel('家庭服务地址').count()) await page.getByLabel('家庭服务地址').fill(api);
     await page.getByLabel('账号', { exact: true }).fill('paper-family'); await page.getByLabel('密码', { exact: true }).fill('synthetic-pass');
     await page.getByRole('button', { name: '登录', exact: true }).click(); await page.locator('.learning-continue button').waitFor();
     const nav = page.getByRole('navigation', { name: '主要页面' }); await nav.getByRole('button', { name: '题目', exact: true }).click();
-    await page.getByRole('region', { name: '全部题目', exact: true }).waitFor(); assert.equal(await page.locator('.question-card').count(), 4);
+    await page.getByRole('region', { name: '错题本', exact: true }).waitFor(); assert.equal(await page.locator('.question-card').count(), 4);
+    assert.equal(await page.getByRole('navigation', { name: '题目分类' }).getByRole('button', { name: '全部', exact: true }).count(), 0);
     const card = () => page.getByRole('article', { name: '第 1 题', exact: true });
     await card().getByRole('img', { name: '原题配图', exact: true }).waitFor();
     assert.match(await card().locator('.paper-prompt').textContent(), /AC = 3，BC = 4/);
@@ -99,11 +112,14 @@ try {
         const header = node.querySelector('.question-card-heading').getBoundingClientRect(), button = node.querySelector('.question-original-toggle').getBoundingClientRect();
         const crop = node.querySelector('.question-crop').getBoundingClientRect(), image = node.querySelector('.question-crop img').getBoundingClientRect();
         return { noOverflow: document.documentElement.scrollWidth <= innerWidth, headerTop: header.top, buttonTop: button.top, buttonRight: button.right, headerRight: header.right,
-          cropWidth: crop.width, cropHeight: crop.height, imageWidth: image.width, imageLeft: image.left, cropLeft: crop.left };
+          cropWidth: crop.width, cropHeight: crop.height, imageWidth: image.width, imageHeight: image.height,
+          imageTop: image.top, cropTop: crop.top, imageLeft: image.left, cropLeft: crop.left };
       });
       assert.equal(geometry.noOverflow, true); assert.ok(Math.abs(geometry.buttonRight - geometry.headerRight) < 1);
       assert.ok(Math.abs(geometry.imageWidth * .4 - geometry.cropWidth) < 1);
       assert.ok(Math.abs((geometry.cropLeft - geometry.imageLeft) / geometry.imageWidth - .3) < .002);
+      assert.ok(Math.abs(geometry.imageHeight * .19 - geometry.cropHeight) < 1);
+      assert.ok(Math.abs((geometry.cropTop - geometry.imageTop) / geometry.imageHeight - .15) < .002);
       layouts.push({ native, width, ...geometry });
       await page.screenshot({ path: resolve(out, `${native ? 'native' : 'web'}-paper-${width}.png`) });
     }
@@ -114,11 +130,24 @@ try {
     assert.equal(await page.locator('.review-page').count(), 0, 'Toggle stays inside the card');
     await card().scrollIntoViewIfNeeded(); await page.screenshot({ path: resolve(out, `${native ? 'native' : 'web'}-original-390.png`) });
     await card().getByRole('button', { name: '整理版', exact: true }).click(); await card().getByRole('img', { name: '原题配图', exact: true }).waitFor();
-    await page.getByRole('button', { name: '错题本', exact: true }).click(); assert.equal(await page.locator('.question-card').count(), 2);
-    await page.getByRole('button', { name: '全部', exact: true }).click(); assert.equal(await page.locator('.question-card').count(), 4);
-    await page.getByRole('button', { name: '物理 1 道题', exact: true }).click(); assert.equal(await page.locator('.question-card').count(), 1);
+    await card().locator('.question-crop img').first().evaluate(img => { img.src = 'data:image/jpeg;base64,broken'; });
+    await card().getByText('题图显示失败，请重新读取本机照片', { exact: true }).waitFor();
+    await card().getByRole('button', { name: '重试读取', exact: true }).click();
+    await card().getByRole('img', { name: '原题配图', exact: true }).waitFor();
+    if (native) assert.equal(requests.cloudImages, 0, 'Render failure retries the local file without automatic cloud fallback');
+    const noFigure = page.getByRole('article', { name: '第 2 题', exact: true });
+    await noFigure.scrollIntoViewIfNeeded();
+    await noFigure.getByText('原题题框（含配图）', { exact: true }).waitFor();
+    const beforeToggle = await noFigure.screenshot();
+    await noFigure.getByRole('button', { name: '原图', exact: true }).click();
+    await noFigure.getByText('原图题框 · 第 2 题', { exact: true }).waitFor();
+    await noFigure.getByRole('img', { name: '这道题的原图题框', exact: true }).waitFor();
+    assert.equal(await noFigure.locator('.paper-prompt').count(), 0);
+    assert.notDeepEqual(await noFigure.screenshot(), beforeToggle, 'Unsegmented image mode has a visible change');
+    const subjectNav = page.getByRole('navigation', { name: '按科目筛选错题' });
+    await subjectNav.getByRole('button', { name: '物理', exact: true }).click(); assert.equal(await page.locator('.question-card').count(), 1);
     assert.match(await page.locator('.question-card').textContent(), /尚未框选/);
-    await page.getByRole('button', { name: '全部科目', exact: true }).click();
+    await subjectNav.getByRole('button', { name: '全部', exact: true }).click();
     await page.getByRole('article', { name: '第 3 题', exact: true }).scrollIntoViewIfNeeded();
     await page.getByRole('article', { name: '第 3 题', exact: true }).getByRole('img', { name: '原题配图', exact: true }).waitFor();
     await card().getByRole('button', { name: '题目详情', exact: true }).click();
@@ -140,19 +169,29 @@ try {
     await nav.getByRole('button', { name: '题目', exact: true }).click();
     delayStudent = true; await page.getByLabel('当前学生').selectOption('b');
     assert.equal(await page.locator('.question-card').count(), 0, 'Previous student cards clear while next request is pending');
-    await page.getByText('还没有题目，请到首页拍照或选图。', { exact: true }).waitFor();
+    await page.getByText('还没有错题，先从首页录入。', { exact: true }).waitFor();
     if (native) {
       assert.equal(requests.cloudImages, 0); await page.evaluate(() => { window.localMissing = true; });
       await page.getByLabel('当前学生').selectOption('a'); await card().getByText('本机题图暂不可用', { exact: true }).waitFor();
+      await card().getByRole('button', { name: '原图', exact: true }).click();
+      await card().getByText('原图题框 · 第 1 题', { exact: true }).waitFor();
+      assert.equal(await card().locator('.paper-prompt').count(), 0, 'Missing original never masquerades as a successful text-only view');
+      await card().getByText('synthetic local missing', { exact: true }).waitFor();
       assert.equal(requests.cloudImages, 0);
-      await card().getByRole('button', { name: '从云端读取这张题图', exact: true }).click(); await card().getByRole('img', { name: '原题配图', exact: true }).waitFor();
+      await card().getByRole('button', { name: '从云端读取这张题图', exact: true }).click(); await card().getByRole('img', { name: /这道题的原图题框/ }).first().waitFor();
       assert.equal(requests.cloudImages, 1);
-      checks.push('Android bridge: exact local file hash checked, one read shared between question cards, no server image download until explicit missing-file recovery');
+      checks.push('Android bridge: exact private processed path, student/original identity and file hash checked; transient PHOTO_BUSY recovery; no IntersectionObserver fallback; one read shared between question cards; no server download until explicit missing-file recovery');
     }
-    checks.push(`${native ? 'Native bridge' : 'Browser'}: all four questions including unsaved ones; subject/wrong filters; inline original toggle; shared figure; unsegmented diagram fallback; detail preview; continue exact last opened question, isolated by student; delayed student switch isolation`);
+    checks.push(`${native ? 'Native bridge' : 'Browser'}: four saved wrong questions, unsaved excluded; subject filters; inline original toggle; shared figure; unsegmented diagram fallback with a visibly distinct original view; detail preview; continue exact last opened question, isolated by student; delayed student switch isolation`);
     await context.close();
   }
   assert.deepEqual(errors, []);
   writeFileSync(resolve(out, 'question-paper-result.json'), JSON.stringify({ checkedAt: new Date().toISOString(), syntheticOnly: true, nativeDeviceTested: false, productionWrites: false, modelCalls: 0, checks, layouts, errors }, null, 2));
   console.log('Question paper, source crops, local reads, and student isolation passed.');
+} catch (error) {
+  if (lastPage && !lastPage.isClosed()) {
+    await lastPage.screenshot({ path: resolve(out, 'question-paper-failure.png'), fullPage: true });
+    console.error(JSON.stringify({ errors, body: (await lastPage.locator('body').innerText()).slice(0, 5000) }));
+  }
+  throw error;
 } finally { await browser.close(); }

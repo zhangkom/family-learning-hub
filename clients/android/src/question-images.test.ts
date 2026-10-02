@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { QuestionImages, type QuestionImage, type QuestionImageState } from './question-images';
+import { QuestionImages, decodeQuestionImage, type QuestionImage, type QuestionImageState } from './question-images';
 import type { Scan } from './types';
 const scan = (id: string) => ({ id } as Scan);
 const image = (url: string): QuestionImage => ({ url, width: 800, height: 1200 });
@@ -54,5 +54,25 @@ describe('question images lifetime', () => {
     pending[0](image('abandoned')); await tick(); pending[1](image('current')); await tick();
     expect(revoke).toHaveBeenCalledWith(image('abandoned'));
     expect(states.at(-1)).toEqual({ status: 'ready', image: image('current') }); store.dispose();
+  });
+  it('turns a failed rendered image into a visible retry state instead of leaving a blank card', async () => {
+    const loader = vi.fn(async (_scan: Scan, _cloud: boolean) => image('rendered')), revoke = vi.fn(), listener = vi.fn();
+    const store = new QuestionImages(loader, revoke); store.subscribe(scan('1'), listener); await tick();
+    store.imageFailed('1');
+    expect(listener).toHaveBeenLastCalledWith({ status: 'error', message: '题图显示失败，请重新读取本机照片' });
+    expect(revoke).toHaveBeenCalledTimes(1); store.imageFailed('1'); expect(revoke).toHaveBeenCalledTimes(1);
+    store.retry('1'); await tick(); expect(loader).toHaveBeenCalledTimes(2);
+    expect(loader.mock.calls.every(call => call[1] === false)).toBe(true); store.dispose();
+  });
+  it('aborts a stalled decoder so scrolling/account changes do not block the next image forever', async () => {
+    const decoding = { src: '', decode: () => new Promise<void>(() => {}) };
+    vi.stubGlobal('Image', class { constructor() { return decoding; } });
+    const revoke = vi.spyOn(URL, 'revokeObjectURL');
+    try {
+      const abort = new AbortController(), pending = decodeQuestionImage(new Blob(['synthetic']), abort.signal);
+      const url = decoding.src; expect(url).toMatch(/^blob:/); abort.abort();
+      await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+      expect(decoding.src).toBe(''); expect(revoke).toHaveBeenCalledWith(url);
+    } finally { revoke.mockRestore(); vi.unstubAllGlobals(); }
   });
 });
