@@ -60,6 +60,10 @@ describe('hosted browser navigation', () => {
     expect(readWebLocation().learning?.sessionId).toBeUndefined();
     syncLearningWebLocation({ mode: 'practice' });
     expect(readWebLocation().learning?.source).toBeUndefined();
+    syncLearningWebLocation({ mode: 'practice', sessionId: 'from-history' });
+    expect(readWebLocation().learning).toEqual({ mode: 'practice', sessionId: 'from-history' });
+    syncLearningWebLocation({ mode: 'practice' });
+    expect(readWebLocation().learning).toEqual({ mode: 'practice' });
     for (const hash of ['#/home', '#/learn/challenge?session=other', '#/question/scan-a?learn=practice&session=new-session']) {
       location.hash = hash; replaceState.mockClear();
       syncLearningWebLocation({ mode: 'practice', source, sessionId: 'late-result' });

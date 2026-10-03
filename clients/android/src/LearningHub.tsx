@@ -29,8 +29,7 @@ export function LearningHub({ api, owner, studentId, studentName, records, view,
   const images = useMemo(() => new QuestionImages(async (scan, _cloud, signal) => decodeQuestionImage((await loadReviewImage(api, owner, scan, true, signal)).file, signal)), [api, owner]);
   useEffect(() => () => images.dispose(), [images]);
   useEffect(() => { live.current = true; return () => { live.current = false; controller.current?.abort(); }; }, []);
-  const activeSource = sessionId && session?.id === sessionId ? session.source : selected;
-  const activeScanId = activeSource?.scanId, activeQuestionId = activeSource?.questionId;
+  const activeScanId = selected?.scanId, activeQuestionId = selected?.questionId;
   useEffect(() => {
     syncLearningWebLocation({ mode: view.mode, ...(sessionId ? { sessionId } : {}),
       ...(activeScanId && activeQuestionId ? { source: { scanId: activeScanId, questionId: activeQuestionId } } : {}) });
