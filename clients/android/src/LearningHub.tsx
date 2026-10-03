@@ -8,6 +8,8 @@ import { learningProgress, readLearningDraft, writeLearningDraft } from './learn
 import { QuestionCard } from './QuestionPaper';
 import { QuestionImages, decodeQuestionImage } from './question-images';
 import { loadReviewImage } from './photo-processing/review-image';
+import { questionLearningReadiness } from '../../../lib/question-context';
+import { learningSourceSnapshot } from './learning-source-image';
 
 export type LearningView = { mode: LearningMode; source?: { scanId: string; questionId: string }; sessionId?: string };
 type Props = { api: FamilyApi; owner: string; studentId: string; studentName: string; records: Scan[]; view: LearningView;
@@ -71,6 +73,8 @@ export function LearningHub({ api, owner, studentId, studentName, records, view,
   function saveDraft(key: string, value: string) { if (!writeLearningDraft(owner, studentId, `${draftScope}:${key}`, value)) setError('本机空间不足，草稿尚未保存；离开前请先提交'); }
   function start() {
     if (!source) return;
+    const reason = questionLearningReadiness(source.question, source.scan.questions);
+    if (reason) { setError(reason); return; }
     const body = { studentId, scanId: source.scan.id, questionId: source.question.id, revision: source.scan.revision, mode: view.mode, stuckPoint: stuck.trim(), initialWork: work.trim() };
     const fingerprint = JSON.stringify(body);
     const key = `request:${draftScope}`;
@@ -86,7 +90,8 @@ export function LearningHub({ api, owner, studentId, studentName, records, view,
     finally { lock.current = false; if (live.current) setBusy(false); }
   }
   const currentSource = session && records.find(scan => scan.id === session.source.scanId);
-  const snapshot = currentSource && session ? { ...currentSource, questions: session.sourceQuestions || currentSource.questions } : undefined;
+  const currentQuestionExists = currentSource?.questions.some(question => question.id === session?.source.questionId);
+  const snapshot = learningSourceSnapshot(currentSource || undefined, session);
   const snapshotQuestion = snapshot?.questions.find(q => q.id === session?.source.questionId);
   const active = !!session?.job && session.job.status !== 'failed';
   return <main className="learning-hub">
@@ -94,9 +99,11 @@ export function LearningHub({ api, owner, studentId, studentName, records, view,
     <div className="section-line"><div><h1>{learningModeNames[view.mode]}</h1><p className="hint">{view.mode === 'practice' ? '从一道题出发，练会一类题。' : '说清卡点，逐步找到解题方法。'}</p></div><button disabled={busy} onClick={() => { setRefreshTick(x => x + 1); onRefreshSources(); }} aria-label="刷新学习进度"><RefreshCw size={18} /></button></div>
     {error && <p role="alert" className="error">{error}</p>}
     {sessionId ? session ? <>
-      <section className="learning-source-line"><div><strong>{session.source.subject} · 原题 {session.source.number}</strong><small>{learningProgress(sessionSummary(session))}</small></div>{currentSource && <button onClick={() => onOpenSource(currentSource, session.source.questionId, session.id)}>原题详情<ChevronRight size={15} /></button>}</section>
+      <section className="learning-source-line"><div><strong>{session.source.subject} · 原题 {session.source.number}</strong><small>{learningProgress(sessionSummary(session))}</small></div>{currentSource && currentQuestionExists && <button onClick={() => onOpenSource(currentSource, session.source.questionId, session.id)}>原题详情<ChevronRight size={15} /></button>}</section>
+      {!currentQuestionExists && <p className="hint">当前原题已移除或暂不可用；本次已保存的学习记录仍可查看。</p>}
+      {currentSource && !snapshot && <p className="hint">原题图片已有修订，当前服务未提供创建时的图片版本。请更新服务后再查看历史题图；已保存的作答仍可查看。</p>}
       {session.stuckPoint && <details className="learning-context"><summary>我的卡点与尝试</summary><p>{session.stuckPoint}</p><p>{session.initialWork || '当时尚未填写尝试。'}</p></details>}
-      {snapshot && snapshotQuestion && <details className="learning-context" open={session.mode === 'challenge' && !session.tasks.length}><summary>回看创建时的原题</summary><QuestionCard scan={snapshot} question={snapshotQuestion} images={images} onOpen={() => onOpenSource(currentSource!, session.source.questionId, session.id)} />{currentSource!.revision !== session.source.revision && <p className="hint">原题之后有过更新；本组练习保留创建时的题干和题框。</p>}</details>}
+      {snapshot && snapshotQuestion && <details className="learning-context" open={session.mode === 'challenge' && !session.tasks.length}><summary>回看创建时的原题</summary><QuestionCard scan={snapshot} question={snapshotQuestion} images={images} api={api} owner={owner} onOpen={currentQuestionExists ? () => onOpenSource(currentSource!, session.source.questionId, session.id) : undefined} />{currentSource!.revision !== session.source.revision && <p className="hint">原题之后有过更新；本组练习保留创建时的题干和题框。</p>}</details>}
       {session.job && <section className="learning-job" aria-live="polite"><strong>{session.job.status === 'failed' ? '这一步还未完成' : session.job.status === 'queued' ? '任务已保存，等待处理' : session.job.operation === 'grade' ? '正在核对作答与步骤…' : '正在准备题目并复核…'}</strong><p>{session.job.error || '可以离开页面，稍后从学习记录继续。'}</p>{session.job.status === 'failed' && <button disabled={busy} onClick={() => void operate(signal => api.learningAction(session, 'retry', {}, signal))}>重试这一步</button>}</section>}
       <div className="learning-task-list">{session.tasks.map((task, index) => <LearningTaskCard key={task.id} task={task} index={index} owner={owner} studentId={studentId} disabled={busy || !!session.job}
         onAction={(action, values) => void operate(signal => api.learningAction(session, action, { ...values, taskId: task.id }, signal))} />)}</div>
@@ -105,14 +112,15 @@ export function LearningHub({ api, owner, studentId, studentName, records, view,
     </> : <output>正在读取学习记录…</output> : <>
       {selected ? source ? <section className="learning-start">
         <div className="section-line"><h2>从这道题开始</h2><button onClick={() => setSelected(undefined)}>换一道题</button></div>
-        <QuestionCard scan={source.scan} question={source.question} images={images} onOpen={() => onOpenSource(source.scan, source.question.id)} />
+        <QuestionCard scan={source.scan} question={source.question} images={images} api={api} owner={owner} onOpen={() => onOpenSource(source.scan, source.question.id)} />
         {view.mode === 'challenge' && <><label>卡在哪一步？<textarea maxLength={2000} value={stuck} onChange={e => { setStuck(e.target.value); saveDraft('stuck', e.target.value); }} placeholder="例如：知道要用哪个公式，但不知道怎样列式" /></label><label>已经尝试了什么？（选填）<textarea maxLength={8000} value={work} onChange={e => { setWork(e.target.value); saveDraft('work', e.target.value); }} placeholder="写下已有思路或计算步骤" /></label></>}
-        {!source.question.confirmed ? <p className="hint">这道题还未校对。<button onClick={() => onOpenSource(source.scan, source.question.id)}>先校对原题</button></p> : <p className="hint">{view.mode === 'practice' ? '生成3道递进变式；先自己作答，再核对解法。' : '先试着独立作答，需要时逐级查看提示。'}</p>}
-        <button className="primary full" disabled={busy || !source.question.confirmed || !source.question.subject || view.mode === 'challenge' && !stuck.trim()} onClick={start}>{busy ? '正在提交…' : view.mode === 'practice' ? '生成3道变式' : '开始逐步突破'}</button>
+        {questionLearningReadiness(source.question, source.scan.questions) ? <p className="hint">{questionLearningReadiness(source.question, source.scan.questions)}。<button onClick={() => onOpenSource(source.scan, source.question.id)}>查看并校对原题</button></p> : <p className="hint">{view.mode === 'practice' ? '结合完整题图生成3道递进变式；先自己作答，再核对解法。' : '先试着独立作答，需要时逐级查看提示。'}</p>}
+        {view.mode === 'challenge' && !stuck.trim() && <p className="hint">先填写“卡在哪一步”，再开始突破。</p>}
+        <button className="primary full" disabled={busy || !!questionLearningReadiness(source.question, source.scan.questions) || view.mode === 'challenge' && !stuck.trim()} onClick={start}>{busy ? '正在提交…' : view.mode === 'practice' ? '生成3道变式' : '开始逐步突破'}</button>
       </section> : <p className="hint">原题暂未读取到，请刷新或重新选择。<button onClick={() => setSelected(undefined)}>重新选题</button></p> : <>
         <section className="learning-history"><h2>学习记录</h2>{historyHere.length ? historyHere.map(item => <button className="learning-history-item" key={item.id} onClick={() => { setSession(null); setSessionId(item.id); }}><span><strong>{item.source.subject} · 原题 {item.source.number}</strong><small>{learningProgress(item)} · {date(item.updatedAt)}{item.retestDueAt && new Date(item.retestDueAt).getTime() <= Date.now() ? ' · 到期复测' : ''}</small></span><ChevronRight size={17} /></button>) : <p className="hint">{historyReady ? '选择一道自己的题，开始第一次练习。' : '正在读取记录…'}</p>}{more && <button disabled={busy} onClick={() => void loadMore()}>更多学习记录</button>}</section>
         <section className="learning-source-picker"><h2>选择原题</h2><div className="learning-filters"><input aria-label="搜索原题或知识点" value={query} onChange={e => setQuery(e.target.value)} placeholder="搜索题干或知识点" /><select aria-label="学习科目" value={subject} onChange={e => setSubject(e.target.value)}><option>全部</option>{[...new Set(all.flatMap(item => item.question.subject ? [item.question.subject] : []))].map(name => <option key={name}>{name}</option>)}</select></div>
-          {filtered.length ? filtered.map(({ scan, question }) => <button className="learning-source-option" key={`${scan.id}/${question.id}`} onClick={() => setSelected({ scanId: scan.id, questionId: question.id })}><span><strong>{question.subject || '待选科目'} · 第 {question.number} 题{question.wrongBook ? ' · 错题' : ''}</strong><small>{question.prompt || question.knowledgePoints.join(' · ') || scan.originalName}</small><small>{question.confirmed ? '已校对' : '需先校对'}</small></span><ChevronRight size={17} /></button>) : <p className="hint">{all.length ? '没有匹配的原题。' : '还没有整理好的题目，请先到首页收题并校对。'}</p>}
+          {filtered.length ? filtered.map(({ scan, question }) => <button className="learning-source-option" key={`${scan.id}/${question.id}`} onClick={() => setSelected({ scanId: scan.id, questionId: question.id })}><span><strong>{question.subject || '待选科目'} · 第 {question.number} 题{question.wrongBook ? ' · 错题' : ''}</strong><small>{question.prompt || question.knowledgePoints.join(' · ') || scan.originalName}</small><small>{questionLearningReadiness(question, scan.questions) || '已校对，可开始学习'}</small></span><ChevronRight size={17} /></button>) : <p className="hint">{all.length ? '没有匹配的原题。' : '还没有整理好的题目，请先到首页收题并校对。'}</p>}
         </section>
       </>}
     </>}

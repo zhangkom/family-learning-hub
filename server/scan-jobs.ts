@@ -382,7 +382,7 @@ export async function runNextJob(
       const result = await explain(
         job.record,
         await measurePhase(trace, 'readOriginalMs', () =>
-          readScanFile(job.owner, job.scanId),
+          readScanFile(job.owner, job.scanId, job.record),
         ),
         job.questionId,
         trace,
@@ -395,7 +395,7 @@ export async function runNextJob(
     const result = await recognize(
       job.record,
       await measurePhase(trace, 'readOriginalMs', () =>
-        readScanFile(job.owner, job.scanId),
+        readScanFile(job.owner, job.scanId, job.record),
       ),
       trace,
     );

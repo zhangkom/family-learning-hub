@@ -183,6 +183,17 @@ try {
   await page.locator('.learning-source-line').waitFor(); assert.match(await page.locator('.learning-source-line').textContent(), /物理 · 原题 10/);
   await leaveLearning(); await nav('题目').click(); await assertPhysicsGraph();
   checks.push('Existing learning-session source detail returns to its original session; library context remains intact.');
+  const savedQuestions = sourceScan.questions; sourceScan.questions = [];
+  await button('刷新').click(); await page.locator('.weakness-summary').waitFor(); await page.locator('.weakness-evidence > summary').click();
+  await page.getByText('当前原题已移除或暂不可用，可保留查看上次分析依据。', { exact: true }).waitFor();
+  assert.equal(await button('回看原题').count(), 0); assert.equal(await button('针对这题练习').count(), 0);
+  await nav('首页').click(); await button('继续学习').click();
+  await page.getByText('当前原题已移除或暂不可用；本次已保存的学习记录仍可查看。', { exact: true }).waitFor();
+  assert.equal(await button('原题详情').count(), 0);
+  await page.getByText('回看创建时的原题', { exact: true }).click();
+  await page.locator('.learning-context .question-crop img').first().waitFor(); assert.equal(await page.locator('.learning-context').getByRole('button', { name: '题目详情', exact: true }).count(), 0);
+  sourceScan.questions = savedQuestions; await leaveLearning(); await nav('题目').click(); await button('刷新').click(); await assertPhysicsGraph();
+  checks.push('Removed source questions disable obsolete graph/session links while retaining saved evidence and the original learning snapshot.');
   await page.getByLabel('当前学生').selectOption('b');
   await page.getByText('数学 · 0 道错题', { exact: true }).waitFor();
   assert.equal(await page.locator('.weakness-summary').count(), 0); assert.equal(await page.locator('.ability-radar-detail strong').textContent(), '概念理解');

@@ -5,6 +5,16 @@ import type { UploadJob } from './types';
 const digest = 'a'.repeat(64), signal = new AbortController().signal;
 const job: UploadJob = { owner: 'synthetic', studentId: 'student-a', id: 'item-id', clientBatchId: 'batch-id', expectedCount: 2, name: '原图?.jpg', mimeType: 'image/jpeg', size: 3, status: 'queued', createdAt: 1, source: { kind: 'web', file: new Blob(['abc'], { type: 'image/jpeg' }) } };
 describe('cloud API is independent of scans/AI', () => {
+  it('binds original metadata to the requested student and exact source page', async () => {
+    const api = new FamilyApi('https://synthetic.invalid', 'test'), request = vi.spyOn(api, 'request');
+    const photo = { id: 'source-photo', studentId: 'student-a' }; request.mockResolvedValueOnce({ photo });
+    expect(await createCloudApi(api).photo('source-photo', 'student-a', signal)).toEqual(photo);
+    expect(request.mock.calls[0][0]).toBe('/cloud-photos/source-photo?studentId=student-a');
+    request.mockResolvedValueOnce({ photo: { ...photo, studentId: 'student-b' } });
+    await expect(createCloudApi(api).photo('source-photo', 'student-a', signal)).rejects.toThrow('不属于当前学生');
+    request.mockResolvedValueOnce({ photo: { ...photo, id: 'other-photo' } });
+    await expect(createCloudApi(api).photo('source-photo', 'student-a', signal)).rejects.toThrow('不属于当前学生');
+  });
   it('binds folder pages to the requested document and preserves the server page order', async () => {
     const api = new FamilyApi('https://synthetic.invalid', 'test'), request = vi.spyOn(api, 'request');
     const photos = [2, 3].map(pageNumber => ({ id: `photo-${pageNumber}`, studentId: 'student-a', archive: { documentId: 'homework-a', pageNumber } }));

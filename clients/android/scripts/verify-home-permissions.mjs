@@ -149,7 +149,7 @@ try {
   assert.equal(await page.locator('.wrong-question-card').count(), 2);
   assert.equal(await page.locator('.library-modes button').count(), 2);
   assert.deepEqual(await page.locator('.library-modes button').allTextContents(), ['错题本','能力图谱']);
-  assert.equal(await page.locator('.subject-filters button').count(), 7);
+  assert.deepEqual(await page.locator('.subject-filters button').allTextContents(), ['全部', '数学', '语文', '英语', '地理', '物理', '化学', '生物']);
   await page.getByRole('navigation', { name:'按科目筛选错题' }).getByRole('button', { name:'数学',exact:true }).click();
   assert.equal(await page.locator('.wrong-question-card').count(), 1);
   await page.getByRole('navigation', { name:'按科目筛选错题' }).getByRole('button', { name:'全部',exact:true }).click();

@@ -13,6 +13,8 @@ import { AccountSettings, type AccountChange } from './AccountSettings';
 import type { FamilyApi } from './api';
 import { LearningModules } from './LearningModules';
 import { CaptureEntries } from './CaptureEntries';
+import { needsPhotoReview } from './photo-review-filter';
+import { sourcePageLabel } from './source-location';
 
 export type { HomePage } from './BottomNavigation';
 
@@ -51,13 +53,15 @@ export function HomeView(props: Props) {
   function navigate(next: typeof tab) { props.onNavigate(next); window.scrollTo({ top: 0 }); }
   function addStudent() { navigate('me'); setAdding(true); }
   function scanCard(scan: Scan) {
-    return <button className="record-card" key={scan.id} onClick={() => props.onOpenScan(scan)}>
+    const incomplete = scan.questions.some(q => q.paperMark?.classification === 'pending');
+    const status = incomplete ? '待补全' : scan.status === 'ready' && needsPhotoReview(scan) ? '待校对' : statusNames[scan.status] || scan.status;
+    return <button className="record-card" key={scan.id} onClick={() => props.onOpenScan(scan, props.libraryContext.photoFilter === 'pending' ? scan.questions.find(q => !q.confirmed || q.paperMark?.classification === 'pending')?.id : undefined)}>
       <span className="record-icon"><FileImage size={21} /></span>
       <span className="record-content">
-        <strong>{scan.originalName}</strong>
-        <small>{new Date(scan.createdAt).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' })} · {scan.questions.length} 道题</small>
+        <strong title={scan.originalName}>{scan.sourcePage?.title || scan.originalName}</strong>
+        <small>{scan.sourcePage ? sourcePageLabel(scan.sourcePage) : new Date(scan.createdAt).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' })} · {scan.questions.length} 道题</small>
       </span>
-      <span className={`status ${scan.status}`}>{statusNames[scan.status] || scan.status}</span>
+      <span className={`status ${incomplete ? 'needs_review' : scan.status}`}>{status}</span>
       <ChevronRight size={16} />
     </button>;
   }
@@ -86,7 +90,7 @@ export function HomeView(props: Props) {
             {nextScan && <button onClick={() => props.onOpenScan(nextScan, nextQuestion?.id)}>继续学习 <ChevronRight size={16} /></button>}
           </section>}
         <nav className="home-resource-links" aria-label="资料管理">
-          <button disabled={busy || !student} onClick={() => { props.onLibraryMode('photos'); navigate('library'); }}><FileImage size={17} /><span>原题照片{records.some(s => !s.questions.length || s.questions.some(q => !q.wrongBook && !q.focusBook)) ? ' · 待整理' : ''}</span></button>
+          <button disabled={busy || !student} onClick={() => { props.onLibraryMode('photos'); navigate('library'); }}><FileImage size={17} /><span>原题照片{records.some(needsPhotoReview) ? ' · 待整理' : ''}</span></button>
           {props.onOpenCloud && <button disabled={busy || !!uploading || !student} onClick={props.onOpenCloud}><Cloud size={17} /><span>图片云盘</span></button>}
         </nav>
         {student && <div id="home-pending">          {props.batchUploads}

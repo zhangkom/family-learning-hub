@@ -252,7 +252,7 @@ export async function candidateRegions(
   if (!store.allow(`candidate-regions:${account}`, 6, 60000))
     throw new HttpError(429, '自动建议过于频繁，请稍后再试');
   const detected = await runner.run(
-    () => readScanFile(store.scanOwner(account), scanId),
+    () => readScanFile(store.scanOwner(account), scanId, record),
     signal,
   );
   const current = await ownedScan(store, account, scanId);

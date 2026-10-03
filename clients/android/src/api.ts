@@ -223,9 +223,12 @@ export class FamilyApi {
   retryWeakness(report: WeaknessReport, signal?: AbortSignal) {
     return this.request<{ report: WeaknessReport }>(`/weakness-reports/${encodeURIComponent(report.id)}/retry`, 'POST', { revision: report.revision }, signal);
   }
-  async image(id: string, signal?: AbortSignal) {
+  async image(id: string, signal?: AbortSignal, sha256?: string, revision?: number) {
+    if (sha256 !== undefined && !/^[a-f\d]{64}$/.test(sha256)) throw new Error('题图版本信息无效，请刷新后重试');
+    if (revision !== undefined && (!Number.isSafeInteger(revision) || revision < 0)) throw new Error('题图历史版本无效，请刷新后重试');
+    const params = new URLSearchParams(); if (sha256) params.set('sha256', sha256); if (revision !== undefined) params.set('revision', String(revision));
     const response = await fetch(
-      `${this.base}/scans/${encodeURIComponent(id)}/file`,
+      `${this.base}/scans/${encodeURIComponent(id)}/file${params.size ? `?${params}` : ''}`,
       {
         headers: { Authorization: `Bearer ${this.token}` },
         credentials: 'omit',

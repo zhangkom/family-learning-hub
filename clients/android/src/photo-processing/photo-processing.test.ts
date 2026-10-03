@@ -125,7 +125,7 @@ describe('original export and processed-only recovery', () => {
     expect(mocks.recovered.save).toHaveBeenCalledWith('owner', scan, file, expect.any(AbortSignal));
     mocks.available = false;
     await expect(loadReviewImage(api, 'owner', scan, false, signal)).resolves.toEqual({ file, source: 'cloud' });
-    expect(image).toHaveBeenCalledTimes(2); expect(image).toHaveBeenCalledWith('scan-1', signal);
+    expect(image).toHaveBeenCalledTimes(2); expect(image).toHaveBeenCalledWith('scan-1', signal, undefined, undefined);
     expect(mocks.plugin.getOriginal).not.toHaveBeenCalled();
   });
   it('reuses an explicitly recovered legacy image on later visits without network or a native processing record', async () => {

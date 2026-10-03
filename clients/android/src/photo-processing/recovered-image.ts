@@ -1,6 +1,6 @@
-import type { Scan } from '../types';
+import { questionImageHash, questionImageIdentity, type QuestionImageRecord } from '../question-image-identity';
 
-export type ImageScan = Pick<Scan, 'id' | 'studentId' | 'sourceKind' | 'processing' | 'size' | 'mimeType'>;
+export type ImageScan = QuestionImageRecord;
 type SavedImage = { key: string; schemaVersion: 1; fingerprint: string; sha256: string; file: Blob };
 const databaseName = 'family-learning-recovered-question-images';
 const supported = ['image/jpeg', 'image/png', 'image/webp'];
@@ -8,11 +8,12 @@ const supported = ['image/jpeg', 'image/png', 'image/webp'];
 function identity(owner: string, scan: ImageScan) {
   if (!owner || !scan.id || !scan.studentId || !Number.isSafeInteger(scan.size) || scan.size < 1 ||
       scan.size > 32 * 1024 * 1024 || !supported.includes(scan.mimeType) ||
-      (scan.processing && scan.processing.studentId !== scan.studentId))
+      (scan.processing && scan.processing.studentId !== scan.studentId) ||
+      (questionImageHash(scan) !== undefined && !/^[a-f\d]{64}$/.test(questionImageHash(scan)!)))
     throw new Error('题图归属或文件信息不完整，请刷新题目后重试');
-  // owner includes server address and account ID. Scan images are immutable; review revisions are not image identities.
+  // Original files remain immutable; scanSha256 identifies a newer derived question image.
   return { key: JSON.stringify([owner, scan.studentId, scan.id]),
-    fingerprint: JSON.stringify([scan.size, scan.mimeType, scan.processing?.sha256 || null]) };
+    fingerprint: questionImageIdentity(scan) };
 }
 async function digest(file: Blob, scan: ImageScan, signal: AbortSignal) {
   signal.throwIfAborted();
@@ -21,7 +22,7 @@ async function digest(file: Blob, scan: ImageScan, signal: AbortSignal) {
   const bytes = await file.arrayBuffer(); signal.throwIfAborted();
   const sha = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)), b => b.toString(16).padStart(2, '0')).join('');
   signal.throwIfAborted();
-  if (scan.processing && sha !== scan.processing.sha256) throw new Error('题图校验失败，请重新恢复');
+  if (questionImageHash(scan) && sha !== questionImageHash(scan)) throw new Error('题图校验失败，请重新恢复');
   return sha;
 }
 function operation<T>(mode: IDBTransactionMode, signal: AbortSignal, run: (store: IDBObjectStore) => IDBRequest<T>) {
@@ -63,11 +64,17 @@ function operation<T>(mode: IDBTransactionMode, signal: AbortSignal, run: (store
 /** Private WebView storage, partitioned by server/account/student. No tokens or network access. */
 export const recoveredImages = {
   validate(owner: string, scan: ImageScan) { identity(owner, scan); },
+  verify(scan: ImageScan, file: Blob, signal: AbortSignal) { return digest(file, scan, signal); },
   async read(owner: string, scan: ImageScan, signal: AbortSignal): Promise<Blob | undefined> {
     const id = identity(owner, scan);
     const saved = await operation<SavedImage | undefined>('readonly', signal, store => store.get(id.key));
     if (!saved) return undefined;
-    if (saved.schemaVersion !== 1 || saved.key !== id.key || saved.fingerprint !== id.fingerprint ||
+    if (saved.fingerprint !== id.fingerprint) {
+      // Reuse pre-version caches only when their actual digest matches the current image.
+      const legacy = JSON.stringify([scan.size, scan.mimeType, scan.processing?.sha256 || null]);
+      if (saved.fingerprint !== legacy || !questionImageHash(scan) && scan.imageRevision !== undefined || questionImageHash(scan) && saved.sha256 !== questionImageHash(scan)) return undefined;
+    }
+    if (saved.schemaVersion !== 1 || saved.key !== id.key ||
         typeof saved.sha256 !== 'string' || !/^[a-f\d]{64}$/.test(saved.sha256))
       throw new Error('已保存的本机题图与当前记录不匹配，请重新恢复');
     if (await digest(saved.file, scan, signal) !== saved.sha256) throw new Error('已保存的本机题图校验失败，请重新恢复');

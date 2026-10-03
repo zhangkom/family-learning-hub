@@ -116,7 +116,7 @@ export async function handleScans(
     const record = await readScan(owner, id, store);
     if (!record) throw new HttpError(404, '记录不存在');
     if (action === 'file') {
-      const bytes = await readScanFile(owner, id);
+      const bytes = await readScanFile(owner, id, record);
       return new Response(new Uint8Array(bytes), {
         headers: {
           'Content-Type': record.mimeType,
@@ -181,7 +181,7 @@ export async function handleScans(
       try {
         const questions = await recognizeQuestions(
           started,
-          await readScanFile(owner, id),
+          await readScanFile(owner, id, started),
         );
         const item = await updateScan(
           owner,

@@ -1,4 +1,5 @@
 import type { Question } from './mobile';
+import type { ScanRecord } from './scans';
 export type LearningMode = 'practice' | 'challenge';
 export type LearningVerdict = 'correct' | 'partial' | 'incorrect' | 'uncertain';
 export type LearningFeedback = { verdict: LearningVerdict; feedback: string; nextStep: string; evidence: string[] };
@@ -17,6 +18,7 @@ export type LearningSession = {
   id: string; studentId: string; mode: LearningMode; source: LearningSource;
   createdAt: string; updatedAt: string; revision: number; stuckPoint: string; initialWork: string;
   sourceQuestions?: Question[]; tasks: LearningTask[]; job?: LearningJob; retestDueAt?: string;
+  sourceImage?: Pick<ScanRecord, 'size' | 'mimeType' | 'sourcePage' | 'processing' | 'sourceKind'>;
 };
 export type LearningSummary = Pick<LearningSession, 'id' | 'studentId' | 'mode' | 'source' | 'createdAt' | 'updatedAt' | 'job' | 'retestDueAt'> & {
   taskCount: number; passedCount: number; independentRetest: boolean;

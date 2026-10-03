@@ -1,4 +1,5 @@
 import type { Scan } from './types';
+import { questionImageIdentity } from './question-image-identity';
 
 export type QuestionImage = { url: string; width: number; height: number };
 export type QuestionImageState = { status: 'loading' } | { status: 'ready'; image: QuestionImage } | { status: 'error'; message: string };
@@ -43,6 +44,10 @@ export class QuestionImages {
   subscribe(scan: Scan, listener: Listener) {
     if (this.disposed) return () => {};
     let entry = this.entries.get(scan.id);
+    if (entry && questionImageIdentity(entry.scan) !== questionImageIdentity(scan)) {
+      this.remove(scan.id, entry);
+      entry.state = { status: 'loading' }; this.emit(entry); entry = undefined;
+    }
     if (!entry) {
       entry = { scan, listeners: new Set(), state: { status: 'loading' }, cloud: false, queued: true };
       this.entries.set(scan.id, entry);

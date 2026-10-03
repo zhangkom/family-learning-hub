@@ -7,6 +7,12 @@ const question: Question = { id: 'q', number: '1', prompt: '如图求三角形�
   regions: [{ id: 'stem', kind: 'stem', x: .1, y: .2, width: .8, height: .3 }], knowledgePoints: [], answerSteps: [], uncertainties: [] };
 const image = { url: 'blob:verified-local-photo', width: 1000, height: 1400 };
 describe('paper and original are visible distinct views', () => {
+  it('never replaces a full question crop with a locator summary plus a separate figure', () => {
+    const q = { ...question, promptKind: 'summary' as const, prompt: '定位摘要：受力分析', regions: [...question.regions, { ...question.regions[0], id: 'figure', kind: 'figure' as const }] };
+    const html = renderToStaticMarkup(<QuestionPaper question={q} questions={[q]} image={image} original={false} />);
+    expect(html).not.toContain('class="paper-prompt"'); expect(html).toContain('原题题干与配图');
+    expect(renderToStaticMarkup(<QuestionPaper question={q} questions={[q]} original={false} />)).toContain('文字仅为定位摘要');
+  });
   it('shows answer sheet physical page and every composite original separately from archive order', () => {
     const q: Question = { ...question, sourcePage: { documentId: 'd', title: '物理暑假作业（一）', subject: '物理', pageNumber: 5, pageCount: 6, paperPageNumber: 1, paperPageCount: 2, pageRole: 'answer-sheet', revision: 1, photoId: 'answer', sourceParts: [{ photoId: 'paper', originalName: 'IMG_paper.jpg', title: '物理暑假作业（一）', paperPageNumber: 3, pageRole: 'questions', role: 'question' }, { photoId: 'answer', originalName: 'IMG_answer.jpg', paperPageNumber: 1, pageRole: 'answer-sheet', role: 'answer' }] } };
     const html = renderToStaticMarkup(<QuestionSource scan={{ originalName: 'IMG_answer.jpg', questions: [q] } as Scan} question={q} />);

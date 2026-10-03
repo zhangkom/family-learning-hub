@@ -3,7 +3,7 @@ import type { FamilyStore } from './family-store';
 import type { StoredLearning } from './learning-sessions';
 import type { WeaknessMaterials, WeaknessSource } from '../lib/weakness';
 import { questionsOf } from './mobile-service';
-import { questionContext } from '../lib/question-context';
+import { questionContext, questionIsSummary } from '../lib/question-context';
 import type { ScanRecord } from '../lib/scans';
 
 export const WEAKNESS_MATERIAL_LIMIT = 30;
@@ -32,6 +32,7 @@ export function weaknessMaterials(store: FamilyStore, account: string, student: 
       total++;
       const sessions = learning.filter(s => {
         if (s.source.scanId !== scan.id || s.source.questionId !== question.id) return false;
+        if (s.sourceRecord?.sourcePage?.scanSha256 !== scan.sourcePage?.scanSha256) return false;
         if (s.source.revision === scan.revision) return true;
         const original = s.sourceRecord?.structuredQuestions?.find(q => q.id === question.id);
         // Marking a teaching answer reviewed or collecting another question may
@@ -40,14 +41,25 @@ export function weaknessMaterials(store: FamilyStore, account: string, student: 
       });
       fingerprints.push([scan.id, scan.revision, question.id, question, sessions.map(s => [s.id, s.revision])]);
       const context = questionContext(question, questions);
-      let parent = question.parentQuestionId, unconfirmedParent = false;
+      let parent = question.parentQuestionId, unconfirmedParent = false, summaryContext = false;
       const seen = new Set<string>();
       while (parent && !seen.has(parent)) {
         seen.add(parent); const ancestor = questions.find(q => q.id === parent);
-        if (!ancestor?.confirmed) unconfirmedParent = true;
+        if (!ancestor?.confirmed || ancestor.paperMark?.classification === 'pending') unconfirmedParent = true;
+        if (ancestor && questionIsSummary(ancestor)) summaryContext = true;
+        for (const id of ancestor?.sharedRegionIds || []) {
+          const shared = questions.find(q => q.regions.some(r => r.id === id));
+          if (!shared?.confirmed || shared.paperMark?.classification === 'pending') unconfirmedParent = true;
+          if (shared && questionIsSummary(shared)) summaryContext = true;
+        }
         parent = ancestor?.parentQuestionId;
       }
-      const reason = !question.subject ? '请先选择科目' : !question.confirmed ? '请先核对并确认题干与题框' : !question.prompt.trim() || question.prompt.trim() === '待确认' ? '请补充已核对的完整题干' :
+      for (const id of question.sharedRegionIds || []) {
+        const shared = questions.find(q => q.regions.some(r => r.id === id));
+        if (!shared?.confirmed || shared.paperMark?.classification === 'pending') unconfirmedParent = true;
+        if (shared && questionIsSummary(shared)) summaryContext = true;
+      }
+      const reason = !question.subject ? '请先选择科目' : !question.confirmed ? '请先核对并确认题干与题框' : question.paperMark?.classification === 'pending' ? '题目资料仍待补全，不能用于能力归纳' : questionIsSummary(question) || summaryContext ? '当前只有题目定位摘要；请结合完整题图解析，采用并核对完整题干、选项与图示条件后再分析' : !question.prompt.trim() || question.prompt.trim() === '待确认' ? '请补充已核对的完整题干' :
         unconfirmedParent || context.parents.some(p => !p.prompt.trim() || p.prompt.trim() === '待确认') ? '请补充并确认共用题干条件' : '';
       if (reason) { pending.push({ scanId: scan.id, questionId: question.id, number: question.number, subject: question.subject || '', reason }); continue; }
       const reviewed = question.tutoring?.status === 'needs_review' && question.tutoring.review?.status === 'confirmed' &&
@@ -78,7 +90,7 @@ export function weaknessMaterials(store: FamilyStore, account: string, student: 
     sources.push(candidate); chars += size;
   }
   const grade = store.db.prepare('SELECT grade FROM students WHERE account_id=? AND id=?').get(account, student)?.grade;
-  return { sources, materials: { version: digest([2, student, grade || '', subject, fingerprints]), total, eligible: candidates.length, selected: sources.length,
+  return { sources, materials: { version: digest([3, student, grade || '', subject, fingerprints]), total, eligible: candidates.length, selected: sources.length,
     omitted: candidates.length - sources.length, needsReview: pending.length, limit: WEAKNESS_MATERIAL_LIMIT,
     pendingSources: pending.slice(0, 50), pendingMore: Math.max(0, pending.length - 50) } };
 }

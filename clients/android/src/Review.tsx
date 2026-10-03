@@ -1,4 +1,6 @@
 import type { LearningMode } from '../../../lib/learning-session';
+import { questionLearningReadiness, questionIsSummary } from '../../../lib/question-context';
+import { questionImageIdentity } from './question-image-identity';
 import { useEffect, useRef, useState } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { useNativeBack } from './native-back';
@@ -44,8 +46,8 @@ export function Review({
   onUpdate, onLearn,
 }: Props) {
   const draftId = `${owner}|${initial.id}`;
-  // A scan's uploaded image is immutable. Polling analysis revisions must not reread/redecode it.
-  const reviewPhoto = useRef(initial).current;
+  // Only an image revision changes the photo; polling text/analysis revisions does not.
+  const reviewPhotoRef = useRef(initial);
   const subjectKey = photoSubjectKey(owner, initial.studentId, initial.id);
   const [photoSubject, setPhotoSubject] = useState<Subject | undefined>(() =>
     readPhotoSubject(subjectKey, initial.questions || []));
@@ -55,11 +57,16 @@ export function Review({
   const mutation = useRef(false);
   const [scan, setScan] = useState(initial),
     [questions, setQuestions] = useState(initial.questions || []);
+  const imageIdentity = questionImageIdentity(scan);
+  if (questionImageIdentity(reviewPhotoRef.current) !== imageIdentity) reviewPhotoRef.current = scan;
+  const reviewPhoto = reviewPhotoRef.current;
   const [selected, setSelected] = useState(selectedQuestionId || initial.questions?.[0]?.id || ''),
     [region, setRegion] = useState('');
-  const [image, setImage] = useState(''),
+  const [imageUrl, setImage] = useState(''),
     [dirty, setDirty] = useState(false),
     [busy, setBusy] = useState(false);
+  const [loadedIdentity, setLoadedIdentity] = useState('');
+  const image = loadedIdentity === imageIdentity ? imageUrl : '';
   const [allowCloudImage, setAllowCloudImage] = useState(true), [localImageMissing, setLocalImageMissing] = useState(false);
   const [imageRetry, setImageRetry] = useState(0), [imageError, setImageError] = useState('');
   const [imageSource, setImageSource] = useState<'local' | 'cloud'>();
@@ -80,6 +87,7 @@ export function Review({
   const hasPendingAnalysis = questions.some((q) => ['queued', 'processing'].includes(q.tutoring?.status || ''));
   const analyzing = ['queued', 'processing'].includes(question?.tutoring?.status || '');
   const validQuestion = !!question?.subject && question.regions.some((r) => r.kind === 'stem');
+  const learningBlocked = conflict ? '原题已在其他地方更新，请先处理版本冲突' : busy ? '正在保存或读取，请稍候' : hasPendingAnalysis ? '正在分析原题，完成后可进入练习' : dirty ? '保存校对后可进入练习与突破' : question ? questionLearningReadiness(question, questions) : '请先选择原题';
   const backAction = useRef<() => void>(() => {});
   backAction.current = () => {
     if (busy || !draftReady) return;
@@ -122,7 +130,7 @@ export function Review({
     void loadReviewImage(api, owner, reviewPhoto, allowCloudImage, abort.signal)
       .then(async ({ file, source }) => {
         const decoded = await decodeQuestionImage(file, abort.signal); url = decoded.url;
-        if (!abort.signal.aborted) { setImage(url); setImageSize({ width: decoded.width, height: decoded.height }); setImageSource(source); }
+        if (!abort.signal.aborted) { setImage(url); setLoadedIdentity(questionImageIdentity(reviewPhoto)); setImageSize({ width: decoded.width, height: decoded.height }); setImageSource(source); }
         else URL.revokeObjectURL(url);
       })
       .catch((e) => {
@@ -625,7 +633,7 @@ export function Review({
                   onImageError={() => { setImage(''); setImageError('题图显示失败，请重新读取'); setLocalImageMissing(Capacitor.getPlatform() === 'android'); }} />
                 {!image && <output className="paper-image-note">{imageError || '正在读取题图…'}</output>}
                 {imageError && !localImageMissing && <button type="button" onClick={() => { setAllowCloudImage(true); setImageRetry(value => value + 1); }}>重试读取题图</button>}
-                <QuestionSource scan={{ ...scan, questions }} question={question} />
+                <QuestionSource scan={{ ...scan, questions }} question={question} api={api} owner={owner} />
               </section>
               <label className="confirm-check">
                 <input
@@ -651,12 +659,12 @@ export function Review({
               </p>
               {question.answerSteps.some(s => s.uncertain || s.author === 'unknown') && <p className="hint">题干和题框核对后可继续学习；待确认的笔迹会保留标记，不作为判断个人错因的依据。</p>}
               {dirty && <button disabled={busy || conflict || hasPendingAnalysis} onClick={() => void save()}>保存这次校对</button>}
-              <div className="question-learning-actions"><button disabled={dirty || busy || conflict || hasPendingAnalysis || !question.confirmed} onClick={() => onLearn('practice', scan, question.id)}>举一反三</button><button disabled={dirty || busy || conflict || hasPendingAnalysis || !question.confirmed} onClick={() => onLearn('challenge', scan, question.id)}>难题突破</button></div>
-              {dirty && <p className="hint">保存校对后可进入练习与突破。</p>}
+              <div className="question-learning-actions"><button disabled={!!learningBlocked} onClick={() => onLearn('practice', scan, question.id)}>举一反三</button><button disabled={!!learningBlocked} onClick={() => onLearn('challenge', scan, question.id)}>难题突破</button></div>
+              {learningBlocked && <p className="hint">{learningBlocked}。</p>}
               {dirty && question.tutoring?.result && <p className="hint">请先保存题框或文字修改，再核对分析。</p>}
               <TutoringResult question={question} progress={scan.analysis} disabled={dirty || busy || conflict || hasPendingAnalysis || !draftReady}
                 onReview={reviewAnalysis} onReanalyze={() => void collect(true)} canReanalyze={validQuestion && recognitionEnabled} />
-              {!question.prompt.trim() && question.tutoring?.result?.transcribedPrompt && <button disabled={busy || conflict || hasPendingAnalysis} onClick={() => update(question.id, { prompt: question.tutoring!.result!.transcribedPrompt })}>采用识别题干，再校对</button>}
+              {question.tutoring?.result?.transcribedPrompt && question.tutoring.result.transcribedPrompt !== question.prompt && <div><button disabled={busy || conflict || hasPendingAnalysis} onClick={() => update(question.id, { prompt: question.tutoring!.result!.transcribedPrompt, promptKind: 'full' })}>采用完整识别题干，再校对</button><p className="hint">采用后请逐项核对选项、单位及图中条件；完整题图仍保留。确认并保存后，完整文字才可用于能力图谱。</p></div>}
               <details className="manual-review"><summary>核对题干和原作答</summary>
               <div className="field-row">
                 <label>
@@ -697,7 +705,7 @@ export function Review({
                 </label>
               </div>
               <label>
-                完整题干
+                {questionIsSummary(question) ? '题目定位摘要（完整内容见题图）' : '完整题干'}
                 <textarea
                   aria-label="完整题干"
                   rows={4}
@@ -708,6 +716,7 @@ export function Review({
                   }
                 />
               </label>
+              {(question.promptKind || questionIsSummary(question)) && <label className="confirm-check"><input type="checkbox" checked={question.promptKind === 'full' && !questionIsSummary(question)} disabled={!question.prompt.trim() || /^题目定位摘要[：:]/.test(question.prompt.trim())} onChange={e => update(question.id, { promptKind: e.target.checked ? 'full' : 'summary' })} />文字已补全题干、选项、单位及图中条件，保存前还需核对题图</label>}
               <label>
                 知识点（用逗号分隔）
                 <input key={question.id + JSON.stringify(question.knowledgePoints)} defaultValue={question.knowledgePoints.join('，')} onBlur={e => { const points = [...new Set(e.target.value.split(/[,，、]/).map(value => value.trim()).filter(Boolean))].slice(0, 20); if (JSON.stringify(points) !== JSON.stringify(question.knowledgePoints)) update(question.id, { knowledgePoints: points }); }} placeholder="例如：匀速直线运动、路程计算" />

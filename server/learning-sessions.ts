@@ -8,6 +8,7 @@ import { ownedScan, requireStudent } from './mobile-service';
 import { readStoredScan } from './scan-files';
 import { selectedQuestion } from './question-learning';
 import { recognitionEnabled } from './model-gateway';
+import { questionLearningReadiness } from '../lib/question-context';
 
 export type StoredTask = LearningTask & { answer: string; explanation: string; allHints: string[] };
 export type StoredLearning = Omit<LearningSession, 'tasks' | 'job'> & { tasks: StoredTask[]; sourceRecord: ScanRecord; job?: LearningJob };
@@ -27,7 +28,7 @@ export function learningById(store: FamilyStore, account: string, id: string): S
 }
 export function publicLearning(session: StoredLearning): LearningSession {
   const { sourceRecord: _source, tasks, ...rest } = session;
-  return { ...rest, sourceQuestions: _source.structuredQuestions, tasks: tasks.map(({ answer, explanation, allHints, ...task }) => ({ ...task,
+  return { ...rest, sourceQuestions: _source.structuredQuestions, sourceImage: { size: _source.size, mimeType: _source.mimeType, sourcePage: _source.sourcePage, processing: _source.processing, sourceKind: _source.sourceKind }, tasks: tasks.map(({ answer, explanation, allHints, ...task }) => ({ ...task,
     hints: allHints.slice(0, task.hintCount), totalHints: allHints.length,
     ...(task.solutionViewed ? { solution: { answer, explanation } } : { solution: undefined }),
   })) };
@@ -66,7 +67,8 @@ export async function createLearning(store: FamilyStore, account: string, body: 
     if (record.studentId !== studentId) throw new HttpError(409, '原题不属于当前学生，请先核对归属');
     if (record.revision !== body.revision) throw new HttpError(409, '原题已更新，请刷新后重新选择');
     const question = selectedQuestion(record, questionId);
-    if (!question.confirmed) throw new HttpError(400, '请先校对并确认原题，再开始学习');
+    const readiness = questionLearningReadiness(question, record.structuredQuestions || []);
+    if (readiness) throw new HttpError(400, readiness);
     if (store.db.prepare("SELECT id FROM scan_jobs WHERE owner=? AND scan_id=? AND status IN ('queued','processing')").get(store.scanOwner(account), scanId)) throw new HttpError(409, '原题正在分析，请等待完成');
     const active = store.db.prepare("SELECT COUNT(*) AS n FROM learning_jobs j JOIN learning_sessions s ON s.id=j.session_id WHERE s.account_id=? AND j.status IN ('queued','processing')").get(account);
     if (Number(active?.n) >= 4) throw new HttpError(429, '已有学习任务在处理，请先完成或等待');

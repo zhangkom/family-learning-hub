@@ -1,6 +1,7 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { resolve, join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { readReviewImages } from './prism-review-images.mjs';
 const [action, grantPath, resultPath] = process.argv.slice(2);
 if (!['pull', 'submit'].includes(action) || !grantPath)
   throw new Error(
@@ -52,33 +53,29 @@ const batch = await (await request('batch')).json();
 if (batch.id !== grant.batchId) throw new Error('批次身份不匹配');
 if (action === 'pull') {
   await mkdir(output, { recursive: true, mode: 0o700 });
+  await writeFile(join(output, 'pull-status.json'), JSON.stringify({ status: 'downloading', batchId: batch.id }), { mode: 0o600 });
   await writeFile(join(output, 'batch.json'), JSON.stringify(batch, null, 2), {
     mode: 0o600,
   });
   for (const item of batch.items) {
     if (!/^[a-f0-9-]{36}$/.test(item.id)) throw new Error('复核题目编号无效');
-    const material = await (await request('items/' + item.id)).json(),
-      response = await request('items/' + item.id + '/image');
-    if (!response.headers.get('content-type')?.startsWith('image/jpeg'))
-      throw new Error('题图格式无效');
-    await writeFile(
-      join(output, item.id + '.jpg'),
-      new Uint8Array(await response.arrayBuffer()),
-      { mode: 0o600 },
-    );
+    const material = await (await request('items/' + item.id)).json();
+    const images = await readReviewImages(request, item.id, batch.imagePartsVersion);
+    for (const image of images) await writeFile(join(output, image.name), image.bytes, { mode: 0o600 });
     await writeFile(
       join(output, item.id + '.json'),
-      JSON.stringify(material, null, 2),
+      JSON.stringify({ ...material, imageFiles: images.map(image => image.name) }, null, 2),
       { mode: 0o600 },
     );
   }
+  await writeFile(join(output, 'pull-status.json'), JSON.stringify({ status: 'complete', batchId: batch.id, count: batch.items.length }), { mode: 0o600 });
   console.log(
     JSON.stringify(
       {
         directory: output,
         count: batch.items.length,
         instructions:
-          '先实际查看每张jpg，按batch.json说明独立求解和核对。结果写为{"items":[{"id":"...","fingerprint":"...","provider":"codex","model":"实际模型或unknown","summary":"修正说明","knowledgePoints":[],"result":{"transcribedPrompt":"","referenceAnswer":"","explanation":"","answerEvidence":[],"errorHypotheses":[],"uncertainties":[]}}]}。模型结果是待核对提案，不代表已应用。',
+          '先按每题JSON的imageFiles顺序实际查看全部jpg分片，长图边缘少量重叠，不得遗漏后续材料；再按batch.json说明独立求解和核对。结果写为{"items":[{"id":"...","fingerprint":"...","provider":"codex","model":"实际模型或unknown","summary":"修正说明","knowledgePoints":[],"result":{"transcribedPrompt":"","referenceAnswer":"","explanation":"","answerEvidence":[],"errorHypotheses":[],"uncertainties":[]}}]}。模型结果是待核对提案，不代表已应用。',
       },
       null,
       2,
@@ -86,6 +83,8 @@ if (action === 'pull') {
   );
 } else {
   if (!resultPath) throw new Error('缺少结果JSON路径');
+  const downloaded = JSON.parse(await readFile(join(output, 'pull-status.json'), 'utf8').catch(() => '{}'));
+  if (downloaded.status !== 'complete' || downloaded.batchId !== batch.id) throw new Error('本批次题图尚未完整下载，请先重新pull全部材料后复核');
   const document = JSON.parse(await readFile(resolve(resultPath), 'utf8'));
   if (
     !Array.isArray(document.items) ||

@@ -6,6 +6,7 @@ import { ApiError, type FamilyApi } from './api';
 import type { Scan } from './types';
 import { readLearningDraft, writeLearningDraft } from './learning-history';
 import { AbilityRadar } from './AbilityRadar';
+import { questionLearningReadiness } from '../../../lib/question-context';
 
 export function WeaknessView({ api, owner, studentId, subject, records, onOpen, onLearn, selectedDimension, onSelectDimension }: {
   selectedDimension: string; onSelectDimension: (dimension: string) => void;
@@ -85,8 +86,9 @@ export function WeaknessView({ api, owner, studentId, subject, records, onOpen, 
         <h3>{focus.title}</h3><div className="ability-knowledge-tags">{focus.knowledgePoints.map(point => <span key={point}>{point}</span>)}</div><p>{focus.reason}</p><p className="weakness-direction"><strong>怎么练</strong>{focus.practiceDirection}</p>
         <small className="weakness-basis">{focus.basis === 'answer_evidence' ? '依据已核对的作答证据' : '依据多道错题的共同考点'} · 需要核对</small>
         <details className="weakness-evidence"><summary>查看依据 · {new Set(focus.evidence.map(item => item.sourceId)).size} 道错题</summary>{focus.evidence.map((evidence, index) => {
-          const source = sources.find(item => item.id === evidence.sourceId), scan = source && records.find(item => item.id === source.scanId);
-          return <div key={`${evidence.sourceId}/${index}`}><strong>{source ? `${source.subject} · 第 ${source.number} 题` : '原题暂不可用'}</strong><blockquote>{evidence.quote}</blockquote><p>{evidence.reason}</p>{scan && source && <div className="weakness-evidence-actions"><button onClick={() => onOpen(scan, source.questionId)}>回看原题</button><button disabled={report.stale || !scan.questions.find(q => q.id === source.questionId)?.confirmed} onClick={() => onLearn('practice', { scanId: scan.id, questionId: source.questionId })}>针对这题练习</button></div>}</div>;
+          const source = sources.find(item => item.id === evidence.sourceId), scan = source && records.find(item => item.id === source.scanId), question = scan?.questions.find(q => q.id === source?.questionId);
+          const reason = !scan || !question ? '当前原题已移除或暂不可用，可保留查看上次分析依据。' : report.stale ? '原题或学习记录已变化，请先更新分析。' : questionLearningReadiness(question, scan.questions);
+          return <div key={`${evidence.sourceId}/${index}`}><strong>{source ? `${source.subject} · 第 ${source.number} 题` : '原题暂不可用'}</strong><blockquote>{evidence.quote}</blockquote><p>{evidence.reason}</p>{scan && source && question && <div className="weakness-evidence-actions"><button onClick={() => onOpen(scan, source.questionId)}>回看原题</button><button disabled={!!reason} onClick={() => onLearn('practice', { scanId: scan.id, questionId: source.questionId })}>针对这题练习</button></div>}{reason && <small>{reason}</small>}</div>;
         })}</details>
       </article>)}
       {!selectedFocuses.length && <p className="hint">{selectedAxis?.label || '这个维度'}目前没有足够的跨题证据给出具体补强项；不代表已经掌握。可查看其他维度，或补充错题与独立作答后更新。</p>}

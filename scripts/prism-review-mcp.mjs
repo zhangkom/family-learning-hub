@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises';
+import { readReviewImages } from './prism-review-images.mjs';
 // Low-level server keeps the exact JSON Schema contract portable for offline exports.
 // eslint-disable-next-line typescript/no-deprecated
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
@@ -35,6 +36,7 @@ if (
 )
   throw new Error('复核接口地址不属于知识棱镜服务');
 const seen = new Set();
+let imagePartsVersion;
 async function request(path, body) {
   if (Number(grant.expiresAt) <= Date.now())
     throw new Error('授权已过期，请在管理后台重新生成');
@@ -162,27 +164,28 @@ server.setRequestHandler(CallToolRequestSchema, async ({ params }) => {
     if (params.name === 'get_review_batch') {
       const data = await (await request('batch')).json();
       if (data.id !== grant.batchId) throw new Error('授权批次不匹配');
+      imagePartsVersion = data.imagePartsVersion;
       return { content: [{ type: 'text', text: JSON.stringify(data) }] };
     }
     if (typeof args.itemId !== 'string' || !/^[a-f0-9-]{36}$/.test(args.itemId))
       throw new Error('题目编号无效');
     const path = 'items/' + args.itemId;
     if (params.name === 'get_question') {
-      const data = await (await request(path)).json(),
-        response = await request(path + '/image');
-      if (!response.headers.get('content-type')?.startsWith('image/jpeg'))
-        throw new Error('题图格式无效');
-      const bytes = Buffer.from(await response.arrayBuffer());
-      if (bytes.length > 16 * 1024 * 1024) throw new Error('题图过大');
+      const batch = await (await request('batch')).json();
+      if (batch.id !== grant.batchId) throw new Error('授权批次不匹配');
+      imagePartsVersion = batch.imagePartsVersion;
+      const data = await (await request(path)).json();
+      const images = await readReviewImages(request, args.itemId, imagePartsVersion);
       seen.add(args.itemId + ':' + data.fingerprint);
       return {
         content: [
-          { type: 'text', text: JSON.stringify(data) },
-          {
+          { type: 'text', text: JSON.stringify({ ...data, imageParts: images.length, imageInstructions: '按顺序查看全部图片，长图相邻分片边缘少量重叠，不得只看首片。' }) },
+          ...images.map(image => ({
             type: 'image',
             mimeType: 'image/jpeg',
-            data: bytes.toString('base64'),
-          },
+            data: Buffer.from(image.bytes).toString('base64'),
+            _meta: { 'codex/imageDetail': 'original' },
+          })),
         ],
       };
     }

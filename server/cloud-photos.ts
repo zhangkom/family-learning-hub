@@ -463,6 +463,11 @@ export async function cloudPhotoResponse(
   if (parts.length === 2 && parts[1] === 'name')
     return checkPhotoName(request, store, account);
   const photo = ownedCloudPhoto(store, account, parts[1]);
+  const studentId = new URL(request.url).searchParams.get('studentId');
+  if (studentId !== null) {
+    requireStudent(store, account, studentId);
+    if (photo.studentId !== studentId) throw new HttpError(404, '图片不属于当前学生');
+  }
   if (parts.length === 2) return json({ photo });
   if (!['file', 'thumbnail'].includes(parts[2]))
     throw new HttpError(404, '接口不存在');

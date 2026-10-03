@@ -21,7 +21,7 @@ import { getFamilyStore, type FamilyStore } from './family-store';
 import { learningResponse } from './learning-sessions';
 import { weaknessResponse } from './weakness-reports';
 import { studentOverview } from './student-overview';
-import { listScans, readScanFile } from './scan-files';
+import { listScans, readScanFile, scanImageRecord } from './scan-files';
 import {
   MobileError,
   mobileScan,
@@ -300,9 +300,11 @@ async function dispatch(
     );
   }
   if (parts[2] === 'file' && method === 'GET') {
-    return new Response(new Uint8Array(await readScanFile(owner, record.id)), {
+    const parameters = new URL(request.url).searchParams;
+    const imageRecord = scanImageRecord(store, owner, record, parameters.get('sha256'), parameters.get('revision'));
+    return new Response(new Uint8Array(await readScanFile(owner, record.id, imageRecord)), {
       headers: {
-        'Content-Type': record.mimeType,
+        'Content-Type': imageRecord.mimeType,
         'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(record.originalName)}`,
         'Cache-Control': 'no-store, private',
         'X-Content-Type-Options': 'nosniff',

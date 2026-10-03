@@ -141,6 +141,15 @@ describe('learning model validation',()=>{
     expect(JSON.stringify(stored.sourceRecord)).toBe(before);
     expect(learningById(store, 'a', session.id).sourceRecord.structuredQuestions![0].answerSteps).toEqual(steps);
   });
+  it('rejects a confirmed child when its shared source is unconfirmed, missing or pending', async () => {
+    const parent = { ...scan.questions[0], id: 'parent', confirmed: false, regions: [{ ...scan.questions[0].regions[0], id: 'parent-r' }] };
+    scan = (await ok(`scans/${scan.id}/review`, 'PUT', { revision: scan.revision, questions: [parent, { ...scan.questions[0], parentQuestionId: 'parent' }] })).scan;
+    expect((await call('learning-sessions', 'POST', createBody())).status).toBe(400);
+    scan = (await ok(`scans/${scan.id}/review`, 'PUT', { revision: scan.revision, questions: [parent, { ...scan.questions[1], parentQuestionId: undefined, sharedRegionIds: ['parent-r'] }] })).scan;
+    expect((await call('learning-sessions', 'POST', createBody())).status).toBe(400);
+    scan = (await ok(`scans/${scan.id}/review`, 'PUT', { revision: scan.revision, questions: scan.questions.map(q => ({ ...q, confirmed: true })) })).scan;
+    expect((await call('learning-sessions', 'POST', createBody())).status).toBe(202);
+  });
   it('rejects missing images, duplicate questions, fabricated grading evidence and empty confirmations',()=>{
     expect(()=>validateLearningTasks([{...draft(),prompt:'如图，求面积'}],1,'practice')).toThrow();
     expect(()=>validateLearningTasks([draft(),draft(),draft()],3,'practice')).toThrow();

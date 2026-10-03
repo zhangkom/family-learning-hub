@@ -59,7 +59,9 @@ if (result.status === 0) {
   const entry = 'dist/standalone/server.js';
   const launcher = readFileSync(entry, 'utf8');
   if (!launcher.includes('startProdServer({')) {
-    throw new Error('Unrecognized standalone launcher; cannot set runtime root.');
+    throw new Error(
+      'Unrecognized standalone launcher; cannot set runtime root.',
+    );
   }
   writeFileSync(
     entry,
@@ -105,6 +107,17 @@ if (result.status === 0) {
       outDir: 'dist/standalone/tools',
       emptyOutDir: false,
       rolldownOptions: { output: { entryFileNames: 'homework-import.mjs' } },
+    },
+  });
+  await build({
+    configFile: false,
+    build: {
+      ssr: resolve('server/homework-image-repair-cli.ts'),
+      outDir: 'dist/standalone/tools',
+      emptyOutDir: false,
+      rolldownOptions: {
+        output: { entryFileNames: 'homework-image-repair.mjs' },
+      },
     },
   });
 }

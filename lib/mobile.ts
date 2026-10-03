@@ -90,6 +90,8 @@ export type Question = {
   };
   number: string;
   prompt: string;
+  /** Summary locates an image question; full is explicitly checked text including diagram conditions. */
+  promptKind?: 'summary' | 'full';
   diagram: string;
   knowledgePoints: string[];
   parentQuestionId?: string;
@@ -229,6 +231,7 @@ export function validateQuestions(value: unknown): Question[] {
         : { subject: q.subject as LearningSubject }),
       number: text(q.number, 200),
       prompt: text(q.prompt),
+      ...(q.promptKind === undefined ? {} : { promptKind: q.promptKind === 'summary' || q.promptKind === 'full' ? q.promptKind : (() => { throw new Error('题干文字类型无效'); })() }),
       diagram: text(q.diagram),
       knowledgePoints: [
         ...new Set(list(q.knowledgePoints, 30).map((x) => text(x, 200))),

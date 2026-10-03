@@ -72,12 +72,17 @@ export function createCloudApi(api: FamilyApi) {
     if (subject ? !Array.isArray(data.documents) || data.documents.some(doc => doc.subject !== subject || !doc.id || !doc.title) : !Array.isArray(data.subjects) || !Number.isSafeInteger(data.unclassifiedCount)) throw new Error('作业目录读取不完整，请刷新');
     return data;
   }
+  async function photo(id: string, studentId: string, signal: AbortSignal) {
+    const data = await api.request<{ photo: CloudPhoto }>(`/cloud-photos/${encodeURIComponent(id)}?studentId=${encodeURIComponent(studentId)}`, 'GET', undefined, signal);
+    if (!data.photo || data.photo.id !== id || data.photo.studentId !== studentId) throw new Error('原件不属于当前学生，请返回重新读取');
+    return data.photo;
+  }
   async function blob(photo: CloudPhoto, original: boolean, signal: AbortSignal) {
     const controller = new AbortController(), abort = () => controller.abort(signal.reason);
     if (signal.aborted) abort(); else signal.addEventListener('abort', abort, { once: true });
     const timer = setTimeout(() => controller.abort(), 120000);
     try {
-      const path = original ? cloudFilePath(photo) : `/cloud-photos/${encodeURIComponent(photo.id)}/thumbnail`;
+      const path = `${original ? cloudFilePath(photo) : `/cloud-photos/${encodeURIComponent(photo.id)}/thumbnail`}?studentId=${encodeURIComponent(photo.studentId)}`;
       const response = await fetch(`${api.base}${path}`, { headers: { Authorization: `Bearer ${api.token}` }, signal: controller.signal, credentials: 'omit', cache: 'no-store', redirect: 'error' });
       if (response.status === 401) window.dispatchEvent(new CustomEvent(sessionExpiredEvent, { detail: { base: api.base, token: api.token } }));
       if (!response.ok) throw new ApiError(`图片读取未完成（${response.status}）`, response.status);
@@ -86,5 +91,5 @@ export function createCloudApi(api: FamilyApi) {
       return file;
     } finally { clearTimeout(timer); signal.removeEventListener('abort', abort); }
   }
-  return { limits, list, folders, upload, prepare, blob };
+  return { limits, list, folders, photo, upload, prepare, blob };
 }

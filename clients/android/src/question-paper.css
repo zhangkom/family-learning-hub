@@ -11,6 +11,11 @@
 .question-source summary { cursor:pointer; padding:10px 0; min-height:44px; }
 .question-source dl { display:grid; grid-template-columns:70px minmax(0,1fr); gap:6px 10px; margin:0 0 8px; line-height:1.6; }
 .question-source dd { margin:0; overflow-wrap:anywhere; }
+.source-originals { display:grid; gap:8px; margin-top:12px; }
+.source-originals > p { margin:0; line-height:1.6; }
+.source-originals > button { min-height:44px; width:100%; padding:10px 12px; text-align:left; white-space:normal; overflow-wrap:anywhere; font-size:13px; }
+.source-original-status { padding:10px; background:#f2f5fa; border-radius:10px; overflow-wrap:anywhere; }
+.source-original-status button { margin:4px 8px 0 0; min-height:44px; }
 @media (max-width:360px) { .paper-options { grid-template-columns:minmax(0,1fr); } }
 .question-image-recovery { margin:12px 0; padding:12px 14px; border:1px solid #dce5f4; border-radius:14px; background:#f5f8ff; }
 .question-image-recovery > div { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; }
@@ -30,7 +35,8 @@
 .question-image-viewer[open] { display:flex; flex-direction:column; }
 .question-image-viewer::backdrop { background:#10223bc9; }
 .question-image-viewer > header { flex:none; display:flex; align-items:center; justify-content:space-between; gap:12px; padding:calc(8px + var(--app-safe-top, 0px)) calc(12px + max(env(safe-area-inset-right,0px),var(--safe-area-inset-right,0px))) 8px calc(12px + max(env(safe-area-inset-left,0px),var(--safe-area-inset-left,0px))); border-bottom:1px solid #dce4f1; background:white; }
-.question-image-viewer > header strong { font-size:16px; }
+.question-image-viewer > header strong { font-size:16px; overflow-wrap:anywhere; }
+.question-image-viewer > header button { flex-shrink:0; }
 .question-image-viewer button { display:inline-flex; justify-content:center; align-items:center; gap:4px; min-width:44px; min-height:44px; padding:8px 12px; font:600 14px/1.4 system-ui,sans-serif; }
 .question-viewer-tools { display:flex; flex:none; justify-content:center; align-items:center; gap:8px; padding:8px 12px 0; background:white; }
 .question-viewer-tools output { min-width:52px; text-align:center; font-variant-numeric:tabular-nums; }

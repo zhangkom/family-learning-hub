@@ -6,6 +6,10 @@ import { sourcePageLabel } from './source-location';
 import { questionPrompt, questionRectangles, questionTextLayout, type QuestionRectangle } from './question-presentation';
 import { type QuestionImage, type QuestionImageState, type QuestionImages } from './question-images';
 import { QuestionImageViewer } from './QuestionImageViewer';
+import type { FamilyApi } from './api';
+import { SourceOriginals } from './SourceOriginals';
+import { questionIsSummary } from '../../../lib/question-context';
+import { questionImageIdentity } from './question-image-identity';
 import './question-paper.css';
 
 function CroppedRegions({ image, rectangles, label, onImageError, onOpen }: { image: QuestionImage; rectangles: QuestionRectangle[]; label: string; onImageError?: () => void; onOpen: () => void }) {
@@ -23,7 +27,7 @@ function PaperText({ text }: { text: string }) {
   </div>}</>;
 }
 
-export function QuestionSource({ scan, question }: { scan: Scan; question: Question }) {
+export function QuestionSource({ scan, question, api, owner }: { scan: Scan; question: Question; api?: FamilyApi; owner?: string }) {
   const parent = scan.questions.find(q => q.id === question.parentQuestionId && q.id !== question.id);
   const source = question.sourcePage || scan.sourcePage;
   const location = question.sourcePage?.majorNumber ? `第 ${question.sourcePage.majorNumber} 大题${question.sourcePage.subNumber ? ` · 第 ${question.sourcePage.subNumber} 小题` : ''}` : `${parent ? `第 ${parent.number || '待核对'} 大题 · ` : ''}第 ${question.number || '待核对'} 题`;
@@ -35,7 +39,7 @@ export function QuestionSource({ scan, question }: { scan: Scan; question: Quest
     <dt>来源说明</dt><dd>{scan.source || '未登记'}</dd>
     {source?.sourceParts && <><dt>关联原页</dt><dd>{[...new Map(source.sourceParts.map(part => [part.photoId, part])).values()].map(part => <div key={part.photoId}>{part.title || source.title} · {part.pageRole === 'answer-sheet' ? '答题卡 · ' : ''}{part.paperPageNumber ? `第 ${part.paperPageNumber} 页 · ` : ''}{part.originalName || '原文件名未记录'}</div>)}</dd></>}
     {question.paperMark && <><dt>收录依据</dt><dd>{question.paperMark.evidence.map(item => item.text).join('；') || '纸面标记核对'}<small>按纸面批改标记收录，不作为独立测验成绩。</small></dd></>}
-  </dl></details>;
+  </dl>{source && api && owner && <SourceOriginals key={`${owner}/${scan.studentId}/${question.id}/${source.photoId}`} api={api} owner={owner} scan={scan} source={source} />}</details>;
 }
 
 export function QuestionPaper({ question, questions, image, original, onImageError, onViewerChange }: {
@@ -49,7 +53,7 @@ export function QuestionPaper({ question, questions, image, original, onImageErr
   const parent = questions.find(q => q.id === question.parentQuestionId && q.id !== question.id);
   const shared = questions.flatMap(q => q.regions).filter(r => question.sharedRegionIds?.includes(r.id));
   // Without a separately marked figure, a text reconstruction could silently lose a diagram.
-  const typeset = !original && question.confirmed && (!parent || parent.confirmed) && !!prompt && figures.length > 0 && !shared.some(r => r.kind === 'stem');
+  const typeset = !original && !questionIsSummary(question) && question.confirmed && (!parent || parent.confirmed && !questionIsSummary(parent)) && !!prompt && figures.length > 0 && !shared.some(r => r.kind === 'stem');
   const rectangles = questionRectangles(question, questions, original ? 'original' : 'paper');
   const brokenContext = (!!question.parentQuestionId && !parent) || question.sharedRegionIds?.some(id => !questions.some(q => q.regions.some(r => r.id === id)));
   return <div className={`question-paper ${original ? 'is-original' : 'is-typeset'}`}>
@@ -63,19 +67,22 @@ export function QuestionPaper({ question, questions, image, original, onImageErr
       {!original && <small>原题题框（含配图）</small>}<CroppedRegions image={image} rectangles={rectangles} label={original ? '这道题的原图题框' : '原题题干与配图'} onImageError={onImageError} onOpen={openImage} />
     </div> : <>{!original && prompt && <PaperText text={prompt} />}</>}
     {!rectangles.length && <p className="paper-image-note">尚未框选题图，可进入详情补充。</p>}
+    {questionIsSummary(question) && !image?.url && <p className="paper-image-note">文字仅为定位摘要，完整题目以题图为准。</p>}
     {!!image?.url && rectangles.length > 0 && <button type="button" className="question-enlarge" onClick={openImage}><ZoomIn size={16} />放大题图</button>}
     {brokenContext && <output className="paper-incomplete">共用题干或配图的来源不完整，请进入详情核对。</output>}
     {expanded && image && <QuestionImageViewer image={image} rectangles={questionRectangles(question, questions, 'original')} number={question.number} onClose={() => setViewer(undefined)} onImageError={onImageError} />}
   </div>;
 }
 
-export function QuestionCard({ scan, question, images, onOpen, actions }: {
-  scan: Scan; question: Question; images: QuestionImages; onOpen: () => void; actions?: ReactNode;
+export function QuestionCard({ scan, question, images, onOpen, actions, api, owner }: {
+  scan: Scan; question: Question; images: QuestionImages; onOpen?: () => void; actions?: ReactNode; api?: FamilyApi; owner?: string;
 }) {
   const ref = useRef<HTMLElement>(null);
   const size = useRef<{ width: number; height: number } | undefined>(undefined);
   const [nearby, setNearby] = useState(false), [original, setOriginal] = useState(false), [expanded, setExpanded] = useState(false);
-  const [state, setState] = useState<QuestionImageState>({ status: 'loading' });
+  const identity = questionImageIdentity(scan);
+  const [result, setResult] = useState<{ identity: string; state: QuestionImageState }>();
+  const state: QuestionImageState = result?.identity === identity ? result.state : { status: 'loading' };
   const hasRegions = questionRectangles(question, scan.questions, 'original').length > 0;
   useEffect(() => {
     const node = ref.current; if (!node) return;
@@ -86,8 +93,8 @@ export function QuestionCard({ scan, question, images, onOpen, actions }: {
   const wantsImage = (nearby || original || expanded) && hasRegions;
   useEffect(() => {
     if (!wantsImage) return;
-    return images.subscribe(scan, setState);
-  }, [images, wantsImage, scan]);
+    return images.subscribe(scan, state => setResult({ identity, state }));
+  }, [images, wantsImage, scan, identity]);
   const status = question.tutoring?.status;
   const summary = status === 'needs_review' ? question.tutoring?.review?.status === 'confirmed' ? '讲解已核对' : 'AI 分析待核对'
     : status === 'failed' ? '分析未完成 · 可重试' : status === 'stale' ? '题目已修改 · 需重新分析'
@@ -107,8 +114,8 @@ export function QuestionCard({ scan, question, images, onOpen, actions }: {
       <small>恢复题图后才能查看完整题目。</small>
       <button type="button" onClick={() => images.retry(scan.id, true)}>{Capacitor.getPlatform() === 'android' ? '重试恢复题图' : '重试读取'}</button>
       {Capacitor.getPlatform() === 'android' && <small>本机没有可用副本时，从服务器恢复并保存；同页题目共用。</small>}</div>}
-    <QuestionSource scan={scan} question={question} />
+    <QuestionSource scan={scan} question={question} api={api} owner={owner} />
     {actions}
-    <footer className="question-card-footer"><small>{summary}</small><button type="button" onClick={onOpen}>题目详情 <ChevronRight size={15} /></button></footer>
+    <footer className="question-card-footer"><small>{summary}</small>{onOpen && <button type="button" onClick={onOpen}>题目详情 <ChevronRight size={15} /></button>}</footer>
   </article>;
 }

@@ -185,6 +185,13 @@ async function photo(
 }
 
 describe('private cloud photo API', () => {
+  it('checks the explicitly requested current student for metadata, original and thumbnail reads', async () => {
+    const p = await photo(), sibling = store.addStudent(account, '同家庭另一学生').id;
+    for (const suffix of ['', '/file', '/thumbnail']) {
+      expect((await call(`cloud-photos/${p.id}${suffix}?studentId=${sibling}`)).status).toBe(404);
+      expect((await call(`cloud-photos/${p.id}${suffix}?studentId=${child}`)).status).toBe(200);
+    }
+  });
   it('keeps original bytes and the receipt in sync when Windows publication is briefly busy', async () => {
     const b = await batch(), bytes = await jpeg(), originalRename = (await vi.importActual<typeof import('node:fs')>('node:fs')).renameSync;
     let attempts = 0;

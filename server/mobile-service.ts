@@ -352,6 +352,7 @@ export async function reviewMobileScan(
         };
       return {
         ...q,
+        ...(q.promptKind === undefined && before.promptKind ? { promptKind: before.promptKind } : {}),
         ...(before.wrongBook ? { wrongBook: before.wrongBook } : {}),
         ...(before.focusBook ? { focusBook: before.focusBook } : {}),
         ...(before.paperMark ? { paperMark: before.paperMark } : {}),

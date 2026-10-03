@@ -5,6 +5,15 @@ const scan = (id: string) => ({ id } as Scan);
 const image = (url: string): QuestionImage => ({ url, width: 800, height: 1200 });
 const tick = () => new Promise(resolve => setTimeout(resolve, 0));
 describe('question images lifetime', () => {
+  it('invalidates an equal-size cached image when its authoritative hash changes, but not on a text revision', async () => {
+    const old = { ...scan('same'), size: 100, sourcePage: { scanSha256: 'a'.repeat(64) } } as Scan;
+    const next = { ...old, sourcePage: { ...old.sourcePage!, scanSha256: 'b'.repeat(64) } };
+    const loader = vi.fn(async (s: Scan) => image(s.sourcePage!.scanSha256!)), revoke = vi.fn(), listener = vi.fn();
+    const store = new QuestionImages(loader, revoke); const stop = store.subscribe(old, vi.fn()); await tick(); stop();
+    store.subscribe({ ...old, revision: 20 }, vi.fn()); await tick(); expect(loader).toHaveBeenCalledTimes(1);
+    store.subscribe(next, listener); await tick(); expect(loader).toHaveBeenCalledTimes(2);
+    expect(revoke).toHaveBeenCalledWith(image('a'.repeat(64))); expect(listener).toHaveBeenLastCalledWith({ status: 'ready', image: image('b'.repeat(64)) }); store.dispose();
+  });
   it('shares batch recovery with an active card and reuses a ready image', async () => {
     let complete!: (result: QuestionImage) => void;
     const loader = vi.fn(() => new Promise<QuestionImage>(resolve => { complete = resolve; }));

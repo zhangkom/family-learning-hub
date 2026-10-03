@@ -26,7 +26,7 @@ import {
   rollbackProposal,
 } from './admin-service';
 import { readScanFile } from './scan-files';
-import { cropQuestionImage } from './question-crop';
+import { cropQuestionImage, cropQuestionImages } from './question-crop';
 import { questionsOf } from './mobile-service';
 import { REVIEW_GUIDE } from '../lib/admin';
 import { cloudPhotoResponse } from './cloud-photos';
@@ -191,7 +191,7 @@ async function dispatchAdmin(
         scanId,
         questionId,
       );
-      const bytes = await readScanFile(owner, scan.id);
+      const bytes = await readScanFile(owner, scan.id, scan);
       const image = await cropQuestionImage(bytes, question, all);
       administrator(request, store);
       audit(
@@ -234,6 +234,7 @@ async function dispatchAdmin(
       const bytes = await readScanFile(
         store.scanOwner(item.accountId),
         item.scanId,
+        item.snapshot.scan,
       );
       const image = await cropQuestionImage(
         bytes,
@@ -314,6 +315,7 @@ async function dispatchReview(
       title: batch.title,
       expiresAt: batch.expiresAt,
       instructions: REVIEW_GUIDE,
+      imagePartsVersion: 1,
       items: batch.items.map((item) => ({
         id: item.id,
         number: item.snapshot.question.number,
@@ -326,7 +328,7 @@ async function dispatchReview(
     return json(externalItem(store, access.batchId, parts[1]));
   if (
     parts[0] === 'items' &&
-    parts[2] === 'image' &&
+    ['image', 'images'].includes(parts[2]) &&
     parts.length === 3 &&
     request.method === 'GET'
   ) {
@@ -337,12 +339,11 @@ async function dispatchReview(
     const bytes = await readScanFile(
       store.scanOwner(item.accountId),
       item.scanId,
+      item.snapshot.scan,
     );
-    const image = await cropQuestionImage(
-      bytes,
-      item.snapshot.question,
-      questionsOf(item.snapshot.scan),
-    );
+    const part = new URL(request.url).searchParams.get('part');
+    const images = parts[2] === 'images' || part !== null ? await cropQuestionImages(bytes, item.snapshot.question, questionsOf(item.snapshot.scan)) : undefined;
+    if (part !== null && (!/^\d+$/.test(part) || !images?.[Number(part)])) throw new HttpError(404, '题图分片不存在');
     reviewToken(store, token);
     audit(
       store,
@@ -350,7 +351,8 @@ async function dispatchReview(
       'external-read-image',
       `${access.batchId}/${item.id}`,
     );
-    return imageResponse(image);
+    if (parts[2] === 'images') return json({ parts: images!.map((image, index) => ({ index, size: image.byteLength })) });
+    return imageResponse(images ? images[Number(part)] : await cropQuestionImage(bytes, item.snapshot.question, questionsOf(item.snapshot.scan)));
   }
   if (
     parts[0] === 'items' &&

@@ -228,6 +228,7 @@ function fingerprint(scan: ScanRecord, q: Question) {
     rotation: scan.rotation,
     size: scan.size,
     mimeType: scan.mimeType,
+    imageVersion: scan.sourcePage?.scanSha256,
     question: q,
     context: questionContext(q, questionsOf(scan)),
   });
@@ -496,7 +497,7 @@ export function applyProposal(
     const result = item.proposal.result;
     const next: Question = {
       ...question,
-      ...(body.updatePrompt ? { prompt: result.transcribedPrompt } : {}),
+      ...(body.updatePrompt ? { prompt: result.transcribedPrompt, promptKind: 'full' as const } : {}),
       referenceAnswer: result.referenceAnswer,
       explanation: result.explanation,
       knowledgePoints: item.proposal.knowledgePoints,

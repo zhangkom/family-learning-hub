@@ -3,6 +3,7 @@ import type { FamilyApi } from '../api';
 import { getOriginal, readConfirmedUpload } from './index';
 import { recoveredImages, type ImageScan } from './recovered-image';
 import { decodeQuestionImage } from '../question-images';
+import { questionImageHash } from '../question-image-identity';
 
 function waitForPhotoWorker(signal: AbortSignal) {
   return new Promise<void>((resolve, reject) => {
@@ -13,7 +14,7 @@ function waitForPhotoWorker(signal: AbortSignal) {
   });
 }
 
-async function getReviewOriginal(owner: string, originalId: string, signal: AbortSignal) {
+export async function getReviewOriginal(owner: string, originalId: string, signal: AbortSignal) {
   // The native photo worker is shared with the home page's recovery/list reads.
   // Retry only its explicit transient busy response, never a missing/corrupt file.
   for (let attempt = 0; ; attempt++) {
@@ -30,12 +31,16 @@ async function getReviewOriginal(owner: string, originalId: string, signal: Abor
 /** Use the exact local image first. Question views allow recovery; local-only callers can still pass false. */
 export async function loadReviewImage(api: FamilyApi, owner: string, scan: ImageScan, allowCloud: boolean, signal: AbortSignal) {
   signal.throwIfAborted();
-  if (Capacitor.getPlatform() !== 'android') return { file: await api.image(scan.id, signal), source: 'cloud' as const };
+  if (Capacitor.getPlatform() !== 'android') {
+    const file = await api.image(scan.id, signal, scan.sourcePage?.scanSha256, scan.imageRevision);
+    if (questionImageHash(scan)) await recoveredImages.verify(scan, file, signal);
+    return { file, source: 'cloud' as const };
+  }
   recoveredImages.validate(owner, scan);
   const processing = scan.processing;
   if (processing && processing.studentId !== scan.studentId) throw new Error('题图学生归属不匹配，请刷新题目');
   let localError: unknown = new Error('当前手机尚未保存这张题图，请点击恢复；恢复后保存在本机');
-  if (scan.sourceKind === 'processed-photo' && processing) {
+  if (scan.sourceKind === 'processed-photo' && processing && processing.sha256 === questionImageHash(scan)) {
     try {
       const original = await getReviewOriginal(owner, processing.originalId, signal);
       signal.throwIfAborted();
@@ -58,7 +63,7 @@ export async function loadReviewImage(api: FamilyApi, owner: string, scan: Image
   const timer = setTimeout(() => recovery.abort(new Error('题图恢复超时，请检查网络后重试')), 45000);
   try {
     signal.throwIfAborted();
-    const file = await api.image(scan.id, recovery.signal);
+    const file = await api.image(scan.id, recovery.signal, scan.sourcePage?.scanSha256, scan.imageRevision);
     const decoded = await decodeQuestionImage(file, recovery.signal); URL.revokeObjectURL(decoded.url);
     recovery.signal.throwIfAborted();
     await recoveredImages.save(owner, scan, file, recovery.signal);

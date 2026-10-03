@@ -70,7 +70,7 @@ function external(path: string, token: string, body?: unknown) {
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     }),
-    path.split('/'),
+    path.split('?')[0].split('/'),
     store,
   );
 }
@@ -301,6 +301,21 @@ describe('platform administration', () => {
   });
 });
 describe('selected-batch desktop review', () => {
+  it('rejects applying a proposal after only the underlying image version has changed', async () => {
+    const b = batch(), grant = createReviewToken(store, 'admin-id', b.id), item = b.items[0];
+    const proposed = await (await external(`items/${item.id}/proposal`, grant.token, input(item))).json() as ReviewItem;
+    writeStoredScan(store, 'legacy-owner', { ...scan, revision: 2, sourcePage: { documentId: 'synthetic-doc', photoId: 'synthetic-photo', title: '合成资料', subject: '数学', pageNumber: 1, pageCount: 1, revision: 1, scanSha256: 'a'.repeat(64) } }, 'synthetic');
+    expect((await call(`batches/${b.id}/items/${item.id}/apply`, { proposalHash: proposed.proposalHash })).status).toBe(409);
+  });
+  it('exports all readable image parts only inside the selected batch', async () => {
+    const b = batch(), grant = createReviewToken(store, 'admin-id', b.id), item = b.items[0];
+    expect((await (await external('batch', grant.token)).json() as { imagePartsVersion: number }).imagePartsVersion).toBe(1);
+    const response = await external(`items/${item.id}/images`, grant.token); expect(response.status).toBe(200);
+    const data = await response.json() as { parts: { index: number; size: number }[] }; expect(data.parts).toHaveLength(1); expect(data.parts[0]).toMatchObject({ index: 0 });
+    expect((await external(`items/${item.id}/image?part=0`, grant.token)).status).toBe(200);
+    expect((await external(`items/${item.id}/image?part=1`, grant.token)).status).toBe(404);
+    expect((await external(`items/${randomUUID()}/images`, grant.token)).status).toBe(404);
+  });
   it('limits external grants to chosen items, redacts account identities, forbids publishing and cookie fallback', async () => {
     const b = batch(),
       grant = createReviewToken(store, 'admin-id', b.id),

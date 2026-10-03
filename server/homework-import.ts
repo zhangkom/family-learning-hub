@@ -268,7 +268,7 @@ function sourceOf(
   };
 }
 
-async function compositeParts(
+export async function compositeParts(
   store: FamilyStore,
   account: string,
   student: string,
@@ -746,6 +746,7 @@ export async function importHomeworkManifest(
               focus = ['focus', 'both'].includes(mark.classification);
             merged.set(q.id, {
               ...q,
+              ...(/^题目定位摘要[：:]/.test(q.prompt.trim()) ? { promptKind: 'summary' as const } : {}),
               ...(q.referenceAnswer === undefined && old?.referenceAnswer
                 ? { referenceAnswer: old.referenceAnswer }
                 : {}),

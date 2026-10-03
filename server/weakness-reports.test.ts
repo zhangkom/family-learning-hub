@@ -62,6 +62,20 @@ beforeEach(() => {
 afterEach(() => { store.close(); vi.unstubAllEnvs(); vi.unstubAllGlobals(); expect(root.startsWith(resolve('work') + sep)).toBe(true); rmSync(root, { recursive: true, force: true }); });
 
 describe('weakness analysis API and persistent worker', () => {
+  it('excludes locator summaries until complete text and image conditions are explicitly adopted and confirmed', async () => {
+    update([{ ...question(1), prompt: '题目定位摘要：含跨页图表的合成题' }, { ...question(2), promptKind: 'summary' }]);
+    let m = await overview(); expect(m.materials).toMatchObject({ total: 2, eligible: 0, selected: 0, needsReview: 2 });
+    expect(m.materials.pendingSources.every(source => source.reason.includes('完整题干、选项与图示条件'))).toBe(true);
+    expect((await call('weakness-reports', 'POST', { requestId: randomUUID(), studentId: student, materialVersion: m.materials.version })).status).toBe(400);
+    update([{ ...question(1), promptKind: 'full' }, { ...question(2), promptKind: 'full', confirmed: false }]);
+    m = await overview(); expect(m.materials).toMatchObject({ selected: 1, needsReview: 1 });
+    update([{ ...question(1), promptKind: 'full' }, { ...question(2), promptKind: 'full' }]); expect((await overview()).materials.selected).toBe(2);
+  });
+  it('rejects a pre-upgrade queued summary snapshot before any model request', async () => {
+    const report = weaknessById(store, 'a', (await start()).id);
+    report.input[0].prompt = '题目定位摘要：旧任务中的不完整文字';
+    await expect(analyzeWeakness(report, {})).rejects.toThrow('定位摘要'); expect(fetch).not.toHaveBeenCalled();
+  });
   it('analyzes real wrong-book inputs once and returns evidence links without internal model material', async () => {
     const m = await overview(); expect(m.materials).toMatchObject({ total: 2, selected: 2, needsReview: 0 });
     expect(m.axes).toHaveLength(42); expect(m.axes.every(a => a.score === null)).toBe(true);
@@ -212,6 +226,9 @@ describe('weakness analysis API and persistent worker', () => {
     store.db.prepare('INSERT INTO learning_sessions VALUES (?,?,?,?,?,?,?)').run(session.id, 'a', student, randomUUID(), 'synthetic', now, JSON.stringify(session));
     update(scan.structuredQuestions!, { confirmedAt: now });
     let input = weaknessMaterials(store, 'a', student, '').sources[0]; expect(input.studentEvidence[0]).toMatchObject({ result: 'retest:correct', mode: 'challenge' });
+    update(scan.structuredQuestions!, { sourcePage: { documentId: 'synthetic-doc', photoId: 'synthetic-photo', title: '合成资料', subject: '数学', pageNumber: 1, pageCount: 1, revision: 1, scanSha256: 'a'.repeat(64) } });
+    expect(weaknessMaterials(store, 'a', student, '').sources[0].studentEvidence).toEqual([]);
+    update(scan.structuredQuestions!, { sourcePage: undefined });
     update(scan.structuredQuestions!.map(q => q.id === 'q1' ? { ...q, prompt: '实际条件已改动' } : q));
     input = weaknessMaterials(store, 'a', student, '').sources[0]; expect(input.studentEvidence).toEqual([]);
   });
