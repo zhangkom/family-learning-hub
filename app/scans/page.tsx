@@ -1,5 +1,5 @@
-'use client';
-import { ScanWorkspace } from '@/app/components/scan-workspace';
-export default function ScansPage() {
-  return <ScanWorkspace />;
-}
+import { redirect } from 'next/navigation';
+import { appPath } from '@/lib/deployment';
+
+// Bookmarks from the earlier site open the corresponding shared learning view.
+export default function LegacyPage() { redirect(appPath('/#/questions?view=photos')); }

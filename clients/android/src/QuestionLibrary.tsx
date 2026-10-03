@@ -1,3 +1,4 @@
+import { isHostedWeb } from './hosted-web';
 import type { LearningMode, LearningSummary } from '../../../lib/learning-session';
 import { learningProgress } from './learning-history';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
@@ -53,7 +54,7 @@ export function QuestionLibrary({ api, owner, studentId, records, mode, onMode, 
       {mode === 'wrong' && <nav className="collection-filters" aria-label="按收录类型筛选">{([{ id: 'all', label: '全部收录' }, { id: 'wrong', label: '错题' }, { id: 'focus', label: '重点题' }] as const).map(item => <button key={item.id} className={collection === item.id ? 'selected' : ''} aria-pressed={collection === item.id} onClick={() => onContext({ ...context, collection: item.id })}>{item.label}</button>)}</nav>}
       {mode === 'wrong' && visible.length > 0 && <div className="worksheet-entry"><button type="button" onClick={() => setExporting(true)}>导出 Word</button></div>}
     </>}
-    {mode === 'wrong' && Capacitor.getPlatform() === 'android' && <QuestionImageRecovery key={`${owner}/${studentId}`} studentId={studentId} records={records} images={images} />}
+    {mode === 'wrong' && (Capacitor.getPlatform() === 'android' || isHostedWeb) && <QuestionImageRecovery key={`${owner}/${studentId}`} studentId={studentId} records={records} images={images} />}
     {mode === 'wrong' && <section className="wrong-book" aria-label="错题本">{visible.length ? visible.map(questionCard) : <div className="empty-records"><BookOpen size={28} /><p>{refreshing ? '正在读取题目…' : wrong.length ? `${activeSubject === '全部' ? '当前' : activeSubject}还没有${collection === 'focus' ? '收录的重点题' : collection === 'wrong' ? '收录的错题' : '收录的题目'}。` : records.length ? '照片已保存，框选题目并收录后会出现在这里。' : '还没有错题，先从首页录入。'}</p>{records.length > 0 && <button onClick={() => onMode('photos')}>整理原题照片 <ChevronRight size={14} /></button>}</div>}</section>}
     {mode === 'knowledge' && <WeaknessView key={activeSubject} api={api} owner={owner} studentId={studentId} subject={activeSubject === '全部' ? '' : activeSubject} records={records} onOpen={onOpen} onLearn={onLearn}
       selectedDimension={context.dimension} onSelectDimension={dimension => onContext({ ...context, dimension })} />}

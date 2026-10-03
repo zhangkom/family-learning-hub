@@ -2,6 +2,10 @@ import { createHash, randomBytes } from 'node:crypto';
 import { Buffer } from 'node:buffer';
 import {
   currentUser,
+  currentFamilySession,
+  issueFamilySession,
+  loginFamily,
+  logoutFamilySession,
   familyNeedsSetup,
   setupFirstFamily,
   registerFamily,
@@ -170,7 +174,8 @@ async function dispatch(
   user: FamilyUser,
 ) {
   const method = request.method;
-  if (parts[0] === 'worksheets') return worksheetResponse(request, parts, store, user.id);
+  if (parts[0] === 'worksheets')
+    return worksheetResponse(request, parts, store, user.id);
   if (parts[0] === 'learning-sessions')
     return learningResponse(request, parts, store, user.id);
   if (parts[0] === 'weakness-reports')
@@ -252,7 +257,13 @@ async function dispatch(
   if (
     parts.length === 5 &&
     parts[2] === 'questions' &&
-    ['wrong-book', 'explain', 'analysis-review', 'collection-review', 'difficulty'].includes(parts[4])
+    [
+      'wrong-book',
+      'explain',
+      'analysis-review',
+      'collection-review',
+      'difficulty',
+    ].includes(parts[4])
   ) {
     if (method !== 'POST') throw new HttpError(405, '请求方式不支持');
     if (!store.allow(`question-action:${user.id}`, 60, 60000))
@@ -261,8 +272,24 @@ async function dispatch(
       request,
       parts[4] === 'analysis-review' ? 65536 : 8192,
     );
-    if (parts[4] === 'collection-review') return json({ scan: present(await reviewCollection(store, user.id, record.id, parts[3], body)) });
-    if (parts[4] === 'difficulty') return json({ scan: present(await setQuestionDifficulty(store, user.id, record.id, parts[3], body)) });
+    if (parts[4] === 'collection-review')
+      return json({
+        scan: present(
+          await reviewCollection(store, user.id, record.id, parts[3], body),
+        ),
+      });
+    if (parts[4] === 'difficulty')
+      return json({
+        scan: present(
+          await setQuestionDifficulty(
+            store,
+            user.id,
+            record.id,
+            parts[3],
+            body,
+          ),
+        ),
+      });
     if (parts[4] === 'analysis-review')
       return json({
         scan: present(
@@ -307,16 +334,25 @@ async function dispatch(
   }
   if (parts[2] === 'file' && method === 'GET') {
     const parameters = new URL(request.url).searchParams;
-    const imageRecord = scanImageRecord(store, owner, record, parameters.get('sha256'), parameters.get('revision'));
-    return new Response(new Uint8Array(await readScanFile(owner, record.id, imageRecord)), {
-      headers: {
-        'Content-Type': imageRecord.mimeType,
-        'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(record.originalName)}`,
-        'Cache-Control': 'no-store, private',
-        'X-Content-Type-Options': 'nosniff',
-        'X-Frame-Options': 'SAMEORIGIN',
+    const imageRecord = scanImageRecord(
+      store,
+      owner,
+      record,
+      parameters.get('sha256'),
+      parameters.get('revision'),
+    );
+    return new Response(
+      new Uint8Array(await readScanFile(owner, record.id, imageRecord)),
+      {
+        headers: {
+          'Content-Type': imageRecord.mimeType,
+          'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(record.originalName)}`,
+          'Cache-Control': 'no-store, private',
+          'X-Content-Type-Options': 'nosniff',
+          'X-Frame-Options': 'SAMEORIGIN',
+        },
       },
-    });
+    );
   }
   if (parts[2] === 'recognize' && method === 'POST') {
     const body = await readJson(request, 8192);
@@ -348,13 +384,15 @@ async function handle(
   let headers: Record<string, string> = {};
   try {
     if (!web) headers = cors(request);
+    // Cookie credentials need CSRF protection even before authentication:
+    // login, registration and initial setup can otherwise be login-CSRF targets.
+    if (web && request.method !== 'GET') sameOrigin(request);
     if (!web && request.method === 'OPTIONS')
       return new Response(null, {
         status: 204,
         headers: { ...headers, 'Cache-Control': 'no-store' },
       });
     if (
-      !web &&
       parts.join('/') === 'setup' &&
       request.method === 'GET' &&
       !injected &&
@@ -369,7 +407,7 @@ async function handle(
       throw new HttpError(503, '私人学习空间尚未配置');
     const store = injected || getFamilyStore();
     let response: Response;
-    if (!web && parts.join('/') === 'setup') {
+    if (parts.join('/') === 'setup') {
       if (request.method !== 'GET') throw new HttpError(405, '请求方式不支持');
       response = json({
         enabled: true,
@@ -385,28 +423,80 @@ async function handle(
         questionDifficultyVersion: 1,
         worksheetExportVersion: 1,
       });
-    } else if (!web && parts.join('/') === 'session/register') {
+    } else if (web) {
+      const path = parts.join('/');
+      const presentSession = (user: FamilyUser, expiresAt: string) => {
+        const admin = store.db
+          .prepare(
+            'SELECT must_change_password FROM platform_admins WHERE account_id=?',
+          )
+          .get(user.id);
+        return {
+          user,
+          expiresAt,
+          capabilities: {
+            admin: !!admin,
+            adminPasswordChangeRequired: !!admin?.must_change_password,
+          },
+        };
+      };
+      const issue = (user: FamilyUser) =>
+        issueFamilySession(user, store, presentSession);
+      if (
+        [
+          'session/register',
+          'session/setup',
+          'session/login',
+          'session/logout',
+        ].includes(path)
+      ) {
+        if (request.method !== 'POST')
+          throw new HttpError(405, '请求方式不支持');
+        if (path === 'session/register')
+          response = await registerFamily(request, store, issue);
+        else if (path === 'session/setup')
+          response = await setupFirstFamily(request, store, issue);
+        else if (path === 'session/login')
+          response = await loginFamily(request, store, issue);
+        else response = logoutFamilySession(request, store);
+      } else {
+        const session = currentFamilySession(request, store);
+        if (!session) throw new HttpError(401, '请先登录家庭账号');
+        if (path === 'session' || path === 'session/me') {
+          if (request.method !== 'GET')
+            throw new HttpError(405, '请求方式不支持');
+          response = json(presentSession(session.user, session.expiresAt));
+        } else if (
+          parts.length === 2 &&
+          parts[0] === 'account' &&
+          (parts[1] === 'username' || parts[1] === 'password')
+        ) {
+          response = await updateAccountCredentials(
+            request,
+            store,
+            session.user,
+            parts[1],
+            () => {
+              if (currentUser(request, store)?.id !== session.user.id)
+                throw new HttpError(401, '登录已过期，请重新登录');
+            },
+            issue,
+          );
+        } else response = await dispatch(request, parts, store, session.user);
+      }
+    } else if (parts.join('/') === 'session/register') {
       if (request.method !== 'POST') throw new HttpError(405, '请求方式不支持');
       response = await registerFamily(request, store, (user, deviceName) =>
         issueMobileSession(user, store, deviceName),
       );
-    } else if (!web && parts.join('/') === 'session/setup') {
+    } else if (parts.join('/') === 'session/setup') {
       if (request.method !== 'POST') throw new HttpError(405, '请求方式不支持');
       response = await setupFirstFamily(request, store, (user) =>
         issueMobileSession(user, store),
       );
-    } else if (
-      !web &&
-      parts.join('/') === 'session/login' &&
-      request.method === 'POST'
-    )
+    } else if (parts.join('/') === 'session/login' && request.method === 'POST')
       response = await login(request, store);
-    else if (web) {
-      const user = currentUser(request, store);
-      if (!user) throw new HttpError(401, '请先登录家庭账号');
-      if (request.method !== 'GET') sameOrigin(request);
-      response = await dispatch(request, parts, store, user);
-    } else {
+    else {
       const session = bearer(request, store);
       if (parts.join('/') === 'session' && request.method === 'GET')
         response = json({ user: session.user, expiresAt: session.expiresAt });

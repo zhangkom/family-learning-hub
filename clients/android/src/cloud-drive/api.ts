@@ -83,7 +83,7 @@ export function createCloudApi(api: FamilyApi) {
     const timer = setTimeout(() => controller.abort(), 120000);
     try {
       const path = `${original ? cloudFilePath(photo) : `/cloud-photos/${encodeURIComponent(photo.id)}/thumbnail`}?studentId=${encodeURIComponent(photo.studentId)}`;
-      const response = await fetch(`${api.base}${path}`, { headers: { Authorization: `Bearer ${api.token}` }, signal: controller.signal, credentials: 'omit', cache: 'no-store', redirect: 'error' });
+      const response = await fetch(`${api.base}${path}`, { ...api.authentication(), signal: controller.signal, cache: 'no-store', redirect: 'error' });
       if (response.status === 401) window.dispatchEvent(new CustomEvent(sessionExpiredEvent, { detail: { base: api.base, token: api.token } }));
       if (!response.ok) throw new ApiError(`图片读取未完成（${response.status}）`, response.status);
       const file = await response.blob(); signal.throwIfAborted();

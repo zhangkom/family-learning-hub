@@ -1,30 +1,5 @@
-import { notFound } from 'next/navigation';
-import { PrintableWorksheet } from '@/app/components/printable-worksheet';
-import { juniorPracticeSheets } from '@/lib/practice';
+import { redirect } from 'next/navigation';
+import { appPath } from '@/lib/deployment';
 
-export default async function XiaobaoWorksheetPage({
-  params,
-}: {
-  params: Promise<{ sheetId: string }>;
-}) {
-  const { sheetId } = await params;
-  const index = juniorPracticeSheets.findIndex((sheet) => sheet.id === sheetId);
-  if (index < 0) notFound();
-  const sheet = juniorPracticeSheets[index];
-  return (
-    <PrintableWorksheet
-      sheet={sheet}
-      hubHref="/xiaobao/practice"
-      previousHref={
-        index > 0
-          ? `/xiaobao/practice/${juniorPracticeSheets[index - 1].id}`
-          : undefined
-      }
-      nextHref={
-        index < juniorPracticeSheets.length - 1
-          ? `/xiaobao/practice/${juniorPracticeSheets[index + 1].id}`
-          : undefined
-      }
-    />
-  );
-}
+// Bookmarks from the earlier site open the corresponding shared learning view.
+export default function LegacyPage() { redirect(appPath('/#/learn/practice')); }

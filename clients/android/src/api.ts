@@ -8,6 +8,7 @@ import type { CandidateReply } from './candidates';
 import type { StudentOverviewReply } from './types';
 import type { PhotoDelivery } from './photo-processing/delivery';
 import { verifyProcessedReceipt } from './photo-processing/receipt';
+import { apiAuthentication, isHostedWeb, hostedApiBase, webSessionMarker } from './hosted-web';
 
 export class ApiError extends Error {
   constructor(
@@ -21,6 +22,10 @@ export class ApiError extends Error {
 export const sessionExpiredEvent = 'family-learning:session-expired';
 
 export function validateServer(value: string) {
+  if (isHostedWeb) {
+    if (value !== hostedApiBase()) throw new Error('请使用本站家庭服务');
+    return value;
+  }
   const url = new URL(value);
   const loopback = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
   if (
@@ -41,6 +46,7 @@ export class FamilyApi {
     readonly base: string,
     readonly token = '',
   ) {}
+  authentication() { return apiAuthentication(this.base, this.token); }
   async request<T>(path: string, method = 'GET', body?: unknown, signal?: AbortSignal): Promise<T> {
     const form = body instanceof FormData;
     const controller = new AbortController();
@@ -49,11 +55,11 @@ export class FamilyApi {
     const timer = setTimeout(() => controller.abort(new DOMException('请求超时', 'TimeoutError')), form ? 120000 : 20000);
     const options: RequestInit = {
       method,
-      credentials: 'omit',
+      credentials: this.authentication().credentials,
       cache: 'no-store',
       redirect: 'error',
       headers: {
-        ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}),
+        ...this.authentication().headers,
         ...(body !== undefined && !form
           ? { 'Content-Type': 'application/json' }
           : {}),
@@ -80,6 +86,7 @@ export class FamilyApi {
         response.status,
         data.code,
       );
+    if (isHostedWeb && data.user) data.token = webSessionMarker;
     return data as T;
     } finally { clearTimeout(timer); signal?.removeEventListener('abort', forwardAbort); }
   }
@@ -103,7 +110,7 @@ export class FamilyApi {
     });
   }
   me() {
-    return this.request<{ user: User }>('/session');
+    return this.request<{ user: User; capabilities?: { admin: boolean; adminPasswordChangeRequired?: boolean } }>('/session');
   }
   studentOverview(signal?: AbortSignal) {
     return this.request<StudentOverviewReply>('/students?overview=1', 'GET', undefined, signal);
@@ -250,8 +257,7 @@ export class FamilyApi {
     const response = await fetch(
       `${this.base}/scans/${encodeURIComponent(id)}/file${params.size ? `?${params}` : ''}`,
       {
-        headers: { Authorization: `Bearer ${this.token}` },
-        credentials: 'omit',
+        ...this.authentication(),
         cache: 'no-store',
         redirect: 'error',
         signal,

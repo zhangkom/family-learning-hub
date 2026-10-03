@@ -23,6 +23,10 @@ import { GuestHome } from './GuestHome';
 import { pageNames } from './BottomNavigation';
 import { CaptureBatch, collectionSize, type CaptureCollection } from './CaptureBatch';
 import { runPhotoBatch, type BatchProgress } from './batch-upload';
+import { isHostedWeb } from './hosted-web';
+import { WebAppInfo } from './WebAppInfo';
+import { recoveredImages } from './photo-processing/recovered-image';
+import { readWebLocation, useHostedWebNavigation } from './web-navigation';
 
 function message(error: unknown) {
   return error instanceof Error ? error.message : '操作未完成，请重试';
@@ -50,9 +54,25 @@ export function App() {
   const [restoreError, setRestoreError] = useState(''),
     [restoreAttempt, setRestoreAttempt] = useState(0);
   const [authPage, setAuthPage] = useState<{ mode: AuthMode; feature?: string } | null>(null);
-  const [guestPage, setGuestPage] = useState<HomePage>('home');
+  const [guestPage, setGuestPage] = useState<HomePage>(() => isHostedWeb ? readWebLocation().page : 'home');
+  const guestNavigation = useHostedWebNavigation();
+  useEffect(() => { if (isHostedWeb) setGuestPage(guestNavigation.route.page); }, [guestNavigation.route]);
   const liveAuth = useRef(auth);
   liveAuth.current = auth;
+  useEffect(() => {
+    if (!isHostedWeb || !auth) return;
+    // Another tab may log in as a different family. Revalidate before showing cached records again.
+    let alive = true;
+    const check = () => {
+      if (document.visibilityState === 'hidden') return;
+      void new FamilyApi(auth.base, auth.token).me().then(result => {
+        if (alive && result.user.id !== auth.user.id) setAuth({ ...auth, ...result });
+      }).catch(() => {});
+    };
+    window.addEventListener('focus', check);
+    document.addEventListener('visibilitychange', check);
+    return () => { alive = false; window.removeEventListener('focus', check); document.removeEventListener('visibilitychange', check); };
+  }, [auth]);
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) return;
     // Register before authentication/child lookup: Android can restore a Camera result while Home is absent.
@@ -126,7 +146,7 @@ export function App() {
       </main>
     );
   if (!auth) {
-    if (!authPage) return <GuestHome page={guestPage} onNavigate={setGuestPage} onAuth={(mode, feature) => setAuthPage({ mode, feature })} />;
+    if (!authPage) return <GuestHome page={guestPage} onNavigate={page => { setGuestPage(page); if (isHostedWeb) guestNavigation.navigate({ page }); }} onAuth={(mode, feature) => setAuthPage({ mode, feature })} />;
     return (
       <AuthForm
         initialMode={authPage.mode}
@@ -217,8 +237,11 @@ function Home({
   useLayoutEffect(() => { live.current = true; return () => { live.current = false; scopeGeneration.current++; uploadAbort.current?.abort(); captureAbort.current?.abort(); }; }, []);
   const [homePage, setHomePage] = useState<HomePage>(initialPage);
   const [learningView, setLearningView] = useState<LearningView | null>(null);
+  const { route: webRoute, navigate: webNavigate } = useHostedWebNavigation();
   const [learningRevision, setLearningRevision] = useState(0);
   const [libraryMode, setLibraryMode] = useState<LibraryMode>('wrong');
+  const libraryModeRef = useRef(libraryMode);
+  libraryModeRef.current = libraryMode;
   // Home survives source details and learning views; the account-keyed parent isolates accounts.
   const [libraryContext, setLibraryContext] = useState<LibraryContext>({ subject: '全部', order: 'newest', dimension: '' });
   const [studentOverview, setStudentOverview] = useState<StudentOverviewReply | null>(null);
@@ -244,6 +267,46 @@ function Home({
     requestNumber = useRef(0);
   activeStudent.current = selected;
   const student = students.find((s) => s.id === selected);
+  const [recordsStudent, setRecordsStudent] = useState('');
+  function navigatePage(page: HomePage) {
+    setHomePage(page);
+    if (isHostedWeb) webNavigate({ page, libraryMode: libraryModeRef.current });
+  }
+  function navigateMode(mode: LibraryMode) {
+    libraryModeRef.current = mode; setLibraryMode(mode);
+    if (isHostedWeb && homePage === 'library') webNavigate({ page: 'library', libraryMode: mode });
+  }
+  function openLearning(view: LearningView) {
+    setOpenScan(null); setLearningView(view);
+    if (isHostedWeb) webNavigate({ page: homePage, libraryMode: libraryModeRef.current, learning: view });
+  }
+  function openReview(scan: Scan, questionId?: string) {
+    setLastViewed(previous => ({ ...previous, [scan.studentId]: { scanId: scan.id, questionId } }));
+    setOpenQuestion(questionId || ''); setOpenScan(scan);
+    if (isHostedWeb) webNavigate({ page: homePage, libraryMode: libraryModeRef.current, overlay: { kind: 'review', scanId: scan.id, questionId } });
+  }
+  function closeWebOverlay() {
+    if (isHostedWeb) webNavigate({ page: homePage, libraryMode: libraryModeRef.current }, { replace: true });
+  }
+  useEffect(() => {
+    if (!isHostedWeb) return;
+    const route = webRoute;
+    setHomePage(route.page);
+    if (route.libraryMode) { libraryModeRef.current = route.libraryMode; setLibraryMode(route.libraryMode); }
+    setLearningView(route.learning || null);
+    setCloudOpen(route.overlay?.kind === 'cloud');
+    if (route.overlay?.kind !== 'review') setOpenScan(null);
+    if (route.overlay?.kind !== 'capture') {
+      captureAbort.current?.abort(); collectionRef.current = null; setCollection(null); setPreparing(null); setPreparationBatch(null);
+    }
+  }, [webRoute]);
+  useEffect(() => {
+    if (!isHostedWeb || webRoute.overlay?.kind !== 'review' || recordsStudent !== selected) return;
+    const target = webRoute.overlay;
+    const scan = records.find(item => item.id === target.scanId && item.studentId === selected);
+    if (scan) { setOpenScan(scan); setOpenQuestion(target.questionId || ''); }
+    else { setError('当前学生没有这张题目照片，请检查所选学生。'); webNavigate({ page: 'library', libraryMode: 'photos' }, { replace: true }); }
+  }, [records, recordsStudent, selected, webRoute, webNavigate]);
   useEffect(() => {
     if (homePage !== 'me') return;
     const controller = new AbortController();
@@ -264,6 +327,8 @@ function Home({
     if (id === activeStudent.current) return;
     scopeGeneration.current++; activeStudent.current = id; uploadAbort.current?.abort(); captureAbort.current?.abort();
     setRecords([]); setLearningView(null);
+    setRecordsStudent('');
+    if (isHostedWeb) webNavigate({ page: homePage, libraryMode: libraryModeRef.current }, { replace: true });
     setLibraryContext({ subject: '全部', order: 'newest', dimension: '' });
     updateCollection(null); setPreparationBatch(null); setBatchProgress(null); setCloudOpen(false);
     setPreparing(null); setOriginalsOpen(false); setPhotoQueue([]); setPhotoQueueIssues([]); setCameraFailures([]); setBusy(false); setSelected(id);
@@ -287,6 +352,7 @@ function Home({
         id === activeStudent.current && live.current
       ) {
         setRecords(result.scans);
+        setRecordsStudent(id);
         setRecognition(
           (result as { recognition?: boolean }).recognition === true,
         );
@@ -346,7 +412,7 @@ function Home({
         id,
         owner,
         studentId,
-        source: '手机拍照与导入',
+        source: isHostedWeb ? '网页选图与导入' : '手机拍照与导入',
         name: filename,
         file,
         createdAt: Date.now(),
@@ -423,6 +489,7 @@ function Home({
     captureStudent.current = student.id;
     if (!Capacitor.isNativePlatform()) {
       (source === 'camera' ? cameraInput : galleryInput).current?.click();
+      if (isHostedWeb) webNavigate({ page: homePage, overlay: { kind: 'capture' } });
       return;
     }
     const generation = scopeGeneration.current;
@@ -492,6 +559,7 @@ function Home({
   function finishCollection() {
     const batch = collectionRef.current; if (!batch || busy || !collectionSize(batch)) return;
     updateCollection(null); setHomePage('home');
+    if (isHostedWeb) webNavigate({ page: 'home' }, { replace: true });
     if (batch.originals.length) { setPreparationBatch({ photos: batch.originals, index: 0, nativeBatchIds: batch.nativeBatchIds || [] }); setPreparing(batch.originals[0]); }
     else setNotice(`${batch.drafts.length} 张照片已保存为本机草稿，可检查后批量上传。`);
   }
@@ -569,6 +637,7 @@ function Home({
     try {
       const { scan } = await api.upload(draft, abort.signal);
       if (!live.current || generation !== scopeGeneration.current) return;
+      if (isHostedWeb) await recoveredImages.save(owner, scan, draft.file, abort.signal);
       await drafts.remove(draft.id);
       await refreshDrafts();
       if (activeStudent.current === draft.studentId) {
@@ -602,7 +671,10 @@ function Home({
         if (!current()) throw new DOMException('学生或账号已变化', 'AbortError');
         if (result.scan.studentId !== studentId) throw new Error('上传回执的学生归属不匹配，待提交项已保留');
         if (item.prepared) { removePhotoDelivery(owner, studentId, item.id); refreshPhotoQueue(); }
-        else { await drafts.remove(item.id); await refreshDrafts(); }
+        else {
+          if (isHostedWeb) await recoveredImages.save(owner, result.scan, item.draft!.file, signal);
+          await drafts.remove(item.id); await refreshDrafts();
+        }
         if (current()) setRecords(list => [result.scan, ...list.filter(scan => scan.id !== result.scan.id)]);
       }, abort.signal, progress => { if (current()) setBatchProgress(progress); });
       if (current()) setNotice(`${progress.stopped ? '本批已停止' : '本批上传结束'}：成功 ${progress.succeeded} 张，失败 ${progress.failed.length} 张。未确认成功的照片仍留在本机，可继续上传。`);
@@ -621,10 +693,10 @@ function Home({
     <input className="visually-hidden" ref={galleryInput} type="file" multiple accept="image/jpeg,image/png,image/webp"
       onChange={e => { const files = Array.from(e.target.files || []); e.target.value = ''; void saveBrowserBatch(files); }} />
   </>;
-  if (cloudOpen && student) return <CloudPhotoDrive key={`${owner}/${selected}`} api={api} owner={owner} studentId={selected} studentLabel={student.name} onClose={() => setCloudOpen(false)}
+  if (cloudOpen && student) return <CloudPhotoDrive key={`${owner}/${selected}`} api={api} owner={owner} studentId={selected} studentLabel={student.name} onClose={() => { setCloudOpen(false); closeWebOverlay(); }}
     onOpenOriginals={localPhotosEnabled ? () => { setCloudOpen(false); setOriginalsOpen(true); } : undefined} />;
   if (collection && collection.studentId === selected) return <><CaptureBatch collection={collection} studentLabel={student?.name || '当前孩子'} busy={busy} error={error} progress={captureProgress}
-    onCapture={source => void capture(source)} onFolderRange={localPhotosEnabled ? () => void capture('folder') : undefined} onFinish={finishCollection} onClose={closeLocalPhotos}
+    onCapture={source => void capture(source)} onFolderRange={localPhotosEnabled ? () => void capture('folder') : undefined} onFinish={finishCollection} onClose={() => { closeLocalPhotos(); closeWebOverlay(); }}
     onRemove={id => void removeCollectedPhoto(id)} />{fileInputs}</>;
   if (preparing && preparing.studentId === selected) return <>
     {preparationBatch && <div className="capture-batch-progress"><strong>逐张调整 · 第 {preparationBatch.index + 1} / {preparationBatch.photos.length} 张</strong>
@@ -653,32 +725,33 @@ function Home({
         }
         recognitionEnabled={recognition}
         selectedQuestionId={openQuestion}
-        onLearn={(mode, scan, questionId) => { setOpenScan(null); setLearningView({ mode, source: { scanId: scan.id, questionId } }); }}
+        onLearn={(mode, scan, questionId) => openLearning({ mode, source: { scanId: scan.id, questionId } })}
         onBack={() => {
           setOpenScan(null);
+          closeWebOverlay();
           void refresh();
         }}
         onUpdate={updateScan}
       />
     );
   if (learningView && student) return <LearningHub key={`${owner}/${selected}/${learningView.mode}/${learningView.sessionId || ''}`} api={api} owner={owner} studentId={selected} studentName={student.name} records={records} view={learningView}
-    onClose={() => { setLearningView(null); setLearningRevision(x => x + 1); setOverviewRevision(x => x + 1); void refresh(); }}
-    onOpenSource={(scan, questionId, sessionId) => { setLearningView({ mode: learningView.mode, source: { scanId: scan.id, questionId }, sessionId }); setOpenQuestion(questionId); setOpenScan(scan); }} onRefreshSources={() => void refresh()} />;
+    onClose={() => { setLearningView(null); closeWebOverlay(); setLearningRevision(x => x + 1); setOverviewRevision(x => x + 1); void refresh(); }}
+    onOpenSource={(scan, questionId, sessionId) => { setLearningView({ mode: learningView.mode, source: { scanId: scan.id, questionId }, sessionId }); openReview(scan, questionId); }} onRefreshSources={() => void refresh()} />;
   return <>
-    <HomeView learningRevision={learningRevision} onLearn={(mode, source, sessionId) => { if (student) setLearningView({ mode, source, sessionId }); else { setHomePage('me'); setNotice('请先添加学生档案。'); } }} lastViewed={lastViewed[selected]} api={api} owner={owner} username={auth.user.username} students={students} selected={selected} records={records}
+    <HomeView learningRevision={learningRevision} onLearn={(mode, source, sessionId) => { if (student) openLearning({ mode, source, sessionId }); else { navigatePage('me'); setNotice('请先添加学生档案。'); } }} lastViewed={lastViewed[selected]} api={api} owner={owner} username={auth.user.username} students={students} selected={selected} records={records}
       onUpdateScan={updateScan}
       studentOverview={studentOverview} overviewError={overviewError} onRefreshOverview={() => setOverviewRevision(value => value + 1)}
       onUpdateAccount={async (kind, value, currentPassword) => {
         const next = kind === 'username' ? await api.changeUsername(value, currentPassword) : await api.changePassword(value, currentPassword);
         if (next.user.id !== auth.user.id) throw new Error('账号信息不匹配，请重新登录。');
-        return onUpdateAuth({ base: auth.base, token: next.token, user: next.user });
+        return onUpdateAuth({ base: auth.base, token: next.token, user: next.user, ...(next.capabilities ? { capabilities: next.capabilities } : {}) });
       }}
-      page={homePage} onNavigate={setHomePage}
-      libraryMode={libraryMode} onLibraryMode={setLibraryMode}
+      page={homePage} onNavigate={navigatePage}
+      libraryMode={libraryMode} onLibraryMode={navigateMode}
       libraryContext={libraryContext} onLibraryContext={setLibraryContext}
       localDrafts={localDrafts} busy={busy} uploading={uploading} refreshing={refreshing}
       processedCount={photoQueue.length + photoQueueIssues.length} onOpenOriginals={localPhotosEnabled ? () => setOriginalsOpen(true) : undefined}
-      onOpenCloud={() => setCloudOpen(true)}
+      onOpenCloud={() => { setCloudOpen(true); if (isHostedWeb) webNavigate({ page: homePage, overlay: { kind: 'cloud' } }); }}
       batchUploads={(photoQueue.length + localDrafts.filter(item => item.studentId === selected).length > 0 || !!batchProgress || uploading === 'batch') ? <section className="batch-upload-panel" aria-label="拍题批量上传">
         <strong>确认上传</strong><p className="hint">原片保留在本机。</p>
         <div className="button-row">{(photoQueue.length + localDrafts.filter(item => item.studentId === selected).length > 0) && <button className="primary" disabled={busy || !!uploading} onClick={() => void uploadMany()}>
@@ -707,7 +780,7 @@ function Home({
           </div></div></article>)}</> : null}
       recognition={recognition} error={error || cameraRestoreError} notice={notice}
       onSelect={selectStudent} onCapture={(source) => void capture(source)} onRefresh={() => { void refresh(); try { refreshPhotoQueue(); } catch(e) { setError(message(e)); } }}
-      onOpenScan={(scan, questionId) => { setLastViewed(previous => ({ ...previous, [scan.studentId]: { scanId: scan.id, questionId } })); setOpenQuestion(questionId || ''); setOpenScan(scan); }}
+      onOpenScan={openReview}
       onLogout={() => void (async () => {
         try { setBusy(true); await api.logout(); await onLogout(); }
         catch (e) { setError(`退出未完成：${message(e)}`); }
@@ -726,12 +799,13 @@ function Home({
       renderDraft={(draft) => <DraftCard key={draft.id} draft={draft} uploading={uploading === draft.id}
         disabled={!!uploading} onUpload={() => void upload(draft)}
         onRemove={() => void drafts.remove(draft.id).then(refreshDrafts).catch((e) => setError(message(e)))} />}
-    ><FamilyLinks /></HomeView>
+    ><FamilyLinks admin={auth.capabilities?.admin} /></HomeView>
     {fileInputs}
   </>;
 }
 
-function FamilyLinks() {
+function FamilyLinks({ admin = false }: { admin?: boolean }) {
+  if (isHostedWeb) return <WebAppInfo admin={admin} />;
   return (
     <div className="family-links">
       <span>{appName} {appVersion} · 家庭试用版</span>

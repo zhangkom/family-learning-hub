@@ -7,6 +7,7 @@ import { BrandMark } from './Brand';
 import { PermissionInfo } from './PermissionInfo';
 import { appName, configuredServer } from './release';
 import type { Auth } from './restore-session';
+import { isHostedWeb } from './hosted-web';
 
 export type AuthMode = 'login' | 'register';
 type Props = { initialMode: AuthMode; feature?: string; initialError: string; backLabel?: string;
@@ -74,7 +75,7 @@ export function AuthForm({ initialMode, feature, initialError, backLabel = '返�
           const result = registering ? await api.register(username.trim(), password) : await api.login(username.trim(), password);
           created = registering;
           try { localStorage.setItem('family-learning:server', base); } catch { /* Optional setting. */ }
-          await onLogin({ base, token: result.token, user: result.user });
+          await onLogin({ base, token: result.token, user: result.user, ...(result.capabilities ? { capabilities: result.capabilities } : {}) });
           setPassword('');
         } catch (reason) {
           if (created) {
@@ -104,7 +105,7 @@ export function AuthForm({ initialMode, feature, initialError, backLabel = '返�
         <button className="primary full" disabled={busy || (registering && (checking || !registration?.enabled))}>{busy ? registering ? '正在注册…' : '正在登录…' : registering ? '注册' : '登录'}</button>
       </form>
       {children}
-      <PermissionInfo />
+      {!isHostedWeb && <PermissionInfo />}
     </section>
   </main>;
 }

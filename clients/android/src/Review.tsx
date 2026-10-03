@@ -1,3 +1,4 @@
+import { isHostedWeb } from './hosted-web';
 import type { LearningMode } from '../../../lib/learning-session';
 import { questionLearningReadiness, questionIsSummary } from '../../../lib/question-context';
 import { questionImageIdentity } from './question-image-identity';
@@ -140,7 +141,7 @@ export function Review({
       .catch((e) => {
         if (!abort.signal.aborted) {
           setImageError(e.message);
-          if (Capacitor.getPlatform() === 'android') setLocalImageMissing(true);
+          if ((Capacitor.getPlatform() === 'android' || isHostedWeb)) setLocalImageMissing(true);
           else setError(e.message);
         }
       });
@@ -646,7 +647,7 @@ export function Review({
                     onClick={() => setOriginalQuestionId(originalQuestionId === question.id ? '' : question.id)}>{originalQuestionId === question.id ? '整理版' : '原图'}</button></header>
                 <QuestionPaper question={question} questions={questions} original={originalQuestionId === question.id}
                   image={image && imageSize ? { url: image, ...imageSize } : undefined}
-                  onImageError={() => { setImage(''); setImageError('题图显示失败，请重新读取'); setLocalImageMissing(Capacitor.getPlatform() === 'android'); }} />
+                  onImageError={() => { setImage(''); setImageError('题图显示失败，请重新读取'); setLocalImageMissing((Capacitor.getPlatform() === 'android' || isHostedWeb)); }} />
                 {!image && <output className="paper-image-note">{imageError || '正在读取题图…'}</output>}
                 {imageError && !localImageMissing && <button type="button" onClick={() => { setAllowCloudImage(true); setImageRetry(value => value + 1); }}>重试读取题图</button>}
                 <QuestionSource scan={{ ...scan, questions }} question={question} api={api} owner={owner} />

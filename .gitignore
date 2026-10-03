@@ -48,3 +48,4 @@ next-env.d.ts
 *.student-scan.*
 
 /test-results/
+/public/web-client/

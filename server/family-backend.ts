@@ -114,14 +114,22 @@ export function currentUser(
   request: Request,
   store: FamilyStore,
 ): FamilyUser | null {
+  return currentFamilySession(request, store)?.user || null;
+}
+export function currentFamilySession(request: Request, store: FamilyStore) {
   const token = sessionToken(request);
   if (!/^[a-f0-9]{64}$/.test(token)) return null;
   const row = store.db
     .prepare(
-      'SELECT a.id,a.username FROM sessions s JOIN accounts a ON a.id=s.account_id WHERE s.token=? AND s.expires>?',
+      'SELECT a.id,a.username,s.expires FROM sessions s JOIN accounts a ON a.id=s.account_id WHERE s.token=? AND s.expires>?',
     )
     .get(digest(token), Date.now());
-  return row ? { id: String(row.id), username: String(row.username) } : null;
+  return row
+    ? {
+        user: { id: String(row.id), username: String(row.username) },
+        expiresAt: new Date(Number(row.expires)).toISOString(),
+      }
+    : null;
 }
 function cookie(token: string, maxAge = lifetime) {
   const path = `${process.env.NEXT_PUBLIC_BASE_PATH || '/family-learning'}/`;
@@ -151,13 +159,29 @@ export function passwordField(value: unknown) {
     throw new HttpError(400, '密码请使用 6 至 128 个字符');
   return value;
 }
-function issueSession(user: FamilyUser, store: FamilyStore) {
+export function issueFamilySession(
+  user: FamilyUser,
+  store: FamilyStore,
+  present: (user: FamilyUser, expiresAt: string) => unknown = (account) => ({
+    user: account,
+  }),
+) {
   const token = Buffer.from(randomBytes(32)).toString('hex');
+  const expires = Date.now() + lifetime * 1000;
   store.db.prepare('DELETE FROM sessions WHERE expires<=?').run(Date.now());
   store.db
     .prepare('INSERT INTO sessions VALUES (?,?,?)')
-    .run(digest(token), user.id, Date.now() + lifetime * 1000);
-  return json({ user }, 200, { 'Set-Cookie': cookie(token) });
+    .run(digest(token), user.id, expires);
+  return json(present(user, new Date(expires).toISOString()), 200, {
+    'Set-Cookie': cookie(token),
+  });
+}
+
+export function logoutFamilySession(request: Request, store: FamilyStore) {
+  store.db
+    .prepare('DELETE FROM sessions WHERE token=?')
+    .run(digest(sessionToken(request)));
+  return json({ ok: true }, 200, { 'Set-Cookie': cookie('', 0) });
 }
 
 export const familyNeedsSetup = (store: FamilyStore) =>
@@ -175,7 +199,8 @@ async function credentials(
     typeof body.username === 'string' ? body.username.trim().toLowerCase() : '';
   if (!/^[a-z0-9_-]{3,32}$/.test(username))
     throw new HttpError(400, '账号使用 3 至 32 位字母、数字、下划线或短横线');
-  if (action !== 'login' && username === 'admin') throw new HttpError(400, 'admin为平台管理专用账号');
+  if (action !== 'login' && username === 'admin')
+    throw new HttpError(400, 'admin为平台管理专用账号');
   const password = passwordField(body.password);
   if (!store.allow(`user:${username}`, 8, 15 * 60000))
     throw new HttpError(429, '该账号尝试次数过多，请 15 分钟后再试');
@@ -229,9 +254,13 @@ export async function updateAccountCredentials(
   if (!/^[a-z0-9_-]{3,32}$/.test(username))
     throw new HttpError(400, '用户名使用 3 至 32 位字母、数字、下划线或短横线');
   const next = action === 'password' ? passwordField(body.password) : undefined;
-  const administrator = !!store.db.prepare('SELECT 1 FROM platform_admins WHERE account_id=?').get(user.id);
-  if (action === 'username' && (administrator || username === 'admin')) throw new HttpError(400, '平台管理员账号名称不可修改，admin为保留名称');
-  if (administrator && next !== undefined && next.length < 12) throw new HttpError(400, '管理员密码至少需要12个字符');
+  const administrator = !!store.db
+    .prepare('SELECT 1 FROM platform_admins WHERE account_id=?')
+    .get(user.id);
+  if (action === 'username' && (administrator || username === 'admin'))
+    throw new HttpError(400, '平台管理员账号名称不可修改，admin为保留名称');
+  if (administrator && next !== undefined && next.length < 12)
+    throw new HttpError(400, '管理员密码至少需要12个字符');
   const row = store.db
     .prepare('SELECT username,password FROM accounts WHERE id=?')
     .get(user.id);
@@ -260,8 +289,16 @@ export async function updateAccountCredentials(
       .prepare('UPDATE accounts SET username=?,password=? WHERE id=?')
       .run(username, hashed, user.id);
     if (administrator && next !== undefined) {
-      store.db.prepare('UPDATE platform_admins SET must_change_password=0 WHERE account_id=?').run(user.id);
-      store.db.prepare('DELETE FROM review_tokens WHERE batch_id IN (SELECT id FROM review_batches WHERE admin_id=?)').run(user.id);
+      store.db
+        .prepare(
+          'UPDATE platform_admins SET must_change_password=0 WHERE account_id=?',
+        )
+        .run(user.id);
+      store.db
+        .prepare(
+          'DELETE FROM review_tokens WHERE batch_id IN (SELECT id FROM review_batches WHERE admin_id=?)',
+        )
+        .run(user.id);
     }
     store.db.prepare('DELETE FROM sessions WHERE account_id=?').run(user.id);
     store.db
@@ -370,6 +407,34 @@ export async function setupFirstFamily(
   });
 }
 
+// Both cookie entry points share credential validation, throttling and the
+// post-KDF credential check. The caller enforces its own origin/method policy.
+export async function loginFamily(
+  request: Request,
+  store: FamilyStore,
+  complete: (user: FamilyUser) => Response = (user) =>
+    issueFamilySession(user, store),
+) {
+  const { username, password } = await credentials(request, store, 'login');
+  const row = store.db
+    .prepare('SELECT id,username,password FROM accounts WHERE username=?')
+    .get(username);
+  const encoded = row
+    ? String(row.password)
+    : `${'0'.repeat(32)}:${'0'.repeat(128)}`;
+  const valid = await verifyPassword(password, encoded);
+  if (
+    !row ||
+    !valid ||
+    store.db
+      .prepare('SELECT password FROM accounts WHERE id=? AND username=?')
+      .get(row.id, username)?.password !== encoded
+  )
+    throw new HttpError(401, '账号或密码不正确');
+  store.db.prepare('DELETE FROM limits WHERE key=?').run(`user:${username}`);
+  return complete({ id: String(row.id), username: String(row.username) });
+}
+
 export async function handleFamily(
   request: Request,
   action: FamilyAction,
@@ -390,42 +455,16 @@ export async function handleFamily(
         needsSetup: familyNeedsSetup(store),
       });
     if (action === 'logout') {
-      store.db
-        .prepare('DELETE FROM sessions WHERE token=?')
-        .run(digest(sessionToken(request)));
-      return json({ ok: true }, 200, { 'Set-Cookie': cookie('', 0) });
+      return logoutFamilySession(request, store);
     }
     if (action === 'setup') {
       if (request.method !== 'POST') throw new HttpError(405, '请求方式不支持');
       return await setupFirstFamily(request, store, (account) =>
-        issueSession(account, store),
+        issueFamilySession(account, store),
       );
     }
     if (action === 'login') {
-      const { username, password } = await credentials(request, store, 'login');
-      const row = store.db
-        .prepare('SELECT id,username,password FROM accounts WHERE username=?')
-        .get(username);
-      // Run the same KDF even for an unknown account.
-      const encoded = row
-        ? String(row.password)
-        : `${'0'.repeat(32)}:${'0'.repeat(128)}`;
-      const valid = await verifyPassword(password, encoded);
-      if (
-        !row ||
-        !valid ||
-        store.db
-          .prepare('SELECT password FROM accounts WHERE id=? AND username=?')
-          .get(row.id, username)?.password !== encoded
-      )
-        throw new HttpError(401, '账号或密码不正确');
-      store.db
-        .prepare('DELETE FROM limits WHERE key=?')
-        .run(`user:${username}`);
-      return issueSession(
-        { id: String(row.id), username: String(row.username) },
-        store,
-      );
+      return await loginFamily(request, store);
     }
     if (!user) throw new HttpError(401, '请先登录家庭账号');
     if (action === 'password') {
@@ -438,7 +477,7 @@ export async function handleFamily(
           if (currentUser(request, store)?.id !== user.id)
             throw new HttpError(401, '登录已过期，请重新登录');
         },
-        (account) => issueSession(account, store),
+        (account) => issueFamilySession(account, store),
       );
     }
     if (action === 'sync') {

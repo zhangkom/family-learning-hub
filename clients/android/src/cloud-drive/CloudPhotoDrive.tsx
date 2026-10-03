@@ -8,6 +8,7 @@ import { UploadQueue, type QueueSnapshot } from './queue';
 import { type CloudLimits, type CloudPage, type CloudPhoto, type DriveServices, type DriveStore, type PickResult, type PickedOriginal, type NameCheck, type NameChoice, type ResolveName, type ImportProgress } from './types';
 import { NameConflictDialog } from './NameConflictDialog';
 import { CloudPhotoBrowser, PrivatePreview } from './CloudPhotoBrowser';
+import { browserFilesResult } from './browser-files';
 import './cloud-drive.css';
 
 export type CloudPhotoDriveProps = {
@@ -42,7 +43,7 @@ function DriveSession({ api, owner, studentId, studentLabel, onClose, onOpenOrig
   const [storage, setStorage] = useState<CloudPage['storage']>(), [refreshKey, setRefreshKey] = useState(0);
   const [viewing, setViewing] = useState<CloudPhoto | null>(null), [downloading, setDownloading] = useState('');
   const [recoveryAction, setRecoveryAction] = useState<{ run: () => Promise<void> } | null>(null);
-  const controller = useRef<AbortController | null>(null), queueRef = useRef<UploadQueue | null>(null), input = useRef<HTMLInputElement>(null);
+  const controller = useRef<AbortController | null>(null), queueRef = useRef<UploadQueue | null>(null), input = useRef<HTMLInputElement>(null), folderInput = useRef<HTMLInputElement>(null);
   const live = useRef(false), closeRef = useRef<() => void>(() => {});
   const dialog = useRef<HTMLDialogElement>(null);
   useEffect(() => { const element = dialog.current; if (viewing && element && !element.open) element.showModal(); return () => element?.close(); }, [viewing]);
@@ -99,7 +100,8 @@ function DriveSession({ api, owner, studentId, studentLabel, onClose, onOpenOrig
   async function select(recover = false, folderRange = false, albumRange = false) {
     const signal = controller.current?.signal; if (locked || !signal) return;
     setError(''); setNotice('');
-    if (!services.native && !recover) { input.current?.click(); return; }
+    // Do not lock while a browser picker is open: cancelling may not emit change.
+    if (!services.native && !recover) { (folderRange ? folderInput : input).current?.click(); return; }
     setPicking(true); setImportProgress(null);
     try {
       const progress = (value: ImportProgress) => { if (live.current && !signal.aborted) setImportProgress(value); };
@@ -115,12 +117,21 @@ function DriveSession({ api, owner, studentId, studentLabel, onClose, onOpenOrig
       }
     }
   }
-  async function filesSelected(files: File[]) {
+  async function filesSelected(files: File[], folder = false) {
+    const signal = controller.current?.signal;
+    if (!files.length || locked || !live.current || !signal || signal.aborted) return;
+    const work = queueRef.current, previousIds = new Set(work?.snapshot().jobs.map(job => job.id));
     setPicking(true); setError(''); setNotice('');
     try {
-      await addPicked({ items: files.map(file => ({ name: file.name, mimeType: file.type, size: file.size, source: { kind: 'web', file } })), failures: [] });
-    } catch (e) { if (live.current) setError(message(e)); }
-    finally { if (live.current) setPicking(false); }
+      await addPicked(browserFilesResult(files, folder));
+    } catch (e) {
+      if (live.current && !signal.aborted) {
+        const saved = work?.snapshot().jobs.filter(job => !previousIds.has(job.id)).length || 0;
+        setNotice(`本次选择 ${files.length} 个文件，已保存 ${saved} 张到待上传列表；还有 ${files.length - saved} 个未保存，需要重新选择。未保存项未计入上传进度。`);
+        setError(message(e));
+      }
+    }
+    finally { if (live.current && !signal.aborted) setPicking(false); }
   }
   async function start(id?: string) {
     if (locked) return; setError(''); setNotice('');
@@ -162,14 +173,16 @@ function DriveSession({ api, owner, studentId, studentLabel, onClose, onOpenOrig
     <div className="cloud-select"><div className="cloud-select-heading"><h3>批量上传图片</h3></div>
       <div className="cloud-pick-actions">
         <button type="button" className="cloud-primary" disabled={locked || !limits} onClick={() => void select(false, false, true)}>{picking ? '读取中…' : services.native ? '相册选择' : '选择图片'}</button>
-        {services.native && <button type="button" disabled={locked || !limits} onClick={() => void select(false, true)}>文件夹范围</button>}
+        <button type="button" disabled={locked || !limits} onClick={() => void select(false, true)}>{services.native ? '文件夹范围' : '按文件夹选择'}</button>
       </div>
       <input ref={input} type="file" multiple accept={limits?.mimeTypes.join(',') || 'image/jpeg,image/png,image/webp'} aria-label="选择云盘图片文件" hidden onChange={e => { const files = Array.from(e.currentTarget.files || []); e.currentTarget.value = ''; if (files.length) void filesSelected(files); }} />
+      {!services.native && <input ref={element => { folderInput.current = element; element?.setAttribute('webkitdirectory', ''); }} type="file" multiple aria-label="选择云盘图片文件夹" hidden onChange={e => { const files = Array.from(e.currentTarget.files || []); e.currentTarget.value = ''; if (files.length) void filesSelected(files, true); }} />}
       {services.native && <p className="cloud-hint">相册里点第一张，滚动后点最后一张，即可选中整段。</p>}
+      {!services.native && <p className="cloud-hint">电脑可用 Shift 连选、Ctrl（Mac 为 ⌘）多选；手机按系统选图方式操作。</p>}
       <div className="cloud-secondary-actions">
         {services.native && <button type="button" disabled={locked || !limits} onClick={() => void select()}>系统相册多选</button>}
         {onOpenOriginals && <button type="button" disabled={locked} onClick={onOpenOriginals}>从本机照片收题</button>}
-        <details className="cloud-help"><summary>选图说明</summary><p>相册范围选择按照片时间由新到旧，首次使用需授权读取照片；文件夹范围按文件名排序。只导入确认的图片，点“开始上传”后才发送到云盘，不自动分析。</p><p>未确认就返回，下次重新选择。确认后若中断，会显示“中断续传”：继续导入并上传未完成的照片，已成功上传的会跳过。</p><p>{limits ? `支持 JPEG、PNG、WebP；单张最多 ${sizeLabel(limits.maxFileBytes)}。` : initialization === 'failed' ? '云盘限制尚未读取，请先重新加载。' : '正在读取云盘限制…'}</p></details>
+        <details className="cloud-help"><summary>选图说明</summary><p>{services.native ? '相册范围选择按照片时间由新到旧，首次使用需授权读取照片；文件夹范围按文件名排序。' : '按文件夹选择会包含子文件夹，按文件夹路径与文件名自然排序；不支持文件夹选择的浏览器可使用“选择图片”。原文件名保持不变，同名图片上传前由你决定如何处理。'}只导入确认的图片，点“开始上传”后才发送到云盘，不自动分析。</p><p>{services.native ? '未确认就返回，下次重新选择。确认后若中断，会显示“中断续传”：继续导入并上传未完成的照片，已成功上传的会跳过。' : '取消选择不会保存记录。确认后，待上传图片会保存到当前浏览器；离开后可回来继续上传，已成功上传的会跳过。清除网站数据或使用其他浏览器后需重新选择。'}</p><p>{limits ? `支持 JPEG、PNG、WebP；单张最多 ${sizeLabel(limits.maxFileBytes)}。` : initialization === 'failed' ? '云盘限制尚未读取，请先重新加载。' : '正在读取云盘限制…'}</p></details>
       </div>
     </div>
     {(error || queue.error) && <p role="alert" className="cloud-error">{error || queue.error}</p>}{notice && <output className="cloud-notice">{notice}</output>}

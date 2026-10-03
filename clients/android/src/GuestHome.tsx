@@ -8,10 +8,12 @@ import { LearningModules } from './LearningModules';
 import { CaptureEntries } from './CaptureEntries';
 import { Capacitor } from '@capacitor/core';
 import { App as NativeApp } from '@capacitor/app';
-import { BottomNavigation, type HomePage } from './BottomNavigation';
+import { BottomNavigation, WebSkipLink, type HomePage } from './BottomNavigation';
 import { BrandMark } from './Brand';
 import { appName, appVersion } from './release';
 import { UpdateControl, UpdateDot } from './UpdateControl';
+import { isHostedWeb } from './hosted-web';
+import { WebAppInfo } from './WebAppInfo';
 
 export function GuestHome({
   onAuth,
@@ -27,13 +29,14 @@ export function GuestHome({
   }, [page, onNavigate]);
   return (
     <div className="app-shell guest-shell">
+      <WebSkipLink />
       <header className="topbar guest-topbar">
         <div className="guest-brand-group">
           <div className="brand">
             <BrandMark size={36} />
             <span>{appName}</span>
           </div>
-          <details className="guest-update-panel">
+          {!isHostedWeb && <details className="guest-update-panel">
             <summary aria-label="版本与更新">
               v{appVersion}
               <UpdateDot />
@@ -41,7 +44,7 @@ export function GuestHome({
             <div className="guest-update-content">
               <UpdateControl />
             </div>
-          </details>
+          </details>}
         </div>
         {page === 'home' && <nav className="guest-auth-actions" aria-label="账户">
           <button
@@ -60,7 +63,7 @@ export function GuestHome({
           </button>
         </nav>}
       </header>
-      <main className={`dashboard guest-dashboard ${page === 'home' ? 'home-dashboard' : 'guest-secondary'}`}>
+      <main id="learning-main-content" tabIndex={-1} className={`dashboard guest-dashboard ${page === 'home' ? 'home-dashboard' : 'guest-secondary'}`}>
         {page === 'home' && <>
         <CaptureEntries onRecord={() => onAuth('login', '录错题')} onBatch={() => onAuth('login', '批量错题上传')} />
         <section className="learning-continue"><div><strong>从一道题，开始积累</strong><small>登录后按孩子保存与整理。</small></div><button onClick={() => onAuth('login')}>开始学习</button></section>
@@ -81,7 +84,7 @@ export function GuestHome({
         </>}
         {page === 'me' && <div className="profile-page">
           <section className="profile-card guest-profile"><span className="guest-intro-icon"><UserRound size={30} /></span><h1>一家人，各自进步</h1><p>一个家庭账号，管理多个孩子的学习档案。</p><div className="button-row"><button className="primary" onClick={() => onAuth('login')}>登录</button><button onClick={() => onAuth('register')}>注册</button></div></section>
-          <section className="profile-card"><h2>关于{appName}</h2><p>当前版本 {appVersion}</p><UpdateControl /></section>
+          {isHostedWeb ? <WebAppInfo /> : <section className="profile-card"><h2>关于{appName}</h2><p>当前版本 {appVersion}</p><UpdateControl /></section>}
         </div>}
       </main>
       <BottomNavigation page={page} onNavigate={onNavigate} />

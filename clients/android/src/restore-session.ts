@@ -1,13 +1,19 @@
 import { ApiError, FamilyApi, validateServer } from './api';
 import { session } from './session';
 import type { User } from './types';
+import { hostedApiBase, isHostedWeb, webSessionMarker } from './hosted-web';
 
-export type Auth = { base: string; token: string; user: User };
+export type Auth = { base: string; token: string; user: User; capabilities?: { admin: boolean; adminPasswordChangeRequired?: boolean } };
 
 export async function restoreSession(
   vault: Pick<typeof session, 'read' | 'clear'> = session,
   lookup = (base: string, token: string) => new FamilyApi(base, token).me(),
 ): Promise<Auth | null> {
+  if (isHostedWeb) {
+    const base = hostedApiBase();
+    try { const result = await new FamilyApi(base).me(); return { base, token: webSessionMarker, ...result }; }
+    catch (error) { if (error instanceof ApiError && error.status === 401) return null; throw error; }
+  }
   const stored = await vault.read();
   if (!stored) return null;
   let base: string, token: string;

@@ -1,0 +1,84 @@
+/* Loaded only by the hosted browser entry. Every rule is scoped so APK styling stays unchanged. */
+.hosted-web { min-height: 100dvh; color: #182440; background: #f5f7fc; }
+.hosted-web .app-shell { min-height: 100dvh; }
+.hosted-web .topbar { max-width: none; margin: 0; }
+.hosted-web .dashboard { width: 100%; max-width: 980px; margin-inline: auto; }
+.hosted-web .home-dashboard { max-width: 1080px; }
+.hosted-web .question-library { max-width: 880px; margin-inline: auto; }
+.hosted-web .home-resource-links { flex-wrap: wrap; }
+.hosted-web .profile-account h1 { overflow-wrap: anywhere; }
+.hosted-web .web-skip-link { position: fixed; top: 8px; left: 8px; z-index: 200; transform: translateY(-160%); background: #fff; border: 2px solid #315ced; }
+.hosted-web .web-skip-link:focus { transform: none; }
+.hosted-web .bottom-nav .web-nav-link { position: relative; display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; min-height: 48px; padding: 2px 12px; border-radius: 12px; background: transparent; color: #7b889f; font-size: 11px; line-height: 1.5; text-decoration: none; }
+.hosted-web .bottom-nav .web-nav-link[aria-current='page'] { color: var(--brand); background: #eff3ff; font-weight: 650; }
+.hosted-web .bottom-nav .web-nav-link:hover { background: #eef3ff; }
+.hosted-web .bottom-nav .web-nav-link[aria-current='page'] svg { stroke-width: 2.2; }
+.hosted-web :is(.review-page, .learning-hub, .cloud-drive-page) { width: 100%; }
+.hosted-web .record-content { min-width: 0; }
+.hosted-web .record-content strong { overflow-wrap: anywhere; }
+.hosted-web .question-paper, .hosted-web .knowledge-reference-card { min-width: 0; }
+.hosted-web .question-card :is(.paper-prompt, .paper-context, .knowledge-reference-card, .knowledge-unmatched) { overflow-wrap: anywhere; }
+.hosted-web .question-crops { max-width: 760px; margin-inline: auto; }
+.hosted-web .question-paper-title { overflow-wrap: anywhere; }
+.hosted-web .worksheet-export-dialog { max-width: min(760px, calc(100vw - 24px)); }
+
+@media (min-width: 768px) {
+  .hosted-web .dashboard { padding: 28px 32px 110px; }
+  .hosted-web .home-dashboard { padding-top: 30px; }
+  .hosted-web .capture-entry-grid { gap: 20px; }
+  .hosted-web .capture-entry { min-height: 226px; padding: 26px; border-radius: 24px; }
+  .hosted-web .capture-entry strong { font-size: 30px; }
+  .hosted-web .capture-entry strong span { display: inline; }
+  .hosted-web .capture-entry small { font-size: 15px; }
+  .hosted-web .learning-entry { margin-top: 24px; }
+  .hosted-web .learning-entry h2 { font-size: 18px; }
+  .hosted-web .learning-grid { gap: 16px; }
+  .hosted-web .learning-module { min-height: 136px; padding: 20px; }
+  .hosted-web .learning-module strong { font-size: 21px; }
+  .hosted-web .learning-module small { font-size: 13px; }
+  .hosted-web .learning-continue { padding: 18px 20px; }
+  .hosted-web .learning-continue strong { font-size: 17px; }
+  .hosted-web .learning-continue small { font-size: 14px; }
+  .hosted-web .home-resource-links { gap: 24px; }
+  .hosted-web .home-resource-links button { font-size: 14px; }
+  .hosted-web .question-card { padding: 24px 28px; margin-block: 22px; border-radius: 18px; }
+  .hosted-web .paper-prompt, .hosted-web .paper-context p { font-size: 18px; line-height: 1.9; }
+  .hosted-web .question-paper-title { font-size: 15px; }
+  .hosted-web .question-card-footer small { font-size: 13px; }
+  .hosted-web .question-learning-actions button { font-size: 14px; }
+  .hosted-web .subject-filters { gap: 9px; }
+  .hosted-web .collection-filters { max-width: 420px; }
+  .hosted-web .question-library .library-modes { max-width: 520px; }
+  .hosted-web .question-library .library-modes button { min-height: 54px; font-size: 20px; }
+  .hosted-web .student-profile-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+  .hosted-web .profile-account-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+  .hosted-web .profile-account-actions button { min-width: 120px; font-size: 14px; padding: 10px 18px; }
+  .hosted-web .guest-intro-card { max-width: 760px; margin-inline: auto; }
+  .hosted-web .learning-hub { max-width: 900px; padding-inline: 32px; }
+}
+
+@media (min-width: 1024px) {
+  .hosted-web .app-shell { padding-top: 80px; }
+  .hosted-web .app-shell > .topbar { position: fixed; inset: 0 0 auto; z-index: 25; height: 80px; min-height: 80px; padding: 12px 32px; background: #ffffffed; backdrop-filter: blur(12px); }
+  .hosted-web .learning-topbar .student-switcher { width: 210px; }
+  .hosted-web .learning-topbar .student-select-wrap select { font-size: 14px; }
+  .hosted-web .bottom-nav { z-index: 26; top: 14px; bottom: auto; left: 50%; width: 300px; padding: 0; border: 0; box-shadow: none; border-radius: 14px; background: transparent; }
+  .hosted-web .bottom-nav .web-nav-link { flex-direction: row; gap: 9px; min-height: 52px; font-size: 15px; padding: 8px 16px; }
+  .hosted-web .bottom-nav :is(.nav-dot, .update-dot) { top: 7px; right: 10px; }
+  .hosted-web .dashboard { padding-bottom: 48px; }
+  .hosted-web .learning-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .hosted-web .learning-module { min-height: 145px; }
+  .hosted-web .guest-brand-group { max-width: calc(50vw - 170px); flex-wrap: wrap; }
+  .hosted-web .guest-auth-actions { max-width: calc(50vw - 190px); }
+  .hosted-web .question-card { scroll-margin-top: 100px; }
+  .hosted-web .question-card-heading { scroll-margin-top: 100px; }
+  .hosted-web .review-page { max-width: 1240px; }
+}
+
+@media (max-width: 380px) {
+  .hosted-web .topbar { padding-inline: 14px; }
+  .hosted-web .learning-topbar { flex-wrap: wrap; }
+  .hosted-web .learning-topbar .student-switcher { flex: 1; min-width: 126px; max-width: 170px; }
+  .hosted-web .dashboard { padding-inline: 14px; }
+  .hosted-web .guest-brand-group { min-width: 0; }
+}

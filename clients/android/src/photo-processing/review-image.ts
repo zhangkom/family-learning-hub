@@ -4,6 +4,7 @@ import { getOriginal, readConfirmedUpload } from './index';
 import { recoveredImages, type ImageScan } from './recovered-image';
 import { decodeQuestionImage } from '../question-images';
 import { questionImageHash } from '../question-image-identity';
+import { isHostedWeb } from '../hosted-web';
 
 function waitForPhotoWorker(signal: AbortSignal) {
   return new Promise<void>((resolve, reject) => {
@@ -31,7 +32,7 @@ export async function getReviewOriginal(owner: string, originalId: string, signa
 /** Use the exact local image first. Question views allow recovery; local-only callers can still pass false. */
 export async function loadReviewImage(api: FamilyApi, owner: string, scan: ImageScan, allowCloud: boolean, signal: AbortSignal) {
   signal.throwIfAborted();
-  if (Capacitor.getPlatform() !== 'android') {
+  if (Capacitor.getPlatform() !== 'android' && !isHostedWeb) {
     const file = await api.image(scan.id, signal, scan.sourcePage?.scanSha256, scan.imageRevision);
     if (questionImageHash(scan)) await recoveredImages.verify(scan, file, signal);
     return { file, source: 'cloud' as const };
@@ -39,8 +40,8 @@ export async function loadReviewImage(api: FamilyApi, owner: string, scan: Image
   recoveredImages.validate(owner, scan);
   const processing = scan.processing;
   if (processing && processing.studentId !== scan.studentId) throw new Error('题图学生归属不匹配，请刷新题目');
-  let localError: unknown = new Error('当前手机尚未保存这张题图，请点击恢复；恢复后保存在本机');
-  if (scan.sourceKind === 'processed-photo' && processing && processing.sha256 === questionImageHash(scan)) {
+  let localError: unknown = new Error('本机尚未保存这张题图，请点击恢复；恢复后保存在本机');
+  if (Capacitor.getPlatform() === 'android' && scan.sourceKind === 'processed-photo' && processing && processing.sha256 === questionImageHash(scan)) {
     try {
       const original = await getReviewOriginal(owner, processing.originalId, signal);
       signal.throwIfAborted();

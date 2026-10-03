@@ -1,91 +1,29 @@
 import assert from 'node:assert/strict';
-
 const origin = process.argv[2] || 'http://127.0.0.1:3190';
 const base = `${origin}/family-learning`;
-const paths = [
-  '/',
-  '/account',
-  '/family-review',
-  '/students',
-  '/scans',
-  '/xiaobao',
-  '/dabao',
-  '/xiaobao/study',
-  '/dabao/study',
-  '/xiaobao/practice',
-  '/dabao/practice',
-  '/xiaobao/wrong-book',
-  '/dabao/review',
-  '/xiaobao/practice/method-xb-geo-lines',
-  '/xiaobao/practice/method-xb-abs-box',
-  '/dabao/practice/method-db-equilibrium',
-];
-let exerciseCount = 0;
-for (const path of paths) {
-  const response = await fetch(`${base}${path}`);
-  assert.equal(response.status, 200, path);
-  const html = await response.text();
-  assert.match(html, /<html[^>]+lang="zh-CN"/, `Chinese document: ${path}`);
-  if (path === '/') assert.match(html, /大宝逐梦名校，小宝冲刺深圳四大/);
-  if (path.endsWith('/practice')) {
-    const links = [
-      ...new Set(
-        [
-          ...html.matchAll(
-            /href="(\/family-learning\/(?:xiaobao|dabao)\/practice\/[^"?#]+)"/g,
-          ),
-        ].map((m) => m[1]),
-      ),
-    ];
-    assert.ok(links.length > 0, `Printable worksheet links: ${path}`);
-    for (const link of links.slice(0, 2)) {
-      const worksheet = await fetch(`${origin}${link}`);
-      assert.equal(worksheet.status, 200, link);
-      assert.match(await worksheet.text(), /打印|答题/);
-      exerciseCount++;
-    }
-  }
-  const assets = [
-    ...new Set(
-      [
-        ...html.matchAll(
-          /(?:src|href)="(\/family-learning\/_next\/static\/[^"?#]+)"/g,
-        ),
-      ].map((m) => m[1]),
-    ),
-  ];
-  assert.ok(assets.length > 0, `Prefixed assets: ${path}`);
-  for (const asset of assets.slice(0, 2)) {
-    const result = await fetch(`${origin}${asset}`);
-    assert.equal(result.status, 200, asset);
-    assert.ok(
-      !result.headers.get('content-type')?.includes('text/html'),
-      asset,
-    );
-    assert.ok(
-      (await result.arrayBuffer()).byteLength > 0,
-      `Complete asset body: ${asset}`,
-    );
-  }
-  console.log(`OK ${path}`);
+const page = await fetch(`${base}/`);
+assert.equal(page.status, 200);
+assert.match(await page.text(), /知识棱镜AI/);
+const response = await fetch(`${base}/web-client/manifest.json`);
+assert.equal(response.status, 200);
+const manifest = await response.json();
+assert.ok(Object.values(manifest).some(entry => entry.isEntry));
+const assets = new Set(Object.values(manifest).flatMap(entry => [entry.file, ...(entry.css || [])]));
+for (const asset of assets) {
+  assert.ok(asset.startsWith('assets/') && !asset.includes('..'));
+  const response = await fetch(`${base}/web-client/${asset}`);
+  assert.equal(response.status, 200, asset);
+  assert.ok(!response.headers.get('content-type')?.includes('text/html'), asset);
+  assert.ok((await response.arrayBuffer()).byteLength > 0, asset);
 }
-for (const path of [
-  '/api/scans',
-  '/api/wrong-questions?child=xiaobao',
-  '/api/scans/test/file',
-]) {
-  for (const method of path.endsWith('/file') ? ['GET'] : ['GET', 'POST']) {
-    const response = await fetch(`${base}${path}`, {
-      method,
-      headers: {
-        'oai-authenticated-user-id': 'spoofed',
-        'oai-authenticated-user-email': 'spoofed@example.invalid',
-      },
-    });
-    assert.equal(response.status, 401, `Unauthenticated ${method} ${path}`);
-    await response.text();
-  }
+for (const path of ['/account', '/students', '/scans', '/family-review', '/dabao', '/xiaobao', '/dabao/wrong-book', '/xiaobao/practice']) {
+  const response = await fetch(base + path, { redirect: 'manual' });
+  if (response.status >= 300 && response.status < 400) assert.ok(response.headers.get('location').includes('/family-learning/#/'), path);
+  else { assert.equal(response.status, 200, path); assert.match(await response.text(), /family-learning\/(?:#|%23)/, path); }
 }
-console.log(
-  `Verified ${paths.length} pages, ${exerciseCount} worksheets, assets and API identity rejection.`,
-);
+for (const path of ['/api/family/workspace/session', '/api/family/workspace/students', '/api/family/workspace/scans?studentId=synthetic-missing', '/api/admin/session']) {
+  const response = await fetch(base + path); assert.equal(response.status, 401, path);
+}
+const forbidden = await fetch(base + '/api/family/workspace/session/login', { method: 'POST', headers: { Origin: 'https://untrusted.example', 'Content-Type': 'application/json' }, body: '{}' });
+assert.equal(forbidden.status, 403, 'Cross-site cookie authentication rejected');
+console.log(`Hosted web entry, ${assets.size} resources, legacy links and session boundaries verified.`);

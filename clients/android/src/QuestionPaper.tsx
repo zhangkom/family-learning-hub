@@ -1,3 +1,4 @@
+import { isHostedWeb } from './hosted-web';
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { Image as ImageIcon, FileText, ChevronRight, ZoomIn, BookOpen } from 'lucide-react';
@@ -127,12 +128,12 @@ export function QuestionCard({ scan, question, images, onOpen, actions, api, own
       </div></header>
     <QuestionDifficulty scan={scan} question={question} api={api} onUpdate={onUpdate} />
     {knowledge ? <QuestionKnowledge question={question} /> : <QuestionPaper question={question} questions={scan.questions} image={image} original={original} onImageError={() => images.imageFailed(scan.id)} onViewerChange={setExpanded} />}
-    {!knowledge && hasRegions && (nearby || original) && state.status === 'loading' && <output className="paper-image-note" aria-live="polite">{Capacitor.getPlatform() === 'android' ? '正在读取或恢复题图…' : '正在读取题图…'}</output>}
-    {!knowledge && hasRegions && (nearby || original) && state.status === 'error' && <div className="paper-image-unavailable"><output>{Capacitor.getPlatform() === 'android' ? '题图自动恢复未完成' : '题图读取失败，请重试'}</output>
+    {!knowledge && hasRegions && (nearby || original) && state.status === 'loading' && <output className="paper-image-note" aria-live="polite">{(Capacitor.getPlatform() === 'android' || isHostedWeb) ? '正在读取或恢复题图…' : '正在读取题图…'}</output>}
+    {!knowledge && hasRegions && (nearby || original) && state.status === 'error' && <div className="paper-image-unavailable"><output>{(Capacitor.getPlatform() === 'android' || isHostedWeb) ? '题图自动恢复未完成' : '题图读取失败，请重试'}</output>
       <small>{state.message}</small>
       <small>恢复题图后才能查看完整题目。</small>
-      <button type="button" onClick={() => images.retry(scan.id, true)}>{Capacitor.getPlatform() === 'android' ? '重试恢复题图' : '重试读取'}</button>
-      {Capacitor.getPlatform() === 'android' && <small>本机没有可用副本时，从服务器恢复并保存；同页题目共用。</small>}</div>}
+      <button type="button" onClick={() => images.retry(scan.id, true)}>{(Capacitor.getPlatform() === 'android' || isHostedWeb) ? '重试恢复题图' : '重试读取'}</button>
+      {(Capacitor.getPlatform() === 'android' || isHostedWeb) && <small>本机没有可用副本时，从服务器恢复并保存；同页题目共用。</small>}</div>}
     <QuestionSource scan={scan} question={question} api={api} owner={owner} />
     {actions}
     <footer className="question-card-footer"><small>{collection.materialPending ? `${question.wrongBook || question.focusBook ? '已收录 · ' : ''}材料待补全` : collection.collectionPending ? '收录待复核' : summary}</small>{onOpen && <button type="button" onClick={onOpen}>题目详情 <ChevronRight size={15} /></button>}</footer>

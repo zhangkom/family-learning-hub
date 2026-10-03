@@ -1,8 +1,5 @@
-import type { Metadata } from 'next';
-import { DailyStudy } from './daily-study';
+import { redirect } from 'next/navigation';
+import { appPath } from '@/lib/deployment';
 
-export const metadata: Metadata = { title: '小宝每日难点｜双宝名校计划' };
-
-export default function XiaobaoStudyPage() {
-  return <DailyStudy />;
-}
+// Bookmarks from the earlier site open the corresponding shared learning view.
+export default function LegacyPage() { redirect(appPath('/#/questions?view=knowledge')); }

@@ -4,8 +4,8 @@ import './globals.css';
 import { FamilyProvider } from './components/family-provider';
 
 export const metadata: Metadata = {
-  title: '双宝名校计划',
-  description: '为两个孩子建立目标、计划、错题与家庭复盘闭环。',
+  title: '知识棱镜AI',
+  description: '收录错题与重点题，整理薄弱知识点，练习、复测与打印相互衔接。',
   icons: { icon: appPath('/favicon.svg') },
 };
 

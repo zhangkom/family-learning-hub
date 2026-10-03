@@ -17,7 +17,8 @@ export function verifiedWorksheetPreview(input: WorksheetExportInput, preview: W
 function expired(api: FamilyApi) { window.dispatchEvent(new CustomEvent(sessionExpiredEvent, { detail: { base: api.base, token: api.token } })); }
 
 export async function readWorksheetBlob(api: FamilyApi, input: WorksheetExportInput, signal: AbortSignal) {
-  const response = await fetch(api.base + '/worksheets/export', { method: 'POST', credentials: 'omit', cache: 'no-store', redirect: 'error', headers: { Authorization: `Bearer ${api.token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(input), signal });
+  const auth = api.authentication();
+  const response = await fetch(api.base + '/worksheets/export', { method: 'POST', credentials: auth.credentials, cache: 'no-store', redirect: 'error', headers: { ...auth.headers, 'Content-Type': 'application/json' }, body: JSON.stringify(input), signal });
   if (response.status === 401) expired(api);
   if (!response.ok) { const data = await response.json().catch(() => ({})); throw new ApiError(data.error || 'Word 生成未完成，请重新检查所选题目', response.status); }
   if (response.headers.get('content-type')?.split(';')[0].trim() !== mime) throw new Error('返回内容不是 Word 文档，请重试');

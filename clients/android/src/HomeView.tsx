@@ -2,7 +2,7 @@ import type { LearningMode } from '../../../lib/learning-session';
 import { learningProgress, useLearningHistory } from './learning-history';
 import { useState, type ReactNode } from 'react';
 import { ChevronRight, Cloud, FileImage, Plus, RefreshCw, UserRound } from 'lucide-react';
-import { BottomNavigation, type HomePage } from './BottomNavigation';
+import { BottomNavigation, WebSkipLink, type HomePage } from './BottomNavigation';
 import { BrandMark } from './Brand';
 import { appName } from './release';
 import { statusNames, type Scan, type Student } from './types';
@@ -68,6 +68,7 @@ export function HomeView(props: Props) {
     </button>;
   }
   return <div className="app-shell">
+    <WebSkipLink />
     <header className="topbar learning-topbar">
       <div className="brand"><BrandMark size={36} /><span>{appName}</span></div>
       {tab !== 'me' && <section className="student-switcher" aria-label="当前学习档案">
@@ -79,7 +80,7 @@ export function HomeView(props: Props) {
         </div>
       </section>}
     </header>
-    <main className={`dashboard ${tab === 'home' ? 'home-dashboard' : ''}`}>
+    <main id="learning-main-content" tabIndex={-1} className={`dashboard ${tab === 'home' ? 'home-dashboard' : ''}`}>
       {error && <p role="alert" className="error">{error}</p>}
       {notice && <output className="notice">{notice}</output>}
 

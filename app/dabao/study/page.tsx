@@ -1,7 +1,5 @@
-import type { Metadata } from 'next';
-import { StudyWorkspace } from '@/app/components/study-workspace';
+import { redirect } from 'next/navigation';
+import { appPath } from '@/lib/deployment';
 
-export const metadata: Metadata = { title: '大宝解题方法课｜双宝名校计划' };
-export default function SeniorStudyPage() {
-  return <StudyWorkspace child="dabao" />;
-}
+// Bookmarks from the earlier site open the corresponding shared learning view.
+export default function LegacyPage() { redirect(appPath('/#/questions?view=knowledge')); }

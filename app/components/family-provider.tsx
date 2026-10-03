@@ -14,6 +14,7 @@ import {
 
 export function FamilyProvider({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  if (process.env.NEXT_PUBLIC_SELF_HOSTED === 'true') return <>{children}</>;
   if (pathname === '/admin' || pathname?.startsWith('/admin/') || pathname === '/family-learning/admin') return <>{children}</>;
   return <FamilySyncProvider>{children}</FamilySyncProvider>;
 }

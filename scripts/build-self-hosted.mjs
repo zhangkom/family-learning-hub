@@ -17,6 +17,7 @@ if (!/^\/[a-z0-9-]+(?:\/[a-z0-9-]+)*$/.test(basePath)) {
   );
 }
 const packageRoot = resolve('node_modules/vinext');
+await import('./build-web-client.mjs');
 const pkg = JSON.parse(
   readFileSync(resolve(packageRoot, 'package.json'), 'utf8'),
 );
@@ -75,6 +76,7 @@ if (result.status === 0) {
   // local atomic-publish helper too, so relocating it never loses a dependency.
   await build({
     configFile: false,
+    publicDir: false,
     build: {
       ssr: resolve('scripts/backup-family.mjs'),
       outDir: 'dist/standalone',
@@ -84,6 +86,7 @@ if (result.status === 0) {
   });
   await build({
     configFile: false,
+    publicDir: false,
     build: {
       ssr: resolve('server/scan-worker.ts'),
       outDir: 'dist/standalone/worker',
@@ -93,6 +96,7 @@ if (result.status === 0) {
   });
   await build({
     configFile: false,
+    publicDir: false,
     build: {
       ssr: resolve('server/admin-provision.ts'),
       outDir: 'dist/standalone/tools',
@@ -102,6 +106,7 @@ if (result.status === 0) {
   });
   await build({
     configFile: false,
+    publicDir: false,
     build: {
       ssr: resolve('server/homework-cli.ts'),
       outDir: 'dist/standalone/tools',
@@ -111,6 +116,7 @@ if (result.status === 0) {
   });
   await build({
     configFile: false,
+    publicDir: false,
     build: {
       ssr: resolve('server/homework-image-repair-cli.ts'),
       outDir: 'dist/standalone/tools',
