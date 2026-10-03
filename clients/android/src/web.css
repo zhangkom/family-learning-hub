@@ -21,6 +21,14 @@
 .hosted-web .question-crops { max-width: 760px; margin-inline: auto; }
 .hosted-web .question-paper-title { overflow-wrap: anywhere; }
 .hosted-web .worksheet-export-dialog { max-width: min(760px, calc(100vw - 24px)); }
+/* The host's CSS reset clears these browser defaults; keep the shared app's presentation. */
+.hosted-web dialog:not(.question-image-viewer) { margin: auto; }
+:where(.hosted-web) h3 { font-size: 1.17em; font-weight: 700; }
+:where(.hosted-web) ul { list-style: disc outside; margin-block: 1em; padding-inline-start: 40px; }
+:where(.hosted-web) ol { list-style: decimal outside; margin-block: 1em; padding-inline-start: 40px; }
+.hosted-web .knowledge-reference-card h3 { font-weight: 700; }
+.hosted-web .knowledge-reference-card h4 { font-weight: 600; }
+.hosted-web .knowledge-reference-card ul { list-style: disc outside; }
 
 @media (min-width: 768px) {
   .hosted-web .dashboard { padding: 28px 32px 110px; }
