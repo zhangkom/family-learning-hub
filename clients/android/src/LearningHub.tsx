@@ -10,6 +10,7 @@ import { QuestionImages, decodeQuestionImage } from './question-images';
 import { loadReviewImage } from './photo-processing/review-image';
 import { questionLearningReadiness } from '../../../lib/question-context';
 import { learningSourceSnapshot } from './learning-source-image';
+import { syncLearningWebLocation } from './web-navigation';
 
 export type LearningView = { mode: LearningMode; source?: { scanId: string; questionId: string }; sessionId?: string };
 type Props = { api: FamilyApi; owner: string; studentId: string; studentName: string; records: Scan[]; view: LearningView;
@@ -28,6 +29,12 @@ export function LearningHub({ api, owner, studentId, studentName, records, view,
   const images = useMemo(() => new QuestionImages(async (scan, _cloud, signal) => decodeQuestionImage((await loadReviewImage(api, owner, scan, true, signal)).file, signal)), [api, owner]);
   useEffect(() => () => images.dispose(), [images]);
   useEffect(() => { live.current = true; return () => { live.current = false; controller.current?.abort(); }; }, []);
+  const activeSource = sessionId && session?.id === sessionId ? session.source : selected;
+  const activeScanId = activeSource?.scanId, activeQuestionId = activeSource?.questionId;
+  useEffect(() => {
+    syncLearningWebLocation({ mode: view.mode, ...(sessionId ? { sessionId } : {}),
+      ...(activeScanId && activeQuestionId ? { source: { scanId: activeScanId, questionId: activeQuestionId } } : {}) });
+  }, [view.mode, sessionId, activeScanId, activeQuestionId]);
   const back = () => { if (lock.current) { controller.current?.abort(); onClose(); return; } if (sessionId) { setSessionId(''); setSession(null); setRefreshTick(x => x + 1); } else if (selected) setSelected(undefined); else onClose(); };
   const backRef = useRef(back); backRef.current = back;
   useNativeBack(() => backRef.current());

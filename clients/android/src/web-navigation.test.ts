@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('./hosted-web', () => ({ isHostedWeb: true }));
-import { parseWebHash, readWebLocation, subscribeWebLocation, webRouteHash, writeWebLocation, type HostedWebRoute } from './web-navigation';
+import { parseWebHash, readWebLocation, subscribeWebLocation, syncLearningWebLocation, webRouteHash, writeWebLocation, type HostedWebRoute } from './web-navigation';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -42,6 +42,29 @@ describe('hosted browser navigation', () => {
     expect(readWebLocation()).toEqual({ page: 'home' });
     expect(() => writeWebLocation({ page: 'me' })).not.toThrow();
     expect(() => subscribeWebLocation(vi.fn())()).not.toThrow();
+    expect(() => syncLearningWebLocation({ mode: 'practice' })).not.toThrow();
+  });
+  it('bookmarks new and selected sessions without remounting the active learning view', () => {
+    const state = { framework: 'preserved' }, location = { hash: '#/learn/practice?from=library&view=knowledge' };
+    const replaceState = vi.fn((_state: unknown, _title: string, hash: string) => { location.hash = hash; });
+    const dispatchEvent = vi.fn();
+    vi.stubGlobal('window', { location, history: { state, replaceState }, dispatchEvent });
+    const source = { scanId: 'scan-a', questionId: 'q1' };
+    syncLearningWebLocation({ mode: 'practice', source, sessionId: 'new-session' });
+    expect(readWebLocation()).toEqual({ page: 'library', libraryMode: 'knowledge', learning: { mode: 'practice', source, sessionId: 'new-session' } });
+    expect(replaceState).toHaveBeenLastCalledWith(state, '', location.hash);
+    expect(dispatchEvent).not.toHaveBeenCalled();
+    syncLearningWebLocation({ mode: 'practice', source, sessionId: 'new-session' });
+    expect(replaceState).toHaveBeenCalledTimes(1);
+    syncLearningWebLocation({ mode: 'practice', source });
+    expect(readWebLocation().learning?.sessionId).toBeUndefined();
+    syncLearningWebLocation({ mode: 'practice' });
+    expect(readWebLocation().learning?.source).toBeUndefined();
+    for (const hash of ['#/home', '#/learn/challenge?session=other', '#/question/scan-a?learn=practice&session=new-session']) {
+      location.hash = hash; replaceState.mockClear();
+      syncLearningWebLocation({ mode: 'practice', source, sessionId: 'late-result' });
+      expect(replaceState).not.toHaveBeenCalled();
+    }
   });
   it('keeps host history state, notifies on push/replace and listens for browser traversal', () => {
     const target = new EventTarget(), state = { framework: 'keep-this' }, location = { hash: '#/home' };

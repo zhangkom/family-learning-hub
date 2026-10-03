@@ -734,7 +734,7 @@ function Home({
         onUpdate={updateScan}
       />
     );
-  if (learningView && student) return <LearningHub key={`${owner}/${selected}/${learningView.mode}/${learningView.sessionId || ''}`} api={api} owner={owner} studentId={selected} studentName={student.name} records={records} view={learningView}
+  if (learningView && student) return <LearningHub key={`${owner}/${selected}/${learningView.mode}/${learningView.sessionId || ''}/${isHostedWeb ? `${learningView.source?.scanId || ''}/${learningView.source?.questionId || ''}` : ''}`} api={api} owner={owner} studentId={selected} studentName={student.name} records={records} view={learningView}
     onClose={() => { setLearningView(null); closeWebOverlay(); setLearningRevision(x => x + 1); setOverviewRevision(x => x + 1); void refresh(); }}
     onOpenSource={(scan, questionId, sessionId) => { const back = { mode: learningView.mode, source: { scanId: scan.id, questionId }, sessionId }; setLearningView(back); openReview(scan, questionId, back); }} onRefreshSources={() => void refresh()} />;
   return <>

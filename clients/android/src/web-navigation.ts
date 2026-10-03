@@ -68,6 +68,15 @@ export function writeWebLocation(route: HostedWebRoute, options: { replace?: boo
   window.dispatchEvent(new Event(routeEvent));
 }
 
+/** LearningHub already owns this state: update its bookmark without remounting an active request. */
+export function syncLearningWebLocation(learning: LearningView) {
+  if (!isHostedWeb || typeof window === 'undefined') return;
+  const route = readWebLocation();
+  if (route.overlay || route.learning?.mode !== learning.mode) return;
+  const hash = webRouteHash({ ...route, learning });
+  if (window.location.hash !== hash) window.history.replaceState(window.history.state, '', hash);
+}
+
 export function subscribeWebLocation(listener: (route: HostedWebRoute) => void): () => void {
   if (!isHostedWeb || typeof window === 'undefined') return () => {};
   const changed = () => listener(readWebLocation());
