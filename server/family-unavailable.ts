@@ -12,3 +12,5 @@ export async function handleMobile() {
   );
 }
 export const handleWorkspace = handleMobile;
+export const handleAdmin = handleMobile;
+export const handleExternalReview = handleMobile;

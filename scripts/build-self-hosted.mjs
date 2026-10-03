@@ -89,5 +89,14 @@ if (result.status === 0) {
       rolldownOptions: { output: { entryFileNames: 'worker.mjs' } },
     },
   });
+  await build({
+    configFile: false,
+    build: {
+      ssr: resolve('server/admin-provision.ts'),
+      outDir: 'dist/standalone/tools',
+      emptyOutDir: false,
+      rolldownOptions: { output: { entryFileNames: 'admin-provision.mjs' } },
+    },
+  });
 }
 process.exit(result.status ?? 1);

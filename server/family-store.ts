@@ -68,6 +68,12 @@ export class FamilyStore {
       CREATE TABLE IF NOT EXISTS weakness_jobs (id TEXT PRIMARY KEY, report_id TEXT NOT NULL REFERENCES weakness_reports(id), status TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, available_at INTEGER NOT NULL, lease_until INTEGER NOT NULL DEFAULT 0, lease_token TEXT, error TEXT, created_at INTEGER NOT NULL);
       CREATE INDEX IF NOT EXISTS weakness_jobs_ready ON weakness_jobs(status,available_at,lease_until);
       CREATE UNIQUE INDEX IF NOT EXISTS weakness_jobs_active ON weakness_jobs(report_id) WHERE status IN ('queued','processing');
+      CREATE TABLE IF NOT EXISTS platform_admins (account_id TEXT PRIMARY KEY REFERENCES accounts(id), created_at INTEGER NOT NULL, must_change_password INTEGER NOT NULL DEFAULT 1);
+      CREATE TABLE IF NOT EXISTS admin_audit (id INTEGER PRIMARY KEY, actor_id TEXT NOT NULL, action TEXT NOT NULL, target TEXT NOT NULL, created_at INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS review_batches (id TEXT PRIMARY KEY, admin_id TEXT NOT NULL REFERENCES accounts(id), title TEXT NOT NULL, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, revoked INTEGER NOT NULL DEFAULT 0);
+      CREATE TABLE IF NOT EXISTS review_items (id TEXT PRIMARY KEY, batch_id TEXT NOT NULL REFERENCES review_batches(id), body TEXT NOT NULL);
+      CREATE INDEX IF NOT EXISTS review_items_batch ON review_items(batch_id,id);
+      CREATE TABLE IF NOT EXISTS review_tokens (token_hash TEXT PRIMARY KEY, batch_id TEXT NOT NULL REFERENCES review_batches(id), expires_at INTEGER NOT NULL);
     `);
     upgradeCloudPhotoBatches(this.db);
     // Null denotes the original whole-page recognition task. Older workers must

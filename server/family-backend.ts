@@ -175,6 +175,7 @@ async function credentials(
     typeof body.username === 'string' ? body.username.trim().toLowerCase() : '';
   if (!/^[a-z0-9_-]{3,32}$/.test(username))
     throw new HttpError(400, '账号使用 3 至 32 位字母、数字、下划线或短横线');
+  if (action !== 'login' && username === 'admin') throw new HttpError(400, 'admin为平台管理专用账号');
   const password = passwordField(body.password);
   if (!store.allow(`user:${username}`, 8, 15 * 60000))
     throw new HttpError(429, '该账号尝试次数过多，请 15 分钟后再试');
@@ -228,6 +229,9 @@ export async function updateAccountCredentials(
   if (!/^[a-z0-9_-]{3,32}$/.test(username))
     throw new HttpError(400, '用户名使用 3 至 32 位字母、数字、下划线或短横线');
   const next = action === 'password' ? passwordField(body.password) : undefined;
+  const administrator = !!store.db.prepare('SELECT 1 FROM platform_admins WHERE account_id=?').get(user.id);
+  if (action === 'username' && (administrator || username === 'admin')) throw new HttpError(400, '平台管理员账号名称不可修改，admin为保留名称');
+  if (administrator && next !== undefined && next.length < 12) throw new HttpError(400, '管理员密码至少需要12个字符');
   const row = store.db
     .prepare('SELECT username,password FROM accounts WHERE id=?')
     .get(user.id);
@@ -255,6 +259,10 @@ export async function updateAccountCredentials(
     store.db
       .prepare('UPDATE accounts SET username=?,password=? WHERE id=?')
       .run(username, hashed, user.id);
+    if (administrator && next !== undefined) {
+      store.db.prepare('UPDATE platform_admins SET must_change_password=0 WHERE account_id=?').run(user.id);
+      store.db.prepare('DELETE FROM review_tokens WHERE batch_id IN (SELECT id FROM review_batches WHERE admin_id=?)').run(user.id);
+    }
     store.db.prepare('DELETE FROM sessions WHERE account_id=?').run(user.id);
     store.db
       .prepare('DELETE FROM mobile_sessions WHERE account_id=?')

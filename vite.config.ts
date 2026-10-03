@@ -54,6 +54,7 @@ export default defineConfig(async (): Promise<UserConfig> => {
           '@family/mobile': fileURLToPath(
             new URL('./server/mobile-backend.ts', import.meta.url),
           ),
+          '@family/admin': fileURLToPath(new URL('./server/admin-backend.ts', import.meta.url)),
           'cloudflare:workers': fileURLToPath(
             new URL('./server/unavailable-cloud-bindings.ts', import.meta.url),
           ),
@@ -84,6 +85,7 @@ export default defineConfig(async (): Promise<UserConfig> => {
         '@family/mobile': fileURLToPath(
           new URL('./server/family-unavailable.ts', import.meta.url),
         ),
+        '@family/admin': fileURLToPath(new URL('./server/family-unavailable.ts', import.meta.url)),
       },
     },
     css: { postcss: { plugins: [tailwindcss()] } },

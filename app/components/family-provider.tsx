@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { Fragment, useEffect, useState } from 'react';
 import {
   currentFamily,
@@ -12,6 +13,11 @@ import {
 } from '@/lib/family-client';
 
 export function FamilyProvider({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
+  if (pathname === '/admin' || pathname?.startsWith('/admin/') || pathname === '/family-learning/admin') return <>{children}</>;
+  return <FamilySyncProvider>{children}</FamilySyncProvider>;
+}
+function FamilySyncProvider({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false);
   const [spaceKey, setSpaceKey] = useState('initial');
   const [message, setMessage] = useState('正在连接家庭学习空间…');
