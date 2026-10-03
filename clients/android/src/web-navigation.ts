@@ -22,7 +22,12 @@ export function parseWebHash(hash: string): HostedWebRoute {
   if (path === '/cloud' || path === '/capture') return { ...origin, overlay: { kind: path === '/cloud' ? 'cloud' : 'capture' } };
   if (path.startsWith('/question/')) {
     const scanId = id(path.slice('/question/'.length)), questionId = id(params.get('question'));
-    return scanId ? { ...origin, overlay: { kind: 'review', scanId, ...(questionId ? { questionId } : {}) } } : origin;
+    const mode = params.get('learn'), sessionId = id(params.get('session'));
+    const sourceScan = id(params.get('scan')), sourceQuestion = id(params.get('sourceQuestion'));
+    const learning: LearningView | undefined = mode === 'practice' || mode === 'challenge' ? { mode,
+      ...(sessionId ? { sessionId } : {}), ...(sourceScan && sourceQuestion ? { source: { scanId: sourceScan, questionId: sourceQuestion } } : {}),
+    } : undefined;
+    return scanId ? { ...origin, ...(learning ? { learning } : {}), overlay: { kind: 'review', scanId, ...(questionId ? { questionId } : {}) } } : origin;
   }
   if (path === '/questions') return { page: 'library', libraryMode };
   if (path === '/me') return { page: 'me' };
@@ -40,8 +45,9 @@ export function webRouteHash(route: HostedWebRoute): string {
   const params = new URLSearchParams();
   if (route.learning) {
     const { source, sessionId } = route.learning;
+    if (route.overlay?.kind === 'review') params.set('learn', route.learning.mode);
     if (sessionId && id(sessionId)) params.set('session', sessionId);
-    if (source && id(source.scanId) && id(source.questionId)) { params.set('scan', source.scanId); params.set('question', source.questionId); }
+    if (source && id(source.scanId) && id(source.questionId)) { params.set('scan', source.scanId); params.set(route.overlay?.kind === 'review' ? 'sourceQuestion' : 'question', source.questionId); }
   }
   if ((route.learning || route.overlay) && route.page !== 'home') params.set('from', route.page);
   if (route.overlay?.kind === 'review' && route.overlay.questionId && id(route.overlay.questionId)) params.set('question', route.overlay.questionId);

@@ -29,6 +29,14 @@ describe('hosted browser navigation', () => {
     for (const route of routes) expect(parseWebHash(webRouteHash(route))).toEqual(route);
     expect(parseWebHash('#/question/../../other?from=library')).toEqual({ page: 'library', libraryMode: 'wrong' });
   });
+  it('keeps the learning return context separate from the reviewed source question', () => {
+    const route: HostedWebRoute = { page: 'library', libraryMode: 'knowledge', learning: { mode: 'challenge', sessionId: 'session-a', source: { scanId: 'scan-learning', questionId: 'q-learning' } }, overlay: { kind: 'review', scanId: 'scan-review', questionId: 'q-review' } };
+    const hash = webRouteHash(route);
+    expect(hash).toContain('sourceQuestion=q-learning'); expect(hash).toContain('question=q-review');
+    expect(parseWebHash(hash)).toEqual(route);
+    expect(parseWebHash('#/question/scan-review?learn=other&session=a&question=q-review')).toEqual({ page: 'home', overlay: { kind: 'review', scanId: 'scan-review', questionId: 'q-review' } });
+    expect(parseWebHash('#/question/scan-review?learn=practice&session=https://bad&scan=good&sourceQuestion=%3Cscript%3E&question=q-review')).toEqual({ page: 'home', learning: { mode: 'practice' }, overlay: { kind: 'review', scanId: 'scan-review', questionId: 'q-review' } });
+  });
   it('is safe without a browser during module and server rendering', () => {
     vi.stubGlobal('window', undefined);
     expect(readWebLocation()).toEqual({ page: 'home' });

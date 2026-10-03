@@ -280,13 +280,13 @@ function Home({
     setOpenScan(null); setLearningView(view);
     if (isHostedWeb) webNavigate({ page: homePage, libraryMode: libraryModeRef.current, learning: view });
   }
-  function openReview(scan: Scan, questionId?: string) {
+  function openReview(scan: Scan, questionId?: string, returnLearning: LearningView | null = learningView) {
     setLastViewed(previous => ({ ...previous, [scan.studentId]: { scanId: scan.id, questionId } }));
     setOpenQuestion(questionId || ''); setOpenScan(scan);
-    if (isHostedWeb) webNavigate({ page: homePage, libraryMode: libraryModeRef.current, overlay: { kind: 'review', scanId: scan.id, questionId } });
+    if (isHostedWeb) webNavigate({ page: homePage, libraryMode: libraryModeRef.current, ...(returnLearning ? { learning: returnLearning } : {}), overlay: { kind: 'review', scanId: scan.id, questionId } });
   }
   function closeWebOverlay() {
-    if (isHostedWeb) webNavigate({ page: homePage, libraryMode: libraryModeRef.current }, { replace: true });
+    if (isHostedWeb) webNavigate({ page: homePage, libraryMode: libraryModeRef.current, ...(webRoute.overlay && webRoute.learning ? { learning: webRoute.learning } : {}) }, { replace: true });
   }
   useEffect(() => {
     if (!isHostedWeb) return;
@@ -736,7 +736,7 @@ function Home({
     );
   if (learningView && student) return <LearningHub key={`${owner}/${selected}/${learningView.mode}/${learningView.sessionId || ''}`} api={api} owner={owner} studentId={selected} studentName={student.name} records={records} view={learningView}
     onClose={() => { setLearningView(null); closeWebOverlay(); setLearningRevision(x => x + 1); setOverviewRevision(x => x + 1); void refresh(); }}
-    onOpenSource={(scan, questionId, sessionId) => { setLearningView({ mode: learningView.mode, source: { scanId: scan.id, questionId }, sessionId }); openReview(scan, questionId); }} onRefreshSources={() => void refresh()} />;
+    onOpenSource={(scan, questionId, sessionId) => { const back = { mode: learningView.mode, source: { scanId: scan.id, questionId }, sessionId }; setLearningView(back); openReview(scan, questionId, back); }} onRefreshSources={() => void refresh()} />;
   return <>
     <HomeView learningRevision={learningRevision} onLearn={(mode, source, sessionId) => { if (student) openLearning({ mode, source, sessionId }); else { navigatePage('me'); setNotice('请先添加学生档案。'); } }} lastViewed={lastViewed[selected]} api={api} owner={owner} username={auth.user.username} students={students} selected={selected} records={records}
       onUpdateScan={updateScan}
