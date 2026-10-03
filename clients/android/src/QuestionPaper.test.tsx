@@ -20,7 +20,7 @@ describe('paper and original are visible distinct views', () => {
     const missing = renderToStaticMarkup(<QuestionPaper question={question} questions={[question]} original />);
     expect(missing).toContain('原图题框 · 第 1 题'); expect(missing).not.toContain('如图求三角形面积。');
     expect(missing).not.toContain('<img');
-    expect(missing).toContain('题图未就绪，当前内容尚不完整。');
+    expect(missing).not.toContain('题图未就绪');
   });
   it('uses the real separate figure, preserving its relative vertical and horizontal crop scale', () => {
     const q: Question = { ...question, regions: [...question.regions, { id: 'figure', kind: 'figure', x: .3, y: .3, width: .4, height: .1 }] };

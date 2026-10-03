@@ -51,8 +51,9 @@ try {
   const scan = { id: 'paper-a', studentId: 'a', subject: '数学', source: '合成试卷', originalName: '合成几何与统计.jpg', mimeType: 'image/jpeg', size: photo.bytes, createdAt: now, revision: 1, status: 'ready', sourceKind: 'processed-photo', processing, questions };
   for (const native of [false, true]) {
     const context = await browser.newContext({ viewport: { width: 390, height: 844 } }); const page = await context.newPage(); lastPage = page; page.setDefaultTimeout(10000);
-    const requests = { cloudImages: 0 }; let delayStudent = false, legacy = false;
+    const requests = { cloudImages: 0 }; let delayStudent = false, legacy = false, failImage = false, extraPages = false, blockImage = false, unblockImage, whenImageBlocked;
     const currentScan = () => legacy ? { ...scan, id: 'paper-legacy', sourceKind: undefined, processing: undefined } : scan;
+    const currentScans = () => [currentScan(), ...(extraPages ? [6, 7].map(n => ({ ...scan, id: `extra-${n}`, sourceKind: undefined, processing: undefined, originalName: `其他合成试卷-${n}.jpg`, questions: [{ ...questions[0], id: `q${n}`, number: String(n) }] })) : [])];
     page.on('pageerror', error => errors.push(error.message));
     if (native) await context.addInitScript(({ original, photo, outputId }) => {
       window.nativeReads = 0; window.localMissing = false; window.nativeBusy = true; window.androidBridge = {};
@@ -92,9 +93,14 @@ try {
       if (url.href === api + '/session') return send({ user: { id: 'paper-family', username: '题卡合成验收' } });
       if (url.pathname.endsWith('/learning-sessions')) return send({ sessions: [], more: false, enabled: true });
     if (url.pathname.endsWith('/students')) return send({ students: [{ id: 'a', name: '合成学生甲', createdAt: now }, { id: 'b', name: '合成学生乙', createdAt: now }] });
-      if (url.pathname.endsWith('/scans')) { if (delayStudent && url.searchParams.get('studentId') === 'b') await new Promise(resolve => setTimeout(resolve, 500)); return send({ scans: url.searchParams.get('studentId') === 'a' ? [currentScan()] : [], recognition: false }); }
+      if (url.pathname.endsWith('/scans')) { if (delayStudent && url.searchParams.get('studentId') === 'b') await new Promise(resolve => setTimeout(resolve, 500)); return send({ scans: url.searchParams.get('studentId') === 'a' ? currentScans() : [], recognition: false }); }
       if (url.href === api + `/scans/${currentScan().id}`) return send({ scan: currentScan() });
-      if (url.href === api + `/scans/${currentScan().id}/file`) { requests.cloudImages++; return route.fulfill({ contentType: 'image/jpeg', body: Buffer.from(photo.data.split(',')[1], 'base64') }); }
+      if (currentScans().some(s => url.href === api + `/scans/${s.id}/file`)) {
+        requests.cloudImages++;
+        if (failImage) return route.fulfill({ status: 503, body: 'synthetic image service unavailable' });
+        if (blockImage) { const resume = new Promise(resolve => { unblockImage = resolve; }); whenImageBlocked?.(); await resume; }
+        return route.fulfill({ contentType: 'image/jpeg', body: Buffer.from(photo.data.split(',')[1], 'base64') });
+      }
       errors.push('Unexpected request: ' + url.pathname); return route.abort();
     });
     await page.goto(client);
@@ -142,7 +148,7 @@ try {
     await card().getByRole('button', { name: '整理版', exact: true }).click(); await card().getByRole('img', { name: '原题配图', exact: true }).waitFor();
     await card().locator('.question-crop img').first().evaluate(img => { img.src = 'data:image/jpeg;base64,broken'; });
     await card().getByText('题图显示失败，请重新读取本机照片', { exact: true }).waitFor();
-    await card().getByRole('button', { name: '重试读取', exact: true }).click();
+    await card().getByRole('button', { name: native ? '重试恢复题图' : '重试读取', exact: true }).click();
     await card().getByRole('img', { name: '原题配图', exact: true }).waitFor();
     if (native) assert.equal(requests.cloudImages, 0, 'Render failure retries the local file without automatic cloud fallback');
     const noFigure = page.getByRole('article', { name: '第 2 题', exact: true });
@@ -183,28 +189,32 @@ try {
     await page.getByText('还没有错题，先从首页录入。', { exact: true }).waitFor();
     if (native) {
       assert.equal(requests.cloudImages, 0); await page.evaluate(() => { window.localMissing = true; });
-      await page.getByLabel('当前学生').selectOption('a'); await card().getByText('本机题图暂不可用', { exact: true }).waitFor();
+      await page.getByLabel('当前学生').selectOption('a');
+      await card().getByRole('img', { name: '原题配图', exact: true }).waitFor();
+      assert.equal(requests.cloudImages, 1, 'Missing processed photo is recovered without a click');
+      assert.equal(await page.getByRole('region', { name: '本机题图恢复', exact: true }).count(), 0, 'Successful auto recovery shows no manual recovery panel');
       await card().getByRole('button', { name: '原图', exact: true }).click();
       await card().getByText('原图题框 · 第 1 题', { exact: true }).waitFor();
       assert.equal(await card().locator('.paper-prompt').count(), 0, 'Missing original never masquerades as a successful text-only view');
-      await card().getByText('synthetic local missing', { exact: true }).waitFor();
-      assert.equal(requests.cloudImages, 0);
-      await card().getByRole('button', { name: '恢复题图到本机', exact: true }).click(); await card().getByRole('img', { name: /这道题的原图题框/ }).first().waitFor();
+      await card().getByRole('img', { name: /这道题的原图题框/ }).first().waitFor();
       assert.equal(requests.cloudImages, 1);
       // Recovered processed images remain usable when their original native file is still missing.
       await page.getByLabel('当前学生').selectOption('b'); await page.getByText('还没有错题，先从首页录入。', { exact: true }).waitFor();
       await page.getByLabel('当前学生').selectOption('a'); await card().getByRole('img', { name: '原题配图', exact: true }).waitFor();
       assert.equal(requests.cloudImages, 1);
       // Reproduce the real legacy/desktop-created record: no processing metadata, no native photo ID.
-      await page.getByLabel('当前学生').selectOption('b'); await page.getByText('还没有错题，先从首页录入。', { exact: true }).waitFor(); legacy = true;
-      await page.getByLabel('当前学生').selectOption('a'); await card().getByText('这张题图尚未关联到当前手机，恢复一次后会保存在本机', { exact: true }).waitFor();
-      await card().getByText('题图未就绪，当前内容尚不完整。', { exact: true }).waitFor();
-      assert.equal(requests.cloudImages, 1);
+      await page.getByLabel('当前学生').selectOption('b'); await page.getByText('还没有错题，先从首页录入。', { exact: true }).waitFor(); legacy = true; failImage = true;
+      await page.getByLabel('当前学生').selectOption('a'); await card().getByText('题图自动恢复未完成', { exact: true }).waitFor();
+      assert.equal(await page.getByText('题图未就绪，当前内容尚不完整。', { exact: true }).count(), 0);
+      assert.equal(requests.cloudImages, 2, 'Same-page cards share one automatic recovery attempt');
       for (const width of [320, 390, 768]) {
         await page.setViewportSize({ width, height: 900 }); await card().scrollIntoViewIfNeeded();
         assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
         await card().screenshot({ path: resolve(out, `legacy-recovery-${width}.png`) });
       }
+      assert.equal(requests.cloudImages, 2, 'Layout changes do not retry a failed recovery');
+      const recoveryPanel = page.getByRole('region', { name: '本机题图恢复', exact: true });
+      await recoveryPanel.getByText('1 张题图未恢复', { exact: true }).waitFor();
       // A successful network response isn't success until the local transaction commits.
       await page.evaluate(() => {
         // oxlint-disable-next-line typescript/unbound-method -- Keep the actual prototype method for reversible quota fault injection.
@@ -215,25 +225,24 @@ try {
           return originalPut.apply(this, args);
         };
       });
-      await card().getByRole('button', { name: '恢复题图到本机', exact: true }).click();
-      await card().getByText('本机题图保存或读取失败，请检查手机可用空间后重试', { exact: true }).waitFor();
-      assert.equal(await card().locator('img').count(), 0); assert.equal(requests.cloudImages, 2);
-      await card().getByRole('button', { name: '重试读取', exact: true }).click();
-      await card().getByText('这张题图尚未关联到当前手机，恢复一次后会保存在本机', { exact: true }).waitFor();
-      assert.equal(requests.cloudImages, 2);
+      failImage = false;
+      await recoveryPanel.getByRole('button', { name: '重试恢复全部题图', exact: true }).click();
+      await recoveryPanel.getByText('检查完成：已检查 1/1 张，可用 0 张，未完成 1 张', { exact: true }).waitFor();
+      await recoveryPanel.getByText('查看未完成原因', { exact: true }).click();
+      await recoveryPanel.getByText(/本机题图保存或读取失败/).waitFor();
+      assert.equal(await card().locator('img').count(), 0); assert.equal(requests.cloudImages, 3);
       await card().getByRole('button', { name: '题目详情', exact: true }).click();
-      await page.getByRole('button', { name: '恢复题图到本机', exact: true }).click();
       await page.locator('.review-page > .notice').getByText('本机题图保存或读取失败，请检查手机可用空间后重试', { exact: true }).waitFor();
-      assert.equal(requests.cloudImages, 3);
+      assert.equal(requests.cloudImages, 4, 'Details also attempt automatic recovery');
       await page.evaluate(() => window.restoreImageWrites());
-      await page.getByRole('button', { name: '恢复题图到本机', exact: true }).click();
+      await page.getByRole('button', { name: '重试恢复题图', exact: true }).click();
       await page.getByRole('region', { name: '当前题目原题' }).getByRole('img', { name: '原题配图', exact: true }).waitFor();
-      assert.equal(requests.cloudImages, 4, 'Details recovery can retry after storage failure');
+      assert.equal(requests.cloudImages, 5, 'Details recovery can retry after storage failure');
       await page.reload(); await page.getByRole('navigation', { name: '主要页面' }).getByRole('button', { name: '题目', exact: true }).click();
-      await card().getByRole('img', { name: '原题配图', exact: true }).waitFor(); assert.equal(requests.cloudImages, 4, 'Reload reuses persistent legacy image without downloading');
+      await card().getByRole('img', { name: '原题配图', exact: true }).waitFor(); assert.equal(requests.cloudImages, 5, 'Reload reuses persistent legacy image without downloading');
       await card().getByRole('button', { name: '题目详情', exact: true }).click();
       await page.getByRole('region', { name: '当前题目原题' }).getByRole('img', { name: '原题配图', exact: true }).waitFor();
-      assert.equal(requests.cloudImages, 4, 'Details share the same persistent image');
+      assert.equal(requests.cloudImages, 5, 'Details share the same persistent image');
       const cacheChecks = await page.evaluate(async ({ owner, scan }) => {
         const { recoveredImages } = await import('/src/photo-processing/recovered-image.ts');
         const signal = new AbortController().signal;
@@ -260,13 +269,34 @@ try {
         }); db.close();
       }, { owner: api + '|paper-family', scan: currentScan() });
       await page.reload(); await page.getByRole('navigation', { name: '主要页面' }).getByRole('button', { name: '题目', exact: true }).click();
-      await card().getByText('已保存的本机题图校验失败，请重新恢复', { exact: true }).waitFor();
-      assert.equal(requests.cloudImages, 4, 'Corruption is surfaced without automatic download');
-      await card().getByRole('button', { name: '恢复题图到本机', exact: true }).click();
-      await card().getByRole('img', { name: '原题配图', exact: true }).waitFor(); assert.equal(requests.cloudImages, 5);
-      checks.push('Actual IndexedDB: storage-write failure stays recoverable in both cards and details, local retry never downloads; corrupt same-size bytes rejected and repaired only after explicit recovery');
-      checks.push('Real IndexedDB: legacy scan recovery persists after reload and detail navigation; exact original bytes/hash; account/student isolation; changed metadata and cancellation rejected; no implicit download');
-      checks.push('Android bridge: exact private processed path, student/original identity and file hash checked; transient PHOTO_BUSY recovery; no IntersectionObserver fallback; one read shared between question cards; no server download until explicit missing-file recovery');
+      await card().getByRole('img', { name: '原题配图', exact: true }).waitFor(); assert.equal(requests.cloudImages, 6, 'Corrupt cached image automatically recovered once');
+      // Mixed batch: the existing page is reused, two failed pages can be retried together or stopped.
+      extraPages = true; failImage = true;
+      await page.getByRole('button', { name: '刷新', exact: true }).click();
+      await page.getByRole('article', { name: '第 6 题', exact: true }).getByText('题图自动恢复未完成', { exact: true }).waitFor();
+      await page.getByRole('article', { name: '第 7 题', exact: true }).getByText('题图自动恢复未完成', { exact: true }).waitFor();
+      assert.equal(requests.cloudImages, 8);
+      await recoveryPanel.getByText('2 张题图未恢复', { exact: true }).waitFor();
+      await recoveryPanel.getByRole('button', { name: '重试恢复全部题图', exact: true }).click();
+      await recoveryPanel.getByText('检查完成：已检查 3/3 张，可用 1 张，未完成 2 张', { exact: true }).waitFor();
+      assert.equal(requests.cloudImages, 10, 'Already saved page is not downloaded again during batch retry');
+      failImage = false; blockImage = true;
+      const imageBlocked = new Promise(resolve => { whenImageBlocked = resolve; });
+      await recoveryPanel.getByRole('button', { name: '重新检查与恢复', exact: true }).click(); await imageBlocked;
+      await recoveryPanel.getByRole('button', { name: '停止恢复', exact: true }).click();
+      await recoveryPanel.getByText('已停止：已检查 1/3 张，可用 1 张', { exact: true }).waitFor();
+      blockImage = false; unblockImage();
+      await page.getByRole('article', { name: '第 6 题', exact: true }).getByRole('img', { name: '原题配图', exact: true }).waitFor();
+      assert.equal(requests.cloudImages, 11, 'Stopping leaves later failed pages untouched; a visible card can finish its shared in-flight read');
+      await recoveryPanel.getByRole('button', { name: '重新检查与恢复', exact: true }).click();
+      await recoveryPanel.getByText('检查完成：已检查 3/3 张，可用 3 张', { exact: true }).waitFor();
+      await page.getByRole('article', { name: '第 7 题', exact: true }).getByRole('img', { name: '原题配图', exact: true }).waitFor();
+      assert.equal(requests.cloudImages, 12);
+      await recoveryPanel.screenshot({ path: resolve(out, 'batch-recovered.png') });
+      checks.push('Mixed-page batch recovery: exact 3-page total, one existing file reused, two failures retained; stopped unstarted work, resumed without redownloading successes; shared card and batch read never duplicates an in-flight download');
+      checks.push('Actual IndexedDB: automatic recovery on missing or corrupt images; failed server/storage recovery exposes manual retry, successful automatic recovery shows no manual controls');
+      checks.push('Real IndexedDB: legacy scan recovery persists after reload and detail navigation; exact original bytes/hash; account/student isolation; changed metadata and cancellation rejected; local-first avoids repeated downloads');
+      checks.push('Android bridge: exact private processed path and file hash; transient PHOTO_BUSY recovery; no IntersectionObserver fallback; same-page image shared; whole-book manual recovery counts photos rather than questions');
     }
     checks.push(`${native ? 'Native bridge' : 'Browser'}: four saved wrong questions, unsaved excluded; subject filters; inline original toggle; shared figure; unsegmented diagram fallback with a visibly distinct original view; detail preview; continue exact last opened question, isolated by student; delayed student switch isolation`);
     await context.close();

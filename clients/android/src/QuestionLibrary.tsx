@@ -1,12 +1,14 @@
 import type { LearningMode, LearningSummary } from '../../../lib/learning-session';
 import { learningProgress } from './learning-history';
 import { useEffect, useMemo, type ReactNode } from 'react';
+import { Capacitor } from '@capacitor/core';
 import { BookOpen, ChevronRight } from 'lucide-react';
 import { subjects, type Scan } from './types';
 import type { FamilyApi } from './api';
 import { loadReviewImage } from './photo-processing/review-image';
 import { QuestionImages, decodeQuestionImage } from './question-images';
 import { QuestionCard } from './QuestionPaper';
+import { QuestionImageRecovery } from './QuestionImageRecovery';
 import { orderedWrongQuestions, type WrongQuestion } from './wrong-book-order';
 import { WeaknessView } from './WeaknessView';
 
@@ -21,7 +23,7 @@ export function QuestionLibrary({ api, owner, studentId, records, mode, onMode, 
 }) {
   const { subject, order } = context;
   const setSubject = (subject: string) => onContext({ ...context, subject, dimension: '' });
-  const images = useMemo(() => new QuestionImages(async (scan, cloud, signal) => decodeQuestionImage((await loadReviewImage(api, owner, scan, cloud, signal)).file, signal)), [api, owner]);
+  const images = useMemo(() => new QuestionImages(async (scan, _cloud, signal) => decodeQuestionImage((await loadReviewImage(api, owner, scan, true, signal)).file, signal)), [api, owner]);
   useEffect(() => () => images.dispose(), [images]);
   const wrong = useMemo(() => orderedWrongQuestions(records, order), [records, order]);
   const subjectNames: string[] = [...subjects];
@@ -41,6 +43,7 @@ export function QuestionLibrary({ api, owner, studentId, records, mode, onMode, 
       <div className="wrong-book-toolbar"><h2>{mode === 'knowledge' ? `${activeSubject} · 能力与补强方向` : `${activeSubject === '全部' ? '全部错题' : activeSubject} · ${visible.length} 道`}</h2>{mode === 'wrong' && <select aria-label="错题排序" value={order} onChange={e => onContext({ ...context, order: e.target.value as typeof order })}><option value="newest">最新上传</option><option value="oldest">最早上传</option></select>}</div>
       <nav className="subject-filters" aria-label={mode === 'knowledge' ? '选择图谱科目' : '按科目筛选错题'}>{mode === 'wrong' && <button className={activeSubject === '全部' ? 'selected' : ''} aria-pressed={activeSubject === '全部'} onClick={() => setSubject('全部')}>全部</button>}{filterNames.map(name => <button key={name} className={activeSubject === name ? 'selected' : ''} aria-pressed={activeSubject === name} onClick={() => setSubject(name)}>{name}</button>)}</nav>
     </>}
+    {mode === 'wrong' && Capacitor.getPlatform() === 'android' && <QuestionImageRecovery key={`${owner}/${studentId}`} studentId={studentId} records={records} images={images} />}
     {mode === 'wrong' && <section className="wrong-book" aria-label="错题本">{visible.length ? visible.map(questionCard) : <div className="empty-records"><BookOpen size={28} /><p>{refreshing ? '正在读取错题…' : wrong.length ? `${activeSubject}还没有收录的错题。` : records.length ? '照片已保存，框选题目并收录后会出现在这里。' : '还没有错题，先从首页录入。'}</p>{records.length > 0 && <button onClick={() => onMode('photos')}>整理原题照片 <ChevronRight size={14} /></button>}</div>}</section>}
     {mode === 'knowledge' && <WeaknessView key={activeSubject} api={api} owner={owner} studentId={studentId} subject={activeSubject === '全部' ? '' : activeSubject} records={records} onOpen={onOpen} onLearn={onLearn}
       selectedDimension={context.dimension} onSelectDimension={dimension => onContext({ ...context, dimension })} />}

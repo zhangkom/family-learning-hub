@@ -60,7 +60,7 @@ export function Review({
   const [image, setImage] = useState(''),
     [dirty, setDirty] = useState(false),
     [busy, setBusy] = useState(false);
-  const [allowCloudImage, setAllowCloudImage] = useState(false), [localImageMissing, setLocalImageMissing] = useState(false);
+  const [allowCloudImage, setAllowCloudImage] = useState(true), [localImageMissing, setLocalImageMissing] = useState(false);
   const [imageRetry, setImageRetry] = useState(0), [imageError, setImageError] = useState('');
   const [imageSource, setImageSource] = useState<'local' | 'cloud'>();
   const [notice, setNotice] = useState(''),
@@ -438,9 +438,8 @@ export function Review({
       </header>
 
       {localImageMissing && <section className="notice"><p>{imageError || '暂时无法读取本机题图。'}</p>
-        <p>恢复会从云端下载一次并保存到本机，之后优先读取本机。</p>
-        <button type="button" onClick={() => { setAllowCloudImage(false); setImageRetry(value => value + 1); }}>重试读取本机题图</button>
-        <button type="button" onClick={() => { setAllowCloudImage(true); setImageRetry(value => value + 1); }}>恢复题图到本机</button></section>}
+        <p>题图自动恢复未完成，请检查网络或可用空间后重试。成功后保存在本机。</p>
+        <button type="button" onClick={() => { setAllowCloudImage(true); setImageRetry(value => value + 1); }}>重试恢复题图</button></section>}
       <div className="review-status">
         <span className="status">
           {statusNames[scan.status] || scan.status}
@@ -627,9 +626,9 @@ export function Review({
                     onClick={() => setOriginalQuestionId(originalQuestionId === question.id ? '' : question.id)}>{originalQuestionId === question.id ? '整理版' : '原图'}</button></header>
                 <QuestionPaper question={question} questions={questions} original={originalQuestionId === question.id}
                   image={image && imageSize ? { url: image, ...imageSize } : undefined}
-                  onImageError={() => { setImage(''); setImageError('题图显示失败，请重新读取'); }} />
+                  onImageError={() => { setImage(''); setImageError('题图显示失败，请重新读取'); setLocalImageMissing(Capacitor.getPlatform() === 'android'); }} />
                 {!image && <output className="paper-image-note">{imageError || '正在读取题图…'}</output>}
-                {imageError && <button type="button" onClick={() => { setAllowCloudImage(false); setImageRetry(value => value + 1); }}>重试读取题图</button>}
+                {imageError && !localImageMissing && <button type="button" onClick={() => { setAllowCloudImage(true); setImageRetry(value => value + 1); }}>重试读取题图</button>}
                 <QuestionSource scan={{ ...scan, questions }} question={question} />
               </section>
               <label className="confirm-check">

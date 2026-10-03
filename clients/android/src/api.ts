@@ -241,7 +241,11 @@ export class FamilyApi {
         }),
       );
     if (!response.ok)
-      throw new ApiError('原图加载失败，请重新打开', response.status);
+      throw new ApiError(response.status === 404 ? '服务器暂未找到这张题图，请核对来源照片'
+        : response.status === 401 ? '登录已失效，请重新登录'
+          : response.status === 403 ? '当前账号无权读取这张题图'
+            : response.status === 429 ? '题图读取较频繁，请稍后重试'
+              : response.status >= 500 ? '题图服务暂时不可用，请稍后重试' : '题图读取失败，请重试', response.status);
     return response.blob();
   }
 }

@@ -53,7 +53,6 @@ export function QuestionPaper({ question, questions, image, original, onImageErr
     </div> : <>{!original && prompt && <PaperText text={prompt} />}</>}
     {!rectangles.length && <p className="paper-image-note">尚未框选题图，可进入详情补充。</p>}
     {brokenContext && <output className="paper-incomplete">共用题干或配图的来源不完整，请进入详情核对。</output>}
-    {!image && <p className="paper-incomplete">题图未就绪，当前内容尚不完整。</p>}
   </div>;
 }
 
@@ -88,11 +87,12 @@ export function QuestionCard({ scan, question, images, onOpen, actions }: {
       <button type="button" className="question-original-toggle" aria-pressed={original} onClick={() => setOriginal(value => !value)}>
         {original ? <FileText size={15} /> : <ImageIcon size={15} />}{original ? '整理版' : '原图'}</button></header>
     <QuestionPaper question={question} questions={scan.questions} image={image} original={original} onImageError={() => images.imageFailed(scan.id)} />
-    {hasRegions && (nearby || original) && state.status === 'loading' && <output className="paper-image-note" aria-live="polite">正在读取{Capacitor.getPlatform() === 'android' ? '本机' : ''}题图…</output>}
-    {hasRegions && (nearby || original) && state.status === 'error' && <div className="paper-image-unavailable"><output>{Capacitor.getPlatform() === 'android' ? '本机题图暂不可用' : '题图暂时无法读取'}</output>
+    {hasRegions && (nearby || original) && state.status === 'loading' && <output className="paper-image-note" aria-live="polite">{Capacitor.getPlatform() === 'android' ? '正在读取或恢复题图…' : '正在读取题图…'}</output>}
+    {hasRegions && (nearby || original) && state.status === 'error' && <div className="paper-image-unavailable"><output>{Capacitor.getPlatform() === 'android' ? '题图自动恢复未完成' : '题图读取失败，请重试'}</output>
       <small>{state.message}</small>
-      <button type="button" onClick={() => images.retry(scan.id)}>重试读取</button>
-      {Capacitor.getPlatform() === 'android' && <><button type="button" onClick={() => images.retry(scan.id, true)}>恢复题图到本机</button><small>从云端下载一次并保存，之后优先读本机。</small></>}</div>}
+      <small>恢复题图后才能查看完整题目。</small>
+      <button type="button" onClick={() => images.retry(scan.id, true)}>{Capacitor.getPlatform() === 'android' ? '重试恢复题图' : '重试读取'}</button>
+      {Capacitor.getPlatform() === 'android' && <small>本机没有可用副本时，从服务器恢复并保存；同页题目共用。</small>}</div>}
     <QuestionSource scan={scan} question={question} />
     {actions}
     <footer className="question-card-footer"><small>{summary}</small><button type="button" onClick={onOpen}>题目详情 <ChevronRight size={15} /></button></footer>

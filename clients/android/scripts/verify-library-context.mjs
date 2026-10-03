@@ -63,7 +63,7 @@ const filters = () => page.getByRole('navigation', { name: '按科目筛选错�
 const graphSubjects = () => page.getByRole('navigation', { name: '选择图谱科目' });
 async function login(username) {
   const entry = page.getByRole('navigation', { name: '账户' }).getByRole('button', { name: '登录', exact: true });
-  if (await entry.count()) await entry.click();
+  await entry.waitFor(); await entry.click();
   if (await page.getByLabel('家庭服务地址').count()) await page.getByLabel('家庭服务地址').fill(api);
   await page.getByLabel('账号', { exact: true }).fill(username); await page.getByLabel('密码', { exact: true }).fill('synthetic-only-password');
   await page.locator('form').getByRole('button', { name: '登录', exact: true }).click(); await nav('题目').waitFor();
@@ -89,10 +89,12 @@ try {
   await page.getByRole('group', { name: '选择能力维度' }).getByRole('button', { name: /^实验探究，/ }).click();
   await assertPhysicsGraph(); await page.locator('.weakness-evidence > summary').click();
   await button('回看原题').click();
-  assert.equal(await page.getByRole('region', { name: '当前题目原题' }).locator('.paper-prompt').textContent(), sourceQuestion.prompt);
+  await page.getByRole('region', { name: '当前题目原题' }).getByRole('img', { name: '原题题干与配图', exact: true }).waitFor();
+  assert.equal(await page.getByRole('region', { name: '当前题目原题' }).locator('.paper-number').textContent(), '10.');
   await button('返回资料列表').click(); await assertPhysicsGraph();
   await page.locator('.weakness-evidence > summary').click(); await button('针对这题练习').click();
-  await page.locator('.learning-start').waitFor(); assert.equal(await page.locator('.learning-start .paper-prompt').textContent(), sourceQuestion.prompt);
+  await page.locator('.learning-start').getByRole('img', { name: '原题题干与配图', exact: true }).waitFor();
+  assert.equal(await page.locator('.learning-start .paper-number').textContent(), '10.');
   await leaveLearning(); await assertPhysicsGraph();
   checks.push('Physics graph tab, subject and non-default dimension survive evidence/source and practice-start round trips.');
   await nav('首页').click(); await button('继续学习').click(); await button('原题详情').click();

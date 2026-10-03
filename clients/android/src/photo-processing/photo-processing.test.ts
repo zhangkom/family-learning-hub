@@ -116,13 +116,13 @@ describe('original export and processed-only recovery', () => {
     await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
     expect(mocks.plugin.getOriginal).toHaveBeenCalledTimes(1); expect(f.fetcher).not.toHaveBeenCalled(); expect(image).not.toHaveBeenCalled();
   });
-  it('uses the server only after explicit recovery, and preserves browser access', async () => {
+  it('persists permitted server recovery and preserves browser access', async () => {
     const file = new Blob(['synthetic'], { type: 'image/jpeg' }); const image = vi.fn().mockResolvedValue(file);
     const api = { image } as unknown as FamilyApi;
     const scan = { id: 'scan-1', studentId: original.studentId, size: file.size, mimeType: file.type };
     const signal = new AbortController().signal;
     await expect(loadReviewImage(api, 'owner', scan, true, signal)).resolves.toEqual({ file, source: 'local' });
-    expect(mocks.recovered.save).toHaveBeenCalledWith('owner', scan, file, signal);
+    expect(mocks.recovered.save).toHaveBeenCalledWith('owner', scan, file, expect.any(AbortSignal));
     mocks.available = false;
     await expect(loadReviewImage(api, 'owner', scan, false, signal)).resolves.toEqual({ file, source: 'cloud' });
     expect(image).toHaveBeenCalledTimes(2); expect(image).toHaveBeenCalledWith('scan-1', signal);
@@ -135,15 +135,15 @@ describe('original export and processed-only recovery', () => {
     for (const allowCloud of [false, true]) await expect(loadReviewImage({ image } as unknown as FamilyApi, 'owner', scan, allowCloud, new AbortController().signal)).resolves.toEqual({ file, source: 'local' });
     expect(image).not.toHaveBeenCalled(); expect(mocks.plugin.getOriginal).not.toHaveBeenCalled(); expect(mocks.recovered.save).not.toHaveBeenCalled();
   });
-  it('does not report recovery complete when saving fails and does not auto-download on an ordinary retry', async () => {
+  it('does not report recovery complete when saving fails and respects local-only callers', async () => {
     const file = new Blob(['synthetic'], { type: 'image/jpeg' }); const image = vi.fn().mockResolvedValue(file);
     const scan = { id: 'legacy', studentId: original.studentId, size: file.size, mimeType: file.type }, signal = new AbortController().signal;
     mocks.recovered.save.mockRejectedValue(new Error('手机空间不足'));
     await expect(loadReviewImage({ image } as unknown as FamilyApi, 'owner', scan, true, signal)).rejects.toThrow('空间不足');
-    await expect(loadReviewImage({ image } as unknown as FamilyApi, 'owner', scan, false, signal)).rejects.toThrow('尚未关联');
+    await expect(loadReviewImage({ image } as unknown as FamilyApi, 'owner', scan, false, signal)).rejects.toThrow('尚未保存');
     expect(image).toHaveBeenCalledTimes(1);
   });
-  it('refuses a corrupt cache until explicit recovery and preserves student boundaries', async () => {
+  it('refuses corrupt cached bytes, supports recovery and preserves student boundaries', async () => {
     const file = new Blob(['synthetic'], { type: 'image/jpeg' }); const image = vi.fn().mockResolvedValue(file);
     const scan = { id: 'legacy', studentId: original.studentId, size: file.size, mimeType: file.type }, signal = new AbortController().signal;
     mocks.recovered.read.mockRejectedValue(new Error('本机题图校验失败'));
@@ -153,6 +153,24 @@ describe('original export and processed-only recovery', () => {
     image.mockClear();
     await expect(loadReviewImage({ image } as unknown as FamilyApi, 'owner', { ...scan, processing: { ...prepared, studentId: 'other' } }, true, signal)).rejects.toThrow('归属');
     expect(image).not.toHaveBeenCalled();
+  });
+  it('times out stalled recovery without saving or retrying indefinitely', async () => {
+    vi.useFakeTimers();
+    try {
+      const image = vi.fn((_id: string, signal: AbortSignal) => new Promise<Blob>((_resolve, reject) => signal.addEventListener('abort', () => reject(signal.reason), { once: true })));
+      const pending = loadReviewImage({ image } as unknown as FamilyApi, 'owner', { id: 'legacy', studentId: original.studentId, size: 4, mimeType: 'image/jpeg' }, true, new AbortController().signal).catch(e => e);
+      await vi.advanceTimersByTimeAsync(45000);
+      expect(await pending).toMatchObject({ message: '题图恢复超时，请检查网络后重试' });
+      expect(image).toHaveBeenCalledTimes(1); expect(mocks.recovered.save).not.toHaveBeenCalled();
+    } finally { vi.useRealTimers(); }
+  });
+  it('cancels in-flight recovery on navigation before any persistent save', async () => {
+    const controller = new AbortController();
+    const image = vi.fn((_id: string, signal: AbortSignal) => new Promise<Blob>((_resolve, reject) => {
+      signal.addEventListener('abort', () => reject(signal.reason), { once: true }); controller.abort();
+    }));
+    await expect(loadReviewImage({ image } as unknown as FamilyApi, 'owner', { id: 'legacy', studentId: original.studentId, size: 4, mimeType: 'image/jpeg' }, true, controller.signal)).rejects.toMatchObject({ name: 'AbortError' });
+    expect(mocks.recovered.save).not.toHaveBeenCalled();
   });
   it('exports byte-identical PNG with original MIME and its native student binding', async () => {
     const f = await fixture(); const result = await readOriginalUpload('owner', f.photo);

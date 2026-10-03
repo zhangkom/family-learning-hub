@@ -11,7 +11,35 @@ export class QuestionImages {
   private entries = new Map<string, Entry>();
   private active = 0;
   private disposed = false;
+  private failureListeners = new Set<(count: number) => void>();
   constructor(private readonly loader: Loader, private readonly revoke = (image: QuestionImage) => URL.revokeObjectURL(image.url)) {}
+  watchFailures(listener: (count: number) => void) {
+    this.failureListeners.add(listener); listener(this.failureCount());
+    return () => { this.failureListeners.delete(listener); };
+  }
+  private failureCount() { return [...this.entries.values()].filter(entry => entry.state.status === 'error').length; }
+  private failuresChanged() { if (!this.disposed) for (const listener of this.failureListeners) listener(this.failureCount()); }
+  /** Manual batch recovery shares the same serial queue and active page read as visible cards. */
+  recover(scan: Scan, signal: AbortSignal): Promise<void> {
+    signal.throwIfAborted();
+    if (this.disposed) return Promise.reject(new Error('题目页面已关闭，请重新打开'));
+    this.retry(scan.id, true);
+    return new Promise((resolve, reject) => {
+      let finished = false, unsubscribe = () => {};
+      const finish = (error?: unknown) => {
+        if (finished) return; finished = true; unsubscribe(); signal.removeEventListener('abort', aborted);
+        if (error) reject(error); else resolve();
+      };
+      const aborted = () => finish(signal.reason || new DOMException('Aborted', 'AbortError'));
+      signal.addEventListener('abort', aborted, { once: true });
+      unsubscribe = this.subscribe(scan, state => {
+        if (state.status === 'ready') finish();
+        else if (state.status === 'error') finish(new Error(state.message));
+      });
+      // A ready cached entry can resolve synchronously during subscribe().
+      if (finished) unsubscribe();
+    });
+  }
   subscribe(scan: Scan, listener: Listener) {
     if (this.disposed) return () => {};
     let entry = this.entries.get(scan.id);
@@ -42,15 +70,17 @@ export class QuestionImages {
   dispose() {
     this.disposed = true;
     for (const [key, entry] of this.entries) this.remove(key, entry);
+    this.failureListeners.clear();
   }
-  private emit(entry: Entry) { for (const listener of entry.listeners) listener(entry.state); }
+  private emit(entry: Entry) { for (const listener of entry.listeners) listener(entry.state); this.failuresChanged(); }
   private remove(key: string, entry: Entry) {
     entry.abort?.abort();
     if (entry.state.status === 'ready') this.revoke(entry.state.image);
-    if (this.entries.get(key) === entry) this.entries.delete(key);
+    if (this.entries.get(key) === entry) { this.entries.delete(key); this.failuresChanged(); }
   }
   private trim() {
-    const idle = [...this.entries].filter(([, entry]) => !entry.listeners.size);
+    // Retain small failure records so scrolling does not trigger repeated automatic downloads.
+    const idle = [...this.entries].filter(([, entry]) => !entry.listeners.size && entry.state.status === 'ready');
     for (const [key, entry] of idle.slice(0, Math.max(0, idle.length - 2))) this.remove(key, entry);
   }
   private pump() {

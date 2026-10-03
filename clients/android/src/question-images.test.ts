@@ -5,6 +5,32 @@ const scan = (id: string) => ({ id } as Scan);
 const image = (url: string): QuestionImage => ({ url, width: 800, height: 1200 });
 const tick = () => new Promise(resolve => setTimeout(resolve, 0));
 describe('question images lifetime', () => {
+  it('shares batch recovery with an active card and reuses a ready image', async () => {
+    let complete!: (result: QuestionImage) => void;
+    const loader = vi.fn(() => new Promise<QuestionImage>(resolve => { complete = resolve; }));
+    const store = new QuestionImages(loader, vi.fn());
+    store.subscribe(scan('same'), vi.fn());
+    const recovered = store.recover(scan('same'), new AbortController().signal);
+    expect(loader).toHaveBeenCalledTimes(1); complete(image('shared')); await recovered;
+    await store.recover(scan('same'), new AbortController().signal);
+    expect(loader).toHaveBeenCalledTimes(1); store.dispose();
+  });
+  it('cancels an offscreen batch recovery without starting later queued images', async () => {
+    const loader = vi.fn((_scan: Scan, _cloud: boolean, signal: AbortSignal) => new Promise<QuestionImage>((_resolve, reject) => signal.addEventListener('abort', () => reject(signal.reason))));
+    const store = new QuestionImages(loader, vi.fn()), controller = new AbortController();
+    const recovered = store.recover(scan('batch'), controller.signal); const rejected = expect(recovered).rejects.toMatchObject({ name: 'AbortError' });
+    controller.abort(); await rejected; await tick();
+    expect(loader).toHaveBeenCalledTimes(1); expect(loader.mock.calls[0][2].aborted).toBe(true); store.dispose();
+  });
+  it('keeps failure state across scrolling until a manual retry, without keeping decoded images', async () => {
+    const loader = vi.fn(async () => { throw new Error('network unavailable'); });
+    const store = new QuestionImages(loader), failures = vi.fn(); const unwatch = store.watchFailures(failures);
+    for (const id of ['1', '2', '3', '4']) { const stop = store.subscribe(scan(id), vi.fn()); await tick(); stop(); }
+    expect(failures).toHaveBeenLastCalledWith(4);
+    store.subscribe(scan('1'), vi.fn()); await tick(); expect(loader).toHaveBeenCalledTimes(4);
+    store.retry('1', true); await tick(); expect(loader).toHaveBeenCalledTimes(5);
+    unwatch(); store.dispose();
+  });
   it('shares one decoded photo between several question cards', async () => {
     const loader = vi.fn(async () => image('one')); const revoke = vi.fn(); const store = new QuestionImages(loader, revoke);
     const a = vi.fn(), b = vi.fn(); store.subscribe(scan('1'), a); store.subscribe(scan('1'), b); await tick();

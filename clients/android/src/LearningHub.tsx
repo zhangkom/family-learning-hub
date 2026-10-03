@@ -24,7 +24,7 @@ export function LearningHub({ api, owner, studentId, studentName, records, view,
   const [stuck, setStuck] = useState(() => readLearningDraft(owner, studentId, `${draftScope}:stuck`));
   const [work, setWork] = useState(() => readLearningDraft(owner, studentId, `${draftScope}:work`));
   const nonce = useRef<{ fingerprint: string; id: string } | null>(null);
-  const images = useMemo(() => new QuestionImages(async (scan, cloud, signal) => decodeQuestionImage((await loadReviewImage(api, owner, scan, cloud, signal)).file, signal)), [api, owner]);
+  const images = useMemo(() => new QuestionImages(async (scan, _cloud, signal) => decodeQuestionImage((await loadReviewImage(api, owner, scan, true, signal)).file, signal)), [api, owner]);
   useEffect(() => () => images.dispose(), [images]);
   useEffect(() => { live.current = true; return () => { live.current = false; controller.current?.abort(); }; }, []);
   const back = () => { if (lock.current) { controller.current?.abort(); onClose(); return; } if (sessionId) { setSessionId(''); setSession(null); setRefreshTick(x => x + 1); } else if (selected) setSelected(undefined); else onClose(); };

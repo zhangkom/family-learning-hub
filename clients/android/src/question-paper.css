@@ -12,3 +12,8 @@
 .question-source dl { display:grid; grid-template-columns:70px minmax(0,1fr); gap:6px 10px; margin:0 0 8px; line-height:1.6; }
 .question-source dd { margin:0; overflow-wrap:anywhere; }
 @media (max-width:360px) { .paper-options { grid-template-columns:minmax(0,1fr); } }
+.question-image-recovery { margin:12px 0; padding:12px 14px; border:1px solid #dce5f4; border-radius:14px; background:#f5f8ff; }
+.question-image-recovery > div { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; }
+.question-image-recovery button { min-height:44px; padding:8px 12px; font-size:14px; }
+.question-image-recovery p, .question-image-recovery output, .question-image-recovery details { display:block; margin:8px 0 0; font-size:13px; line-height:1.6; color:#4b5e78; overflow-wrap:anywhere; }
+.question-image-recovery summary { cursor:pointer; min-height:44px; padding-top:10px; }

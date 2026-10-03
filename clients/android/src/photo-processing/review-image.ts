@@ -27,14 +27,14 @@ async function getReviewOriginal(owner: string, originalId: string, signal: Abor
   }
 }
 
-/** Use the exact local processed version so saved question coordinates still match. Never silently download on Android. */
+/** Use the exact local image first. Question views allow recovery; local-only callers can still pass false. */
 export async function loadReviewImage(api: FamilyApi, owner: string, scan: ImageScan, allowCloud: boolean, signal: AbortSignal) {
   signal.throwIfAborted();
   if (Capacitor.getPlatform() !== 'android') return { file: await api.image(scan.id, signal), source: 'cloud' as const };
   recoveredImages.validate(owner, scan);
   const processing = scan.processing;
   if (processing && processing.studentId !== scan.studentId) throw new Error('题图学生归属不匹配，请刷新题目');
-  let localError: unknown = new Error('这张题图尚未关联到当前手机，恢复一次后会保存在本机');
+  let localError: unknown = new Error('当前手机尚未保存这张题图，请点击恢复；恢复后保存在本机');
   if (scan.sourceKind === 'processed-photo' && processing) {
     try {
       const original = await getReviewOriginal(owner, processing.originalId, signal);
@@ -51,10 +51,22 @@ export async function loadReviewImage(api: FamilyApi, owner: string, scan: Image
     if (file) return { file, source: 'local' as const };
   } catch (error) { signal.throwIfAborted(); localError = error; }
   if (!allowCloud) throw localError;
-  // Explicit recovery only. Save the exact server image, never a recropped/re-encoded original.
-  const file = await api.image(scan.id, signal);
-  const decoded = await decodeQuestionImage(file, signal); URL.revokeObjectURL(decoded.url);
-  signal.throwIfAborted();
-  await recoveredImages.save(owner, scan, file, signal);
-  return { file, source: 'local' as const };
+  // Recovery is bounded and cancelable. Persist exact bytes before reporting success.
+  const recovery = new AbortController();
+  const abort = () => recovery.abort(signal.reason);
+  signal.addEventListener('abort', abort, { once: true });
+  const timer = setTimeout(() => recovery.abort(new Error('题图恢复超时，请检查网络后重试')), 45000);
+  try {
+    signal.throwIfAborted();
+    const file = await api.image(scan.id, recovery.signal);
+    const decoded = await decodeQuestionImage(file, recovery.signal); URL.revokeObjectURL(decoded.url);
+    recovery.signal.throwIfAborted();
+    await recoveredImages.save(owner, scan, file, recovery.signal);
+    return { file, source: 'local' as const };
+  } catch (error) {
+    signal.throwIfAborted();
+    if (recovery.signal.aborted) throw recovery.signal.reason;
+    if (error instanceof TypeError) throw new Error('无法连接题图服务，请检查网络后重试');
+    throw error;
+  } finally { clearTimeout(timer); signal.removeEventListener('abort', abort); }
 }
