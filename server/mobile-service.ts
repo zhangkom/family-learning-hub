@@ -21,6 +21,7 @@ import {
 import type { ScanRecord } from '../lib/scans';
 import { scanSubjects } from '../lib/scans';
 import { questionContext } from '../lib/question-context';
+import { questionCollectionState } from '../lib/question-collection';
 import { validatePhotoProcessing } from './photo-processing';
 import {
   validateQuestions,
@@ -98,7 +99,7 @@ export function mobileScan(record: ScanRecord): MobileScan {
       ? 'processing'
       : record.status === '识别失败'
         ? 'failed'
-        : questions.length && questions.every((q) => q.confirmed)
+        : questions.length && questions.every((q) => q.confirmed && !questionCollectionState(q).collectionPending && !questionCollectionState(q).materialPending)
           ? 'ready'
           : 'needs_review';
   return {
@@ -357,6 +358,7 @@ export async function reviewMobileScan(
         ...(before.focusBook ? { focusBook: before.focusBook } : {}),
         ...(before.paperMark ? { paperMark: before.paperMark } : {}),
         ...(before.sourcePage ? { sourcePage: before.sourcePage } : {}),
+        ...(before.worksheet ? { worksheet: before.worksheet } : {}),
         ...(tutoring ? { tutoring } : {}),
       };
     });

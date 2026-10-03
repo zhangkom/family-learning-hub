@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { Capacitor } from '@capacitor/core';
-import { Image as ImageIcon, FileText, ChevronRight, ZoomIn } from 'lucide-react';
+import { Image as ImageIcon, FileText, ChevronRight, ZoomIn, BookOpen } from 'lucide-react';
 import type { Question, Scan } from './types';
 import { sourcePageLabel } from './source-location';
 import { questionPrompt, questionRectangles, questionTextLayout, type QuestionRectangle } from './question-presentation';
@@ -10,6 +10,9 @@ import type { FamilyApi } from './api';
 import { SourceOriginals } from './SourceOriginals';
 import { questionIsSummary } from '../../../lib/question-context';
 import { questionImageIdentity } from './question-image-identity';
+import { QuestionKnowledge } from './QuestionKnowledge';
+import { questionCollectionState } from '../../../lib/question-collection';
+import { QuestionDifficulty } from './QuestionDifficulty';
 import './question-paper.css';
 
 function CroppedRegions({ image, rectangles, label, onImageError, onOpen }: { image: QuestionImage; rectangles: QuestionRectangle[]; label: string; onImageError?: () => void; onOpen: () => void }) {
@@ -74,12 +77,21 @@ export function QuestionPaper({ question, questions, image, original, onImageErr
   </div>;
 }
 
-export function QuestionCard({ scan, question, images, onOpen, actions, api, owner }: {
-  scan: Scan; question: Question; images: QuestionImages; onOpen?: () => void; actions?: ReactNode; api?: FamilyApi; owner?: string;
+export function QuestionCard({ scan, question, images, onOpen, actions, api, owner, onUpdate }: {
+  scan: Scan; question: Question; images: QuestionImages; onOpen?: () => void; actions?: ReactNode; api?: FamilyApi; owner?: string; onUpdate?: (scan: Scan) => void;
 }) {
   const ref = useRef<HTMLElement>(null);
   const size = useRef<{ width: number; height: number } | undefined>(undefined);
   const [nearby, setNearby] = useState(false), [original, setOriginal] = useState(false), [expanded, setExpanded] = useState(false);
+  const [knowledge, setKnowledge] = useState(false);
+  const scrollBeforeSwitch = useRef<{ x: number; y: number } | undefined>(undefined);
+  function switchView(action: () => void) {
+    scrollBeforeSwitch.current = { x: window.scrollX, y: window.scrollY }; action();
+  }
+  useLayoutEffect(() => {
+    const position = scrollBeforeSwitch.current; if (!position) return;
+    window.scrollTo({ left: position.x, top: position.y, behavior: 'instant' }); scrollBeforeSwitch.current = undefined;
+  }, [knowledge, original]);
   const identity = questionImageIdentity(scan);
   const [result, setResult] = useState<{ identity: string; state: QuestionImageState }>();
   const state: QuestionImageState = result?.identity === identity ? result.state : { status: 'loading' };
@@ -96,6 +108,8 @@ export function QuestionCard({ scan, question, images, onOpen, actions, api, own
     return images.subscribe(scan, state => setResult({ identity, state }));
   }, [images, wantsImage, scan, identity]);
   const status = question.tutoring?.status;
+  const collection = questionCollectionState(question);
+  const paperTitle = (question.sourcePage || scan.sourcePage)?.title?.trim() || scan.source?.trim() || '试卷名称待补充';
   const summary = status === 'needs_review' ? question.tutoring?.review?.status === 'confirmed' ? '讲解已核对' : 'AI 分析待核对'
     : status === 'failed' ? '分析未完成 · 可重试' : status === 'stale' ? '题目已修改 · 需重新分析'
       : status ? '正在分析' : question.wrongBook && question.focusBook ? '已收录错题与重点题' : question.wrongBook ? '已收录错题' : question.focusBook ? '已收录重点题' : question.confirmed ? '题目已校对' : '题目待校对';
@@ -103,19 +117,24 @@ export function QuestionCard({ scan, question, images, onOpen, actions, api, own
   // Keep offscreen card heights stable without retaining decoded pictures in the DOM.
   const image = (nearby || original || expanded) ? state.status === 'ready' ? state.image : undefined
     : size.current ? { ...size.current, url: '' } : undefined;
-  return <article ref={ref} className={`question-card wrong-question-card ${original ? 'show-original' : ''}`} aria-label={`第 ${question.number || '—'} 题`}>
+  return <article ref={ref} className={`question-card wrong-question-card ${original && !knowledge ? 'show-original' : ''}`} aria-label={`第 ${question.number || '—'} 题`}>
+    <p className="question-paper-title" aria-label="来源试卷">{paperTitle}</p>
     <header className="question-card-heading"><div><span className="paper-number">{question.number || '—'}.</span><span className="subject-tag">{question.subject || '待选科目'}</span>{question.wrongBook && <span className="collection-tag is-wrong">错题</span>}{question.focusBook && <span className="collection-tag is-focus">重点题</span>}</div>
-      <button type="button" className="question-original-toggle" aria-pressed={original} onClick={() => setOriginal(value => !value)}>
-        {original ? <FileText size={15} /> : <ImageIcon size={15} />}{original ? '整理版' : '原图'}</button></header>
-    <QuestionPaper question={question} questions={scan.questions} image={image} original={original} onImageError={() => images.imageFailed(scan.id)} onViewerChange={setExpanded} />
-    {hasRegions && (nearby || original) && state.status === 'loading' && <output className="paper-image-note" aria-live="polite">{Capacitor.getPlatform() === 'android' ? '正在读取或恢复题图…' : '正在读取题图…'}</output>}
-    {hasRegions && (nearby || original) && state.status === 'error' && <div className="paper-image-unavailable"><output>{Capacitor.getPlatform() === 'android' ? '题图自动恢复未完成' : '题图读取失败，请重试'}</output>
+      <div className="question-view-toggles">
+        <button type="button" className="question-knowledge-toggle" aria-pressed={knowledge} onClick={() => switchView(() => setKnowledge(value => !value))}><BookOpen size={15} />{knowledge ? '返回题目' : '知识点'}</button>
+        <button type="button" className="question-original-toggle" aria-pressed={original && !knowledge} onClick={() => switchView(() => { setOriginal(knowledge || !original); setKnowledge(false); })}>
+          {original && !knowledge ? <FileText size={15} /> : <ImageIcon size={15} />}{original && !knowledge ? '整理版' : '原图'}</button>
+      </div></header>
+    <QuestionDifficulty scan={scan} question={question} api={api} onUpdate={onUpdate} />
+    {knowledge ? <QuestionKnowledge question={question} /> : <QuestionPaper question={question} questions={scan.questions} image={image} original={original} onImageError={() => images.imageFailed(scan.id)} onViewerChange={setExpanded} />}
+    {!knowledge && hasRegions && (nearby || original) && state.status === 'loading' && <output className="paper-image-note" aria-live="polite">{Capacitor.getPlatform() === 'android' ? '正在读取或恢复题图…' : '正在读取题图…'}</output>}
+    {!knowledge && hasRegions && (nearby || original) && state.status === 'error' && <div className="paper-image-unavailable"><output>{Capacitor.getPlatform() === 'android' ? '题图自动恢复未完成' : '题图读取失败，请重试'}</output>
       <small>{state.message}</small>
       <small>恢复题图后才能查看完整题目。</small>
       <button type="button" onClick={() => images.retry(scan.id, true)}>{Capacitor.getPlatform() === 'android' ? '重试恢复题图' : '重试读取'}</button>
       {Capacitor.getPlatform() === 'android' && <small>本机没有可用副本时，从服务器恢复并保存；同页题目共用。</small>}</div>}
     <QuestionSource scan={scan} question={question} api={api} owner={owner} />
     {actions}
-    <footer className="question-card-footer"><small>{summary}</small>{onOpen && <button type="button" onClick={onOpen}>题目详情 <ChevronRight size={15} /></button>}</footer>
+    <footer className="question-card-footer"><small>{collection.materialPending ? `${question.wrongBook || question.focusBook ? '已收录 · ' : ''}材料待补全` : collection.collectionPending ? '收录待复核' : summary}</small>{onOpen && <button type="button" onClick={onOpen}>题目详情 <ChevronRight size={15} /></button>}</footer>
   </article>;
 }

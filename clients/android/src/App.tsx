@@ -611,7 +611,7 @@ function Home({
   }
   const updateScan = useCallback(
     (scan: Scan) =>
-      setRecords((list) => list.map((r) => (r.id === scan.id ? scan : r))),
+      setRecords((list) => scan.studentId !== activeStudent.current ? list : list.map((r) => (r.id === scan.id && r.studentId === scan.studentId && r.revision <= scan.revision ? scan : r))),
     [],
   );
   const viewGeneration = scopeGeneration.current;
@@ -666,6 +666,7 @@ function Home({
     onOpenSource={(scan, questionId, sessionId) => { setLearningView({ mode: learningView.mode, source: { scanId: scan.id, questionId }, sessionId }); setOpenQuestion(questionId); setOpenScan(scan); }} onRefreshSources={() => void refresh()} />;
   return <>
     <HomeView learningRevision={learningRevision} onLearn={(mode, source, sessionId) => { if (student) setLearningView({ mode, source, sessionId }); else { setHomePage('me'); setNotice('请先添加学生档案。'); } }} lastViewed={lastViewed[selected]} api={api} owner={owner} username={auth.user.username} students={students} selected={selected} records={records}
+      onUpdateScan={updateScan}
       studentOverview={studentOverview} overviewError={overviewError} onRefreshOverview={() => setOverviewRevision(value => value + 1)}
       onUpdateAccount={async (kind, value, currentPassword) => {
         const next = kind === 'username' ? await api.changeUsername(value, currentPassword) : await api.changePassword(value, currentPassword);

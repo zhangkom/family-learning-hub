@@ -11,11 +11,11 @@ const out = resolve(process.env.PHOTO_QA_OUTPUT || 'test-results/question-paper'
 const api = 'https://123.207.232.151/family-learning/api/mobile/v1';
 const now = new Date().toISOString(), checks = [], layouts = [], errors = [];
 const region = (id, kind, x, y, width, height) => ({ id, kind, x, y, width, height });
-const q = (id, number, prompt, regions, extra = {}) => ({ id, number, prompt, regions, diagram: '', subject: '数学', knowledgePoints: ['三角形'], answerSteps: [], uncertainties: [], confirmed: true, ...extra });
+const q = (id, number, prompt, regions, extra = {}) => ({ id, number, prompt, regions, diagram: '', subject: '数学', knowledgePoints: ['勾股定理'], answerSteps: [], uncertainties: [], confirmed: true, ...extra });
 const questions = [
   q('q1', '1', '如图，在直角三角形 ABC 中，∠C = 90°，AC = 3，BC = 4。求斜边 AB 的长度。\nA. 3　 B. 4　 C. 5　 D. 7',
     [region('stem1', 'stem', .05, .06, .9, .32), region('figure1', 'figure', .3, .15, .4, .19), region('answer1', 'answer', .05, .39, .9, .08)], { wrongBook: { savedAt: now } }),
-  q('q2', '2', '这段识别文字尚未包含图表，完整题图仍应保留。', [region('stem2', 'stem', .05, .51, .9, .24)], { knowledgePoints: ['统计图'], wrongBook: { savedAt: now } }),
+  q('q2', '2', '这段识别文字尚未包含图表，完整题图仍应保留。', [region('stem2', 'stem', .05, .51, .9, .24)], { knowledgePoints: ['统计图', '待补专题-合成'], wrongBook: { savedAt: now } }),
   q('q3', '3', '利用上题中的三角形，求其面积。', [region('stem3', 'stem', .05, .85, .9, .08)], { sharedRegionIds: ['figure1'], knowledgePoints: ['面积'], wrongBook: { savedAt: now } }),
   q('q4', '4', '没有题框的历史题目，保留文字并提示补框。', [], { subject: '物理', knowledgePoints: [], wrongBook: { savedAt: now } }),
   q('q5', '5', '未收录的题目仍可从原题照片整理。', [region('stem5', 'stem', .05, .95, .9, .04)]),
@@ -51,7 +51,7 @@ try {
   const scan = { id: 'paper-a', studentId: 'a', subject: '数学', source: '合成试卷', originalName: '合成几何与统计.jpg', mimeType: 'image/jpeg', size: photo.bytes, createdAt: now, revision: 1, status: 'ready', sourceKind: 'processed-photo', processing, questions };
   for (const native of [false, true]) {
     const context = await browser.newContext({ viewport: { width: 390, height: 844 } }); const page = await context.newPage(); lastPage = page; page.setDefaultTimeout(10000);
-    const requests = { cloudImages: 0 }; let delayStudent = false, legacy = false, failImage = false, extraPages = false, blockImage = false, unblockImage, whenImageBlocked;
+    const requests = { cloudImages: 0, apiCalls: 0 }; let delayStudent = false, legacy = false, failImage = false, extraPages = false, blockImage = false, unblockImage, whenImageBlocked;
     const currentScan = () => legacy ? { ...scan, id: 'paper-legacy', sourceKind: undefined, processing: undefined } : scan;
     const currentScans = () => [currentScan(), ...(extraPages ? [6, 7].map(n => ({ ...scan, id: `extra-${n}`, sourceKind: undefined, processing: undefined, originalName: `其他合成试卷-${n}.jpg`, questions: [{ ...questions[0], id: `q${n}`, number: String(n) }] })) : [])];
     page.on('pageerror', error => errors.push(error.message));
@@ -86,6 +86,7 @@ try {
     }, { original, photo, outputId });
     await page.route('**/*', async route => {
       const req = route.request(), url = new URL(req.url()); if (url.origin === new URL(client).origin) return route.continue();
+      requests.apiCalls++;
       const send = data => route.fulfill({ contentType: 'application/json', body: JSON.stringify(data) });
       if (url.pathname.endsWith('latest.json')) return route.fulfill({ status: 503, body: '{}' });
       if (url.href === api + '/setup') return send({ enabled: true, registrationEnabled: true });
@@ -115,6 +116,7 @@ try {
     await card().getByRole('img', { name: '原题配图', exact: true }).waitFor();
     assert.match(await card().locator('.paper-prompt').textContent(), /AC = 3，BC = 4/);
     assert.deepEqual(await card().locator('.paper-options p').allTextContents(), ['A. 3', 'B. 4', 'C. 5', 'D. 7']);
+    assert.equal(await card().getByLabel('来源试卷', { exact: true }).textContent(), '合成试卷');
     await card().getByText('题目来源', { exact: true }).click();
     await card().getByText(scan.originalName, { exact: true }).waitFor();
     await card().getByText('题目来源', { exact: true }).click();
@@ -122,6 +124,41 @@ try {
     else assert.equal(requests.cloudImages, 1);
     await page.getByRole('article', { name: '第 2 题', exact: true }).scrollIntoViewIfNeeded();
     await page.getByRole('article', { name: '第 2 题', exact: true }).getByRole('img', { name: '原题题干与配图', exact: true }).waitFor();
+    await card().locator('.question-card-heading').scrollIntoViewIfNeeded();
+    const beforeKnowledge = { ...requests }, toggleTimes = [];
+    await card().getByText('题目来源', { exact: true }).click();
+    for (const width of [320, 390, 768]) {
+      await page.setViewportSize({ width, height: 900 });
+      await card().locator('.question-card-heading').scrollIntoViewIfNeeded();
+      await card().getByRole('button', { name: '知识点', exact: true }).click();
+      await card().getByRole('region', { name: '本题知识点' }).waitFor();
+      assert.match(await card().locator('.knowledge-saved-labels').textContent(), /勾股定理/);
+      assert.ok(await card().locator('.knowledge-reference-card').count());
+      assert.match(await card().locator('.question-knowledge').textContent(), /常用公式/);
+      assert.match(await card().locator('.question-knowledge').textContent(), /关键概念与公式 · 用于回顾本题知识/);
+      assert.equal(await card().locator('.question-paper,.paper-image-unavailable,.paper-image-note').count(), 0);
+      assert.equal(await card().getByRole('button', { name: '原图', exact: true }).getAttribute('aria-pressed'), 'false');
+      assert.equal(await card().locator('.question-source').getAttribute('open'), '');
+      assert.equal(await card().getByLabel('来源试卷', { exact: true }).textContent(), '合成试卷');
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+      await page.screenshot({ path: resolve(out, `${native ? 'native' : 'web'}-knowledge-${width}.png`) });
+      await card().getByRole('button', { name: '返回题目', exact: true }).click();
+      await card().getByRole('img', { name: '原题配图', exact: true }).waitFor();
+    }
+    // Fast consecutive clicks stay synchronous and do not queue analysis or a reload.
+    for (let n = 0; n < 20; n++) {
+      const timing = await card().evaluate(async node => {
+        const start = performance.now(); node.querySelector('.question-knowledge-toggle').click();
+        await new Promise(requestAnimationFrame);
+        if (!node.querySelector('.question-knowledge')) throw new Error('Knowledge did not render in one frame');
+        const elapsed = performance.now() - start; node.querySelector('.question-knowledge-toggle').click();
+        await new Promise(requestAnimationFrame); return elapsed;
+      }); toggleTimes.push(timing);
+    }
+    assert.equal(requests.apiCalls, beforeKnowledge.apiCalls, 'Knowledge switch uses only bundled content');
+    assert.equal(requests.cloudImages, beforeKnowledge.cloudImages);
+    await card().getByText('题目来源', { exact: true }).click();
+    checks.push({ native, knowledge: 'local concepts/formulas/cautions, saved labels, source state, rapid switch', apiCallsOnSwitch: 0, maximumSwitchMs: Math.max(...toggleTimes) });
     for (const width of [320, 390, 768]) {
       await page.setViewportSize({ width, height: 900 }); await card().scrollIntoViewIfNeeded(); await card().locator('img').waitFor();
       const geometry = await card().evaluate(node => {
@@ -144,15 +181,32 @@ try {
     await card().getByRole('img', { name: /这道题的原图题框/ }).first().waitFor();
     assert.equal(await card().locator('.paper-prompt').count(), 0); assert.equal(await card().locator('.question-crop').count(), 2);
     assert.equal(await page.locator('.review-page').count(), 0, 'Toggle stays inside the card');
+    await card().getByRole('button', { name: '知识点', exact: true }).click();
+    assert.equal(await card().getByRole('button', { name: '原图', exact: true }).getAttribute('aria-pressed'), 'false');
+    await card().getByRole('button', { name: '返回题目', exact: true }).click();
+    assert.equal(await card().getByRole('button', { name: '整理版', exact: true }).getAttribute('aria-pressed'), 'true');
+    await card().getByRole('img', { name: /这道题的原图题框/ }).first().waitFor();
     await card().scrollIntoViewIfNeeded(); await page.screenshot({ path: resolve(out, `${native ? 'native' : 'web'}-original-390.png`) });
     await card().getByRole('button', { name: '整理版', exact: true }).click(); await card().getByRole('img', { name: '原题配图', exact: true }).waitFor();
     await card().locator('.question-crop img').first().evaluate(img => { img.src = 'data:image/jpeg;base64,broken'; });
     await card().getByText('题图显示失败，请重新读取本机照片', { exact: true }).waitFor();
+    const failedReads = requests.cloudImages;
+    await card().getByRole('button', { name: '知识点', exact: true }).click();
+    assert.equal(await card().locator('.paper-image-unavailable,.paper-image-note').count(), 0);
+    assert.ok(await card().locator('.knowledge-reference-card').count());
+    await card().getByRole('button', { name: '返回题目', exact: true }).click();
+    await card().getByText('题图显示失败，请重新读取本机照片', { exact: true }).waitFor();
+    assert.equal(requests.cloudImages, failedReads, 'Opening knowledge never retries a failed image');
     await card().getByRole('button', { name: native ? '重试恢复题图' : '重试读取', exact: true }).click();
     await card().getByRole('img', { name: '原题配图', exact: true }).waitFor();
     if (native) assert.equal(requests.cloudImages, 0, 'Render failure retries the local file without automatic cloud fallback');
     const noFigure = page.getByRole('article', { name: '第 2 题', exact: true });
     await noFigure.scrollIntoViewIfNeeded();
+    await noFigure.getByRole('button', { name: '知识点', exact: true }).click();
+    assert.match(await noFigure.locator('.knowledge-unmatched').textContent(), /待补专题-合成.*这部分知识说明待补充/);
+    await noFigure.getByRole('button', { name: '原图', exact: true }).click();
+    assert.equal(await noFigure.locator('.question-knowledge').count(), 0);
+    await noFigure.getByRole('button', { name: '整理版', exact: true }).click();
     await noFigure.getByText('原题题框（含配图）', { exact: true }).waitFor();
     assert.equal(await noFigure.locator('.paper-prompt').count(), 0, 'Unsegmented diagrams use the complete crop, avoiding a duplicate text-only reconstruction');
     const beforeToggle = await noFigure.screenshot();
@@ -164,6 +218,9 @@ try {
     const subjectNav = page.getByRole('navigation', { name: '按科目筛选错题' });
     await subjectNav.getByRole('button', { name: '物理', exact: true }).click(); assert.equal(await page.locator('.question-card').count(), 1);
     assert.match(await page.locator('.question-card').textContent(), /尚未框选/);
+    await page.locator('.question-card').getByRole('button', { name: '知识点', exact: true }).click();
+    assert.match(await page.locator('.knowledge-unmatched').textContent(), /还没有知识标签/);
+    await page.locator('.question-card').getByRole('button', { name: '返回题目', exact: true }).click();
     await subjectNav.getByRole('button', { name: '全部', exact: true }).click();
     await page.getByRole('article', { name: '第 3 题', exact: true }).scrollIntoViewIfNeeded();
     await page.getByRole('article', { name: '第 3 题', exact: true }).getByRole('img', { name: '原题配图', exact: true }).waitFor();
@@ -249,14 +306,14 @@ try {
         const cached = await recoveredImages.read(owner, scan, signal);
         const accountIsolated = !await recoveredImages.read(owner + '-other', scan, signal);
         const studentIsolated = !await recoveredImages.read(owner, { ...scan, studentId: 'b' }, signal);
-        let changedRejected = false, aborted = false;
-        try { await recoveredImages.read(owner, { ...scan, size: scan.size + 1 }, signal); } catch { changedRejected = true; }
+        const changedCacheMiss = !await recoveredImages.read(owner, { ...scan, size: scan.size + 1 }, signal);
+        let aborted = false;
         const cancelled = new AbortController(); cancelled.abort();
         try { await recoveredImages.read(owner, scan, cancelled.signal); } catch (e) { aborted = e.name === 'AbortError'; }
         const hash = async file => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', await file.arrayBuffer())), v => v.toString(16).padStart(2,'0')).join('');
-        return { accountIsolated, studentIsolated, changedRejected, aborted, bytes: cached.size, sha256: await hash(cached) };
+        return { accountIsolated, studentIsolated, changedCacheMiss, aborted, bytes: cached.size, sha256: await hash(cached) };
       }, { owner: api + '|paper-family', scan: currentScan() });
-      assert.deepEqual(cacheChecks, { accountIsolated: true, studentIsolated: true, changedRejected: true, aborted: true, bytes: photo.bytes, sha256: photo.sha256 });
+      assert.deepEqual(cacheChecks, { accountIsolated: true, studentIsolated: true, changedCacheMiss: true, aborted: true, bytes: photo.bytes, sha256: photo.sha256 });
       await page.getByRole('button', { name: '返回资料列表', exact: true }).click();
       await card().screenshot({ path: resolve(out, 'legacy-restored.png') });
       await page.evaluate(async ({ owner, scan }) => {

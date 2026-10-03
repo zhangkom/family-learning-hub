@@ -14,6 +14,8 @@ import { buildReviewDates } from '../lib/learning';
 import type { ScanRecord } from '../lib/scans';
 import type { FamilyStore } from './family-store';
 import { HttpError } from './family-backend';
+import { questionContext } from '../lib/question-context';
+import { questionCollectionState } from '../lib/question-collection';
 
 export function readStoredScan(
   store: FamilyStore,
@@ -33,6 +35,25 @@ export function writeStoredScan(
   record: ScanRecord,
   actor: string,
 ) {
+  const previous = readStoredScan(store, owner, record.id);
+  if (previous?.structuredQuestions && record.structuredQuestions) {
+    const before = previous.structuredQuestions, after = record.structuredQuestions;
+    const imageChanged = previous.sourcePage?.scanSha256 !== record.sourcePage?.scanSha256 || previous.size !== record.size || previous.mimeType !== record.mimeType || previous.processing?.sha256 !== record.processing?.sha256;
+    record = { ...record, structuredQuestions: after.map(question => {
+      const old = before.find(q => q.id === question.id);
+      const review = actor.startsWith('collection-review:') ? question.collectionReview : old?.collectionReview || question.collectionReview;
+      // Difficulty is server-owned. User choices survive old clients, import,
+      // recognition and future AI estimates; only the authenticated action edits it.
+      if (!actor.startsWith('question-difficulty:') && old?.difficulty) question = { ...question, difficulty: old.difficulty };
+      if (!actor.startsWith('worksheet-review:')) question = { ...question, worksheet: old?.worksheet };
+      if (!review || !old) return question;
+      const changed = imageChanged || old.confirmed !== question.confirmed || old.promptKind !== question.promptKind || JSON.stringify(questionContext(old, before)) !== JSON.stringify(questionContext(question, after));
+      return { ...question, collectionReview: changed ? { ...review, status: 'stale' as const } : review,
+        wrongBook: ['wrong', 'both'].includes(review.decision) ? old.wrongBook || question.wrongBook || { savedAt: review.reviewedAt } : undefined,
+        focusBook: ['focus', 'both'].includes(review.decision) ? old.focusBook || question.focusBook || { savedAt: review.reviewedAt } : undefined };
+    }) };
+  }
+  if (record.status === 'ready' && record.structuredQuestions?.some(q => questionCollectionState(q).collectionPending || questionCollectionState(q).materialPending)) record = { ...record, status: 'needs_review', confirmedAt: undefined };
   const body = JSON.stringify(record);
   store.db
     .prepare(

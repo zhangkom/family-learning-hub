@@ -10,6 +10,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(AppUpdaterPlugin.class);
         registerPlugin(AppSettingsPlugin.class);
         registerPlugin(PhotoProcessingPlugin.class);
+        registerPlugin(WorksheetExportPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }

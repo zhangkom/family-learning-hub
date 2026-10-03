@@ -34,6 +34,8 @@ export type AnswerStep = {
 };
 export type Question = {
   id: string;
+  collectionReview?: import('../../../lib/question-collection').QuestionCollectionReview;
+  difficulty?: import('../../../lib/question-difficulty').QuestionDifficulty;
   sourcePage?: SourcePage & { majorNumber?: string; subNumber?: string };
   focusBook?: { savedAt: string };
   paperMark?: { classification: 'wrong' | 'focus' | 'both' | 'pending'; ruleIds: string[]; evidence: { text: string; region?: { x: number; y: number; width: number; height: number } }[]; reviewedAt: string; reviewedBy: 'codex-manual'; independentAssessment: false };

@@ -1,4 +1,7 @@
 import type { LearningSession, LearningSummary } from '../../../lib/learning-session';
+import type { CollectionReviewInput } from '../../../lib/question-collection';
+import type { DifficultyStars } from '../../../lib/question-difficulty';
+import type { WorksheetExportInput, WorksheetPreview } from '../../../lib/worksheet';
 import type { WeaknessOverview, WeaknessReport } from '../../../lib/weakness';
 import type { Login, Question, Scan, Student, User, WrongBookItem, TutoringReviewInput } from './types';
 import type { CandidateReply } from './candidates';
@@ -216,6 +219,23 @@ export class FamilyApi {
   }
   weaknessOverview(studentId: string, subject = '', signal?: AbortSignal) {
     return this.request<WeaknessOverview>(`/weakness-reports?studentId=${encodeURIComponent(studentId)}&subject=${encodeURIComponent(subject)}`, 'GET', undefined, signal);
+  }
+  async reviewCollection(scan: Scan, questionId: string, input: Omit<CollectionReviewInput, 'revision' | 'studentId'>) {
+    const setup = await this.request<{ collectionReviewVersion?: number }>('/setup');
+    if (setup.collectionReviewVersion !== 1) throw new ApiError('家庭服务需要升级后才能保存人工收录复核，当前资料仍保留', 503);
+    return this.request<{ scan: Scan }>(`/scans/${encodeURIComponent(scan.id)}/questions/${encodeURIComponent(questionId)}/collection-review`,
+      'POST', { ...input, revision: scan.revision, studentId: scan.studentId });
+  }
+  async setQuestionDifficulty(scan: Scan, questionId: string, stars: DifficultyStars, signal?: AbortSignal) {
+    const setup = await this.request<{ questionDifficultyVersion?: number }>('/setup', 'GET', undefined, signal);
+    if (setup.questionDifficultyVersion !== 1) throw new ApiError('家庭服务需要升级后才能保存题目难度', 503);
+    return this.request<{ scan: Scan }>(`/scans/${encodeURIComponent(scan.id)}/questions/${encodeURIComponent(questionId)}/difficulty`,
+      'POST', { studentId: scan.studentId, revision: scan.revision, stars }, signal);
+  }
+  async worksheetPreview(input: WorksheetExportInput, signal?: AbortSignal) {
+    const setup = await this.request<{ worksheetExportVersion?: number }>('/setup', 'GET', undefined, signal);
+    if (setup.worksheetExportVersion !== 1) throw new ApiError('家庭服务需要升级后才能导出 Word', 503);
+    return this.request<WorksheetPreview>('/worksheets/preview', 'POST', input, signal);
   }
   createWeakness(body: { requestId: string; studentId: string; subject: string; materialVersion: string }, signal?: AbortSignal) {
     return this.request<{ report: WeaknessReport }>('/weakness-reports', 'POST', body, signal);

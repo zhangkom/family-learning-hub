@@ -1,12 +1,27 @@
 import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { QuestionPaper, QuestionSource } from './QuestionPaper';
+import { QuestionCard, QuestionPaper, QuestionSource } from './QuestionPaper';
+import { QuestionImages } from './question-images';
 import type { Question, Scan } from './types';
 
 const question: Question = { id: 'q', number: '1', prompt: '如图求三角形面积。', diagram: '一个三角形', confirmed: true,
   regions: [{ id: 'stem', kind: 'stem', x: .1, y: .2, width: .8, height: .3 }], knowledgePoints: [], answerSteps: [], uncertainties: [] };
 const image = { url: 'blob:verified-local-photo', width: 1000, height: 1400 };
 describe('paper and original are visible distinct views', () => {
+  it('shows the actual source title above the question without guessing grade or using an opaque filename', () => {
+    const images = new QuestionImages(async () => image);
+    const render = (scan: Scan, q: Question = question) => renderToStaticMarkup(<QuestionCard scan={scan} question={q} images={images} />);
+    const scan = { source: '录入时登记的高一暑假作业', originalName: 'opaque-uuid-original.jpg', questions: [question] } as Scan;
+    const source = { title: '某学校高一暑假作业·生物第十二套专项复习及综合能力训练（跨页）' } as NonNullable<Question['sourcePage']>;
+    const html = render({ ...scan, sourcePage: { ...source, title: '扫描级来源' } }, { ...question, sourcePage: source });
+    expect(html).toContain(`<p class="question-paper-title" aria-label="来源试卷">${source.title}</p>`);
+    expect(html.indexOf('来源试卷')).toBeLessThan(html.indexOf('question-card-heading'));
+    expect(render(scan)).toContain('aria-label="来源试卷">录入时登记的高一暑假作业');
+    const empty = render({ ...scan, source: '' });
+    expect(empty).toContain('aria-label="来源试卷">试卷名称待补充');
+    expect(empty).not.toContain('aria-label="来源试卷">opaque-');
+    images.dispose();
+  });
   it('never replaces a full question crop with a locator summary plus a separate figure', () => {
     const q = { ...question, promptKind: 'summary' as const, prompt: '定位摘要：受力分析', regions: [...question.regions, { ...question.regions[0], id: 'figure', kind: 'figure' as const }] };
     const html = renderToStaticMarkup(<QuestionPaper question={q} questions={[q]} image={image} original={false} />);

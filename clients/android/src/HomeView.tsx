@@ -13,7 +13,8 @@ import { AccountSettings, type AccountChange } from './AccountSettings';
 import type { FamilyApi } from './api';
 import { LearningModules } from './LearningModules';
 import { CaptureEntries } from './CaptureEntries';
-import { needsPhotoReview } from './photo-review-filter';
+import { needsPhotoReview, needsQuestionReview } from './photo-review-filter';
+import { questionCollectionState } from '../../../lib/question-collection';
 import { sourcePageLabel } from './source-location';
 
 export type { HomePage } from './BottomNavigation';
@@ -30,6 +31,7 @@ type Props = {
   learningRevision: number; onLearn: (mode: LearningMode, source?: { scanId: string; questionId: string }, sessionId?: string) => void;
   lastViewed?: { scanId: string; questionId?: string };
   onRefresh: () => void; onOpenScan: (scan: Scan, questionId?: string) => void; onLogout: () => void;
+  onUpdateScan?: (scan: Scan) => void;
   onAddStudent: (name: string, grade: string) => Promise<boolean>;
   onUpdateAccount: (kind: AccountChange, value: string, currentPassword: string) => Promise<string>;
   renderDraft: (draft: Draft) => ReactNode; children: ReactNode;
@@ -53,9 +55,9 @@ export function HomeView(props: Props) {
   function navigate(next: typeof tab) { props.onNavigate(next); window.scrollTo({ top: 0 }); }
   function addStudent() { navigate('me'); setAdding(true); }
   function scanCard(scan: Scan) {
-    const incomplete = scan.questions.some(q => q.paperMark?.classification === 'pending');
+    const incomplete = scan.questions.some(q => questionCollectionState(q).materialPending);
     const status = incomplete ? '待补全' : scan.status === 'ready' && needsPhotoReview(scan) ? '待校对' : statusNames[scan.status] || scan.status;
-    return <button className="record-card" key={scan.id} onClick={() => props.onOpenScan(scan, props.libraryContext.photoFilter === 'pending' ? scan.questions.find(q => !q.confirmed || q.paperMark?.classification === 'pending')?.id : undefined)}>
+    return <button className="record-card" key={scan.id} onClick={() => props.onOpenScan(scan, props.libraryContext.photoFilter === 'pending' ? scan.questions.find(needsQuestionReview)?.id : undefined)}>
       <span className="record-icon"><FileImage size={21} /></span>
       <span className="record-content">
         <strong title={scan.originalName}>{scan.sourcePage?.title || scan.originalName}</strong>
@@ -104,7 +106,7 @@ export function HomeView(props: Props) {
       {tab === 'library' && <>
         <div className="section-line library-heading"><div><h1>题目</h1></div><button disabled={refreshing || !student} onClick={props.onRefresh}><RefreshCw size={17} className={refreshing ? 'spin' : ''} />刷新</button></div>
         {student ? <QuestionLibrary key={`${props.owner}|${student.id}`} api={props.api} owner={props.owner} studentId={student.id} learning={learning.rows} onLearn={props.onLearn} records={records} mode={props.libraryMode} onMode={props.onLibraryMode}
-          context={props.libraryContext} onContext={props.onLibraryContext} onOpen={props.onOpenScan} renderScan={scanCard} refreshing={refreshing} /> : <div className="empty"><p>先添加学生档案，题目会按孩子分别整理。</p><button className="primary" onClick={addStudent}>添加学生</button></div>}
+          context={props.libraryContext} onContext={props.onLibraryContext} onOpen={props.onOpenScan} onUpdate={props.onUpdateScan} renderScan={scanCard} refreshing={refreshing} /> : <div className="empty"><p>先添加学生档案，题目会按孩子分别整理。</p><button className="primary" onClick={addStudent}>添加学生</button></div>}
       </>}
 
       {tab === 'me' && <div className="profile-page">

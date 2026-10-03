@@ -67,6 +67,9 @@ export type AnswerStep = {
 };
 export type Question = {
   id: string;
+  collectionReview?: import('./question-collection').QuestionCollectionReview;
+  difficulty?: import('./question-difficulty').QuestionDifficulty;
+  worksheet?: import('./worksheet').PreparedWorksheetQuestion;
   sourcePage?: import('./cloud-photos').QuestionSourcePage;
   paperMark?: {
     classification: 'wrong' | 'focus' | 'both' | 'pending';

@@ -39,6 +39,8 @@ export async function setWrongBook(
       : questionsOf(current).find((q) => q.id === questionId);
     if (!question) throw new HttpError(404, '题目不存在');
     if (Boolean(question.wrongBook) === body.saved) return current;
+    if (question.paperMark?.classification === 'pending' || question.collectionReview)
+      throw new HttpError(409, '此题请通过人工复核收录修改，保留原始批改证据与材料状态');
     if (
       store.db
         .prepare(

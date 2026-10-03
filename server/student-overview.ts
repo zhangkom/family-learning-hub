@@ -2,6 +2,7 @@ import { sessionSummary } from '../lib/learning-session';
 import { publicLearning } from './learning-sessions';
 import type { FamilyStore } from './family-store';
 import { listScans } from './scan-files';
+import { questionCollectionState } from '../lib/question-collection';
 import { questionsOf } from './mobile-service';
 
 // Counts only: keep photo bytes and question bodies out of the profile response.
@@ -20,7 +21,7 @@ export async function studentOverview(store: FamilyStore, accountId: string) {
     student.overview.scanCount++;
     student.overview.questionCount += questions.length;
     student.overview.wrongQuestionCount += questions.filter(question => question.wrongBook).length;
-    if (scan.status === 'needs_review') student.overview.needsReviewCount++;
+    if (scan.status === 'needs_review' || questions.some(q => questionCollectionState(q).materialPending || questionCollectionState(q).collectionPending)) student.overview.needsReviewCount++;
   }
   for (const row of store.db.prepare('SELECT student_id, COUNT(*) AS total FROM cloud_photos WHERE account_id=? AND NOT EXISTS (SELECT 1 FROM cloud_photo_replacements WHERE old_id=cloud_photos.id) GROUP BY student_id').all(accountId)) {
     const student = byId.get(String(row.student_id));

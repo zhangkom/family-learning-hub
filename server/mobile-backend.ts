@@ -38,6 +38,9 @@ import { CLOUD_PHOTO_CAPABILITY } from '../lib/cloud-photos';
 import { cloudPhotoResponse } from './cloud-photos';
 import { analysisProgress } from './analysis-progress';
 import { reviewTutoring } from './tutoring-review';
+import { reviewCollection } from './collection-review';
+import { setQuestionDifficulty } from './question-difficulty';
+import { worksheetResponse } from './worksheet-export';
 import type { ScanRecord } from '../lib/scans';
 
 const hash = (s: string) => createHash('sha256').update(s).digest('hex');
@@ -167,6 +170,7 @@ async function dispatch(
   user: FamilyUser,
 ) {
   const method = request.method;
+  if (parts[0] === 'worksheets') return worksheetResponse(request, parts, store, user.id);
   if (parts[0] === 'learning-sessions')
     return learningResponse(request, parts, store, user.id);
   if (parts[0] === 'weakness-reports')
@@ -248,7 +252,7 @@ async function dispatch(
   if (
     parts.length === 5 &&
     parts[2] === 'questions' &&
-    ['wrong-book', 'explain', 'analysis-review'].includes(parts[4])
+    ['wrong-book', 'explain', 'analysis-review', 'collection-review', 'difficulty'].includes(parts[4])
   ) {
     if (method !== 'POST') throw new HttpError(405, '请求方式不支持');
     if (!store.allow(`question-action:${user.id}`, 60, 60000))
@@ -257,6 +261,8 @@ async function dispatch(
       request,
       parts[4] === 'analysis-review' ? 65536 : 8192,
     );
+    if (parts[4] === 'collection-review') return json({ scan: present(await reviewCollection(store, user.id, record.id, parts[3], body)) });
+    if (parts[4] === 'difficulty') return json({ scan: present(await setQuestionDifficulty(store, user.id, record.id, parts[3], body)) });
     if (parts[4] === 'analysis-review')
       return json({
         scan: present(
@@ -375,6 +381,9 @@ async function handle(
         weaknessReportVersion: 1,
         abilityMapVersion: 1,
         cloudPhotos: CLOUD_PHOTO_CAPABILITY,
+        collectionReviewVersion: 1,
+        questionDifficultyVersion: 1,
+        worksheetExportVersion: 1,
       });
     } else if (!web && parts.join('/') === 'session/register') {
       if (request.method !== 'POST') throw new HttpError(405, '请求方式不支持');

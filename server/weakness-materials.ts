@@ -3,6 +3,7 @@ import type { FamilyStore } from './family-store';
 import type { StoredLearning } from './learning-sessions';
 import type { WeaknessMaterials, WeaknessSource } from '../lib/weakness';
 import { questionsOf } from './mobile-service';
+import { questionCollectionState } from '../lib/question-collection';
 import { questionContext, questionIsSummary } from '../lib/question-context';
 import type { ScanRecord } from '../lib/scans';
 
@@ -45,21 +46,21 @@ export function weaknessMaterials(store: FamilyStore, account: string, student: 
       const seen = new Set<string>();
       while (parent && !seen.has(parent)) {
         seen.add(parent); const ancestor = questions.find(q => q.id === parent);
-        if (!ancestor?.confirmed || ancestor.paperMark?.classification === 'pending') unconfirmedParent = true;
+        if (!ancestor?.confirmed || (questionCollectionState(ancestor).materialPending || questionCollectionState(ancestor).collectionPending)) unconfirmedParent = true;
         if (ancestor && questionIsSummary(ancestor)) summaryContext = true;
         for (const id of ancestor?.sharedRegionIds || []) {
           const shared = questions.find(q => q.regions.some(r => r.id === id));
-          if (!shared?.confirmed || shared.paperMark?.classification === 'pending') unconfirmedParent = true;
+          if (!shared?.confirmed || (questionCollectionState(shared).materialPending || questionCollectionState(shared).collectionPending)) unconfirmedParent = true;
           if (shared && questionIsSummary(shared)) summaryContext = true;
         }
         parent = ancestor?.parentQuestionId;
       }
       for (const id of question.sharedRegionIds || []) {
         const shared = questions.find(q => q.regions.some(r => r.id === id));
-        if (!shared?.confirmed || shared.paperMark?.classification === 'pending') unconfirmedParent = true;
+        if (!shared?.confirmed || (questionCollectionState(shared).materialPending || questionCollectionState(shared).collectionPending)) unconfirmedParent = true;
         if (shared && questionIsSummary(shared)) summaryContext = true;
       }
-      const reason = !question.subject ? '请先选择科目' : !question.confirmed ? '请先核对并确认题干与题框' : question.paperMark?.classification === 'pending' ? '题目资料仍待补全，不能用于能力归纳' : questionIsSummary(question) || summaryContext ? '当前只有题目定位摘要；请结合完整题图解析，采用并核对完整题干、选项与图示条件后再分析' : !question.prompt.trim() || question.prompt.trim() === '待确认' ? '请补充已核对的完整题干' :
+      const reason = !question.subject ? '请先选择科目' : !question.confirmed ? '请先核对并确认题干与题框' : (questionCollectionState(question).materialPending || questionCollectionState(question).collectionPending) ? '题目资料仍待补全，不能用于能力归纳' : questionIsSummary(question) || summaryContext ? '当前只有题目定位摘要；请结合完整题图解析，采用并核对完整题干、选项与图示条件后再分析' : !question.prompt.trim() || question.prompt.trim() === '待确认' ? '请补充已核对的完整题干' :
         unconfirmedParent || context.parents.some(p => !p.prompt.trim() || p.prompt.trim() === '待确认') ? '请补充并确认共用题干条件' : '';
       if (reason) { pending.push({ scanId: scan.id, questionId: question.id, number: question.number, subject: question.subject || '', reason }); continue; }
       const reviewed = question.tutoring?.status === 'needs_review' && question.tutoring.review?.status === 'confirmed' &&

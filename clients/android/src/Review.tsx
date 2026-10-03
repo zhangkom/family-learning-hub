@@ -23,6 +23,8 @@ import { subjects, statusNames, type Subject, type Question, type Region, type S
 import { AnalysisStatus } from './AnalysisStatus';
 import { QuestionPaper, QuestionSource } from './QuestionPaper';
 import { decodeQuestionImage } from './question-images';
+import { CollectionReviewPanel, type CollectionReviewDraft } from './CollectionReviewPanel';
+import { questionCollectionState } from '../../../lib/question-collection';
 
 type Props = {
   api: FamilyApi;
@@ -87,6 +89,8 @@ export function Review({
   const hasPendingAnalysis = questions.some((q) => ['queued', 'processing'].includes(q.tutoring?.status || ''));
   const analyzing = ['queued', 'processing'].includes(question?.tutoring?.status || '');
   const validQuestion = !!question?.subject && question.regions.some((r) => r.kind === 'stem');
+  const hasCollectionReview = !!question && (question.paperMark?.classification === 'pending' || !!question.collectionReview);
+  const collectionState = question ? questionCollectionState(question) : undefined;
   const learningBlocked = conflict ? '原题已在其他地方更新，请先处理版本冲突' : busy ? '正在保存或读取，请稍候' : hasPendingAnalysis ? '正在分析原题，完成后可进入练习' : dirty ? '保存校对后可进入练习与突破' : question ? questionLearningReadiness(question, questions) : '请先选择原题';
   const backAction = useRef<() => void>(() => {});
   backAction.current = () => {
@@ -272,7 +276,7 @@ export function Review({
   async function collect(andExplain: boolean) {
     if (!question || !validQuestion || busy || conflict) return;
     const questionId = question.id;
-    let saved = !!question.wrongBook;
+    let saved = !!(question.wrongBook || question.focusBook);
     mutation.current = true;
     setBusy(true);
     setError('');
@@ -283,7 +287,7 @@ export function Review({
         next = (await api.review(scan, questions)).scan;
         await accept(next);
       }
-      if (!next.questions.find((q) => q.id === questionId)?.wrongBook) {
+      if (!hasCollectionReview && !next.questions.find((q) => q.id === questionId)?.wrongBook) {
         next = (await api.saveWrongQuestion(next, questionId)).scan;
         saved = true;
         await accept(next);
@@ -291,7 +295,7 @@ export function Review({
       if (andExplain) {
         next = (await api.explain(next, questionId)).scan;
         await accept(next);
-        setNotice('已存入错题本，AI 正在分析这道题。可以返回，稍后再看。');
+        setNotice(hasCollectionReview ? 'AI 正在分析这道题，收录状态保持不变。可以返回，稍后再看。' : '已存入错题本，AI 正在分析这道题。可以返回，稍后再看。');
       } else setNotice('已存入当前学生的错题本');
     } catch (e) {
       setNotice(saved ? '错题已保存，仍可重新提交分析。' : '本机题框草稿已保留。');
@@ -303,6 +307,17 @@ export function Review({
       mutation.current = false;
       setBusy(false);
     }
+  }
+  async function reviewCollection(input: CollectionReviewDraft) {
+    if (!question || dirty || busy || conflict || hasPendingAnalysis || !draftReady) return false;
+    mutation.current = true; setBusy(true); setError(''); setNotice('');
+    try {
+      const { scan: next } = await api.reviewCollection(scan, question.id, input);
+      await accept(next); setNotice('人工复核已保存，收录与待补全状态已更新'); return true;
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 409) setConflict(true);
+      setError((e as Error).message); throw e;
+    } finally { mutation.current = false; setBusy(false); }
   }
   async function reviewAnalysis(input: TutoringReviewInput) {
     if (!question || dirty || busy || conflict || hasPendingAnalysis) return false;
@@ -575,7 +590,7 @@ export function Review({
           }}
         >
           {question && <section className="question-actions" aria-label="所选题目与科目">
-            <div className="section-line"><strong>已选第 {question.number || questions.indexOf(question) + 1} 题</strong>
+            <div className="section-line"><strong>{question.number ? `已选第 ${question.number} 题` : '题号待核对'}</strong>
               {question.wrongBook && <span className="saved-tag">已存错题本</span>}{question.focusBook && <span className="collection-tag is-focus">重点题</span>}</div>
             <label>这道题的科目
               <select value={question.subject || ''} onChange={(e) => chooseSubject((e.target.value || undefined) as Subject | undefined)}>
@@ -589,9 +604,10 @@ export function Review({
             {!validQuestion && <p className="hint">{question.regions.some((r) => r.kind === 'stem') ? '选好科目，就能保存和分析这道题。' : '请先为这道题补充题干框。'}</p>}
             <div className="question-save-actions">
               <button className="primary" disabled={!validQuestion || busy || conflict || hasPendingAnalysis || !recognitionEnabled}
-                onClick={() => void collect(true)}>{busy ? '正在保存…' : analyzing ? '正在分析…' : question.tutoring ? '重新分析这道题' : '保存并分析这道题'}</button>
-              <button disabled={!validQuestion || busy || conflict || hasPendingAnalysis} onClick={() => void collect(false)}>只存错题本</button>
+                onClick={() => void collect(true)}>{busy ? '正在保存…' : analyzing ? '正在分析…' : question.tutoring ? '重新分析这道题' : hasCollectionReview ? '分析这道题' : '保存并分析这道题'}</button>
+              {!hasCollectionReview && <button disabled={!validQuestion || busy || conflict || hasPendingAnalysis} onClick={() => void collect(false)}>只存错题本</button>}
             </div>
+            {hasCollectionReview && <p className="hint">修改收录请使用下方“人工复核收录”；原纸面批改依据保留。</p>}
             {!recognitionEnabled && <p className="hint">AI 分析暂不可用，可以先存错题本。</p>}
             {hasPendingAnalysis && !analyzing && <p className="hint">这张照片的另一道题正在分析，完成后可继续保存和分析。</p>}
             <p className="hint">AI 讲解需核对；原题和作答以照片为准。</p>
@@ -608,7 +624,7 @@ export function Review({
                   setRegion('');
                 }}
               >
-                {q.number || i + 1}
+                {q.number || `框选项 ${i + 1}`}
                 {q.confirmed && <Check size={13} />}
               </button>
             ))}
@@ -625,7 +641,7 @@ export function Review({
           ) : (
             <>
               <section className="question-card review-question-paper" aria-label="当前题目原题">
-                <header className="question-card-heading"><div><span className="paper-number">{question.number || questions.indexOf(question) + 1}.</span><span className="subject-tag">{question.subject || '待选科目'}</span></div>
+                <header className="question-card-heading"><div><span className="paper-number">{question.number ? `${question.number}.` : '题号待核对'}</span><span className="subject-tag">{question.subject || '待选科目'}</span></div>
                   <button className="question-original-toggle" type="button" aria-pressed={originalQuestionId === question.id}
                     onClick={() => setOriginalQuestionId(originalQuestionId === question.id ? '' : question.id)}>{originalQuestionId === question.id ? '整理版' : '原图'}</button></header>
                 <QuestionPaper question={question} questions={questions} original={originalQuestionId === question.id}
@@ -659,6 +675,11 @@ export function Review({
               </p>
               {question.answerSteps.some(s => s.uncertain || s.author === 'unknown') && <p className="hint">题干和题框核对后可继续学习；待确认的笔迹会保留标记，不作为判断个人错因的依据。</p>}
               {dirty && <button disabled={busy || conflict || hasPendingAnalysis} onClick={() => void save()}>保存这次校对</button>}
+              {hasCollectionReview && <CollectionReviewPanel key={`${question.id}/${question.collectionReview?.reviewedAt || 'initial'}`}
+                pending={!!(collectionState?.collectionPending || collectionState?.materialPending)} saved={question.collectionReview}
+                disabledReason={conflict ? '资料已有新版本，请先加载服务器内容' : dirty ? '请先保存这次校对' : busy || hasPendingAnalysis || !draftReady ? '正在保存或读取，请稍候' : ''}
+                completionBlocked={!image || imageError ? '请先读取完整题图并核对' : !validQuestion ? '请先选择科目并补全题干框' : !question.confirmed ? '请先核对并保存题干与题框' : ''}
+                onSubmit={reviewCollection} />}
               <div className="question-learning-actions"><button disabled={!!learningBlocked} onClick={() => onLearn('practice', scan, question.id)}>举一反三</button><button disabled={!!learningBlocked} onClick={() => onLearn('challenge', scan, question.id)}>难题突破</button></div>
               {learningBlocked && <p className="hint">{learningBlocked}。</p>}
               {dirty && question.tutoring?.result && <p className="hint">请先保存题框或文字修改，再核对分析。</p>}
