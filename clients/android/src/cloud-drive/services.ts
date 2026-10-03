@@ -42,7 +42,7 @@ async function discardBatch(bridge: NativeBridge, scope: CloudScope, batchId: st
 export function createDriveServices(api: FamilyApi, resolveName?: ResolveName): DriveServices {
   const cloud = createCloudApi(api), native = Capacitor.getPlatform() === 'android', gate = new ImageRequestGate();
   return {
-    native, limits: cloud.limits, list: cloud.list, upload: (job, bytes, signal) => gate.run(() => retryBusy(() => cloud.upload(job, bytes, signal), signal), signal, 1),
+    native, limits: cloud.limits, list: cloud.list, folders: cloud.folders, upload: (job, bytes, signal) => gate.run(() => retryBusy(() => cloud.upload(job, bytes, signal), signal), signal, 1),
     prepare: (job, signal) => cloud.prepare(job, signal, resolveName),
     async read(job: UploadJob, signal) {
       signal.throwIfAborted();

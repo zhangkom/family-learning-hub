@@ -34,6 +34,9 @@ export type AnswerStep = {
 };
 export type Question = {
   id: string;
+  sourcePage?: SourcePage & { majorNumber?: string; subNumber?: string };
+  focusBook?: { savedAt: string };
+  paperMark?: { classification: 'wrong' | 'focus' | 'both' | 'pending'; ruleIds: string[]; evidence: { text: string; region?: { x: number; y: number; width: number; height: number } }[]; reviewedAt: string; reviewedBy: 'codex-manual'; independentAssessment: false };
   subject?: Subject;
   wrongBook?: { savedAt: string };
   tutoring?: {
@@ -65,6 +68,7 @@ export type Question = {
   explanation?: string;
 };
 export type Scan = {
+  sourcePage?: SourcePage;
   analysis?: AnalysisProgress;
   sourceKind?: 'processed-photo' | 'original';
   processing?: PhotoProcessingMetadata;
@@ -85,6 +89,7 @@ export type Scan = {
 export type Login = { token: string; user: User; expiresAt: number | string };
 export const subjects = ['数学', '语文', '英语', '地理', '物理', '化学', '生物'] as const;
 export type Subject = (typeof subjects)[number];
+export type SourcePage = { documentId: string; title: string; subject: Subject; pageNumber: number; pageCount: number; revision: number; photoId: string; paperPageNumber?: number; paperPageCount?: number; pageRole?: 'questions' | 'answer-sheet'; duplicateOfPhotoId?: string; sourceParts?: { photoId: string; originalName?: string; title?: string; paperPageNumber?: number; pageRole?: 'questions' | 'answer-sheet'; role: string }[] };
 export type WrongBookItem = { scanId: string; studentId: string; subject: string; source: string; question: Question };
 export const statusNames: Record<Scan['status'], string> = {
   queued: '等待识别',

@@ -67,6 +67,19 @@ export type AnswerStep = {
 };
 export type Question = {
   id: string;
+  sourcePage?: import('./cloud-photos').QuestionSourcePage;
+  paperMark?: {
+    classification: 'wrong' | 'focus' | 'both' | 'pending';
+    ruleIds: string[];
+    evidence: {
+      text: string;
+      region?: Pick<Region, 'x' | 'y' | 'width' | 'height'>;
+    }[];
+    reviewedAt: string;
+    reviewedBy: 'codex-manual';
+    independentAssessment: false;
+  };
+  focusBook?: { savedAt: string };
   subject?: LearningSubject;
   wrongBook?: { savedAt: string };
   tutoring?: {
@@ -89,6 +102,7 @@ export type Question = {
   explanation?: string;
 };
 export type MobileScan = {
+  sourcePage?: import('./cloud-photos').QuestionSourcePage;
   analysis?: AnalysisProgress;
   sourceKind?: 'processed-photo';
   processing?: import('./photo-processing').PhotoProcessing;

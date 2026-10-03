@@ -82,3 +82,6 @@ button.capture-entry:disabled { opacity:.55; }
  .wrong-book-toolbar h2 { font-size:17px; }
  .weakness-focus { padding:14px; }
 }
+.collection-filters { display:flex; gap:6px; padding:4px; margin:0 0 18px; border-radius:12px; background:#eaf0f8; }
+.collection-filters button { flex:1; min-height:42px; border:0; border-radius:9px; padding:8px 6px; background:transparent; font-size:14px; color:#5b6b80; }
+.collection-filters button.selected { color:#244fba; background:#fff; box-shadow:0 1px 4px #173b6412; font-weight:600; }

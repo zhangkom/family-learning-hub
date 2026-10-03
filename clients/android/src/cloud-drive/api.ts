@@ -1,5 +1,5 @@
 import { ApiError, FamilyApi, sessionExpiredEvent } from '../api';
-import { assertReceipt, type CloudLimits, type CloudPage, type CloudPhoto, type UploadBytes, type UploadJob, type NameCheck, type ResolveName } from './types';
+import { assertReceipt, type CloudLimits, type CloudPage, type CloudPhoto, type UploadBytes, type UploadJob, type NameCheck, type ResolveName, type CloudPhotoFilter, type CloudFolders } from './types';
 
 export async function sha256(file: Blob) {
   return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', await file.arrayBuffer())), b => b.toString(16).padStart(2, '0')).join('');
@@ -9,11 +9,11 @@ export function createCloudApi(api: FamilyApi) {
   let cachedLimits: CloudLimits | undefined;
   const batches = new Map<string, string>();
   async function limits(signal?: AbortSignal): Promise<CloudLimits> {
-    const setup = await api.request<{ cloudPhotos?: { version: number; maxFileBytes: number; maxBatchItems: number; mimeTypes: string[]; nameConflictVersion?: number } }>('/setup', 'GET', undefined, signal);
+    const setup = await api.request<{ cloudPhotos?: { version: number; maxFileBytes: number; maxBatchItems: number; mimeTypes: string[]; nameConflictVersion?: number; archiveVersion?: number } }>('/setup', 'GET', undefined, signal);
     const cap = setup.cloudPhotos;
     if (!cap || cap.version !== 1 || !Number.isSafeInteger(cap.maxFileBytes) || cap.maxFileBytes < 1 || !Number.isInteger(cap.maxBatchItems) || cap.maxBatchItems < 1 || !Array.isArray(cap.mimeTypes) || !cap.mimeTypes.length)
       throw new Error('服务器尚未开放图片云盘，请更新服务后重试');
-    cachedLimits = { maxFileBytes: cap.maxFileBytes, maxBatch: cap.maxBatchItems, mimeTypes: cap.mimeTypes, nameConflictVersion: cap.nameConflictVersion };
+    cachedLimits = { maxFileBytes: cap.maxFileBytes, maxBatch: cap.maxBatchItems, mimeTypes: cap.mimeTypes, nameConflictVersion: cap.nameConflictVersion, archiveVersion: cap.archiveVersion };
     return cachedLimits;
   }
   async function prepare(job: UploadJob, signal: AbortSignal, resolve?: ResolveName): Promise<UploadJob> {
@@ -60,9 +60,16 @@ export function createCloudApi(api: FamilyApi) {
     if (photo.batchId !== batchId || !photo.originalName) throw new Error('云端原图回执不一致，记录已保留');
     return photo;
   }
-  async function list(studentId: string, cursor?: string, signal?: AbortSignal) {
-    const data = await api.request<CloudPage>(`/cloud-photos?studentId=${encodeURIComponent(studentId)}&limit=30${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`, 'GET', undefined, signal);
+  async function list(studentId: string, cursor?: string, signal?: AbortSignal, filter?: CloudPhotoFilter) {
+    const data = await api.request<CloudPage>(`/cloud-photos?studentId=${encodeURIComponent(studentId)}&limit=30${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}${filter?.documentId ? `&documentId=${encodeURIComponent(filter.documentId)}` : ''}${filter?.unclassified ? '&unclassified=1' : ''}`, 'GET', undefined, signal);
     if (!Array.isArray(data.photos) || data.photos.some(photo => photo.studentId !== studentId || !photo.id)) throw new Error('云图所属孩子不匹配，请刷新');
+    if (filter?.documentId && data.photos.some(photo => photo.archive?.documentId !== filter.documentId)) throw new Error('作业页归属已变化，请返回重新选择');
+    if (filter?.unclassified && data.photos.some(photo => photo.archive)) throw new Error('图片分类已变化，请刷新');
+    return data;
+  }
+  async function folders(studentId: string, subject?: string, cursor?: string, signal?: AbortSignal) {
+    const data = await api.request<CloudFolders>(`/cloud-photo-folders?studentId=${encodeURIComponent(studentId)}${subject ? `&subject=${encodeURIComponent(subject)}` : ''}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`, 'GET', undefined, signal);
+    if (subject ? !Array.isArray(data.documents) || data.documents.some(doc => doc.subject !== subject || !doc.id || !doc.title) : !Array.isArray(data.subjects) || !Number.isSafeInteger(data.unclassifiedCount)) throw new Error('作业目录读取不完整，请刷新');
     return data;
   }
   async function blob(photo: CloudPhoto, original: boolean, signal: AbortSignal) {
@@ -79,5 +86,5 @@ export function createCloudApi(api: FamilyApi) {
       return file;
     } finally { clearTimeout(timer); signal.removeEventListener('abort', abort); }
   }
-  return { limits, list, upload, prepare, blob };
+  return { limits, list, folders, upload, prepare, blob };
 }

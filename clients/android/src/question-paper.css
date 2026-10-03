@@ -17,3 +17,9 @@
 .question-image-recovery button { min-height:44px; padding:8px 12px; font-size:14px; }
 .question-image-recovery p, .question-image-recovery output, .question-image-recovery details { display:block; margin:8px 0 0; font-size:13px; line-height:1.6; color:#4b5e78; overflow-wrap:anywhere; }
 .question-image-recovery summary { cursor:pointer; min-height:44px; padding-top:10px; }
+.question-card-heading > div { display:flex; flex-wrap:wrap; align-items:center; gap:5px; min-width:0; }
+.collection-tag { display:inline-block; font-size:11px; line-height:1.6; padding:2px 6px; border-radius:5px; white-space:nowrap; }
+.collection-tag.is-wrong { color:#9c4b46; background:#fff0ee; }
+.collection-tag.is-focus { color:#90631c; background:#fff4dc; }
+.question-source summary { overflow-wrap:anywhere; line-height:1.7; }
+.question-source dd small { display:block; margin-top:5px; color:#6e7c8d; line-height:1.65; }

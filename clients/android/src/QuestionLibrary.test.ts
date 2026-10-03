@@ -10,6 +10,16 @@ const scans = [
   ] },
 ] as Scan[];
 describe('wrong book upload order', () => {
+  it('includes focus-only questions and deduplicates questions carrying both collection types', () => {
+    const mixed = [{ ...scans[0], questions: [
+      { ...scans[0].questions[0], id: 'focus', wrongBook: undefined, focusBook: { savedAt: '2026-10-03T00:00:00Z' } },
+      { ...scans[0].questions[0], id: 'both', focusBook: { savedAt: '2026-10-03T00:00:00Z' } },
+      { ...scans[0].questions[0], id: 'pending', wrongBook: undefined },
+    ] }];
+    const ordered = orderedWrongQuestions(mixed);
+    expect(ordered.map(item => item.question.id)).toEqual(['focus', 'both']);
+    expect(ordered.filter(item => item.question.wrongBook).map(item => item.question.id)).toEqual(['both']);
+  });
   it('sorts uploads, ignoring later collection dates and retaining within-photo order', () => {
     expect(orderedWrongQuestions(scans).map(x => x.question.id)).toEqual(['new-physics', 'new-math', 'old-math']);
     expect(scans[0].id).toBe('old');

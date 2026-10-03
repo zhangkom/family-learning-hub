@@ -10,11 +10,22 @@ import {
   type FamilyState,
 } from '../lib/family-state';
 
-const cloudBatchTable = (name: 'cloud_photo_batches' | 'cloud_photo_batches_upgrade') =>
+const cloudBatchTable = (
+  name: 'cloud_photo_batches' | 'cloud_photo_batches_upgrade',
+) =>
   `CREATE TABLE IF NOT EXISTS ${name} (id TEXT PRIMARY KEY, account_id TEXT NOT NULL REFERENCES accounts(id), student_id TEXT NOT NULL, client_id TEXT NOT NULL, expected_count INTEGER NOT NULL CHECK(expected_count >= 1), body TEXT NOT NULL, UNIQUE(account_id,client_id), FOREIGN KEY(account_id,student_id) REFERENCES students(account_id,id));`;
 
 function upgradeCloudPhotoBatches(db: DatabaseSync) {
-  const needsUpgrade = () => /expected_count\s+BETWEEN\s+1\s+AND\s+(?:100|200)\b/i.test(String(db.prepare("SELECT sql FROM sqlite_schema WHERE name='cloud_photo_batches'").get()?.sql));
+  const needsUpgrade = () =>
+    /expected_count\s+BETWEEN\s+1\s+AND\s+(?:100|200)\b/i.test(
+      String(
+        db
+          .prepare(
+            "SELECT sql FROM sqlite_schema WHERE name='cloud_photo_batches'",
+          )
+          .get()?.sql,
+      ),
+    );
   if (!needsUpgrade()) return;
   // Disable foreign keys before the transaction so replacing the parent table
   // preserves every cloud_photos reference. Recheck after acquiring the lock.
@@ -25,11 +36,18 @@ function upgradeCloudPhotoBatches(db: DatabaseSync) {
       db.exec(`INSERT INTO cloud_photo_batches_upgrade SELECT * FROM cloud_photo_batches;
         DROP TABLE cloud_photo_batches;
         ALTER TABLE cloud_photo_batches_upgrade RENAME TO cloud_photo_batches;`);
-      if (db.prepare('PRAGMA foreign_key_check').all().length) throw new Error('Cloud photo batch migration failed integrity validation');
+      if (db.prepare('PRAGMA foreign_key_check').all().length)
+        throw new Error(
+          'Cloud photo batch migration failed integrity validation',
+        );
     }
     db.exec('COMMIT');
-  } catch (error) { db.exec('ROLLBACK'); throw error; }
-  finally { db.exec('PRAGMA foreign_keys=ON'); }
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  } finally {
+    db.exec('PRAGMA foreign_keys=ON');
+  }
 }
 
 export class FamilyStore {
@@ -74,8 +92,16 @@ export class FamilyStore {
       CREATE TABLE IF NOT EXISTS review_items (id TEXT PRIMARY KEY, batch_id TEXT NOT NULL REFERENCES review_batches(id), body TEXT NOT NULL);
       CREATE INDEX IF NOT EXISTS review_items_batch ON review_items(batch_id,id);
       CREATE TABLE IF NOT EXISTS review_tokens (token_hash TEXT PRIMARY KEY, batch_id TEXT NOT NULL REFERENCES review_batches(id), expires_at INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS homework_documents (id TEXT PRIMARY KEY, account_id TEXT NOT NULL REFERENCES accounts(id), student_id TEXT NOT NULL, subject TEXT NOT NULL, title TEXT NOT NULL, revision INTEGER NOT NULL, created_at TEXT NOT NULL, FOREIGN KEY(account_id,student_id) REFERENCES students(account_id,id));
+      CREATE INDEX IF NOT EXISTS homework_documents_student ON homework_documents(account_id,student_id,subject,created_at,id);
+      CREATE TABLE IF NOT EXISTS homework_pages (photo_id TEXT PRIMARY KEY REFERENCES cloud_photos(id), document_id TEXT NOT NULL REFERENCES homework_documents(id), page_number INTEGER NOT NULL CHECK(page_number>=1), revision INTEGER NOT NULL, evidence TEXT NOT NULL, duplicate_of_photo_id TEXT REFERENCES cloud_photos(id), UNIQUE(document_id,page_number));
+      CREATE TABLE IF NOT EXISTS homework_imports (account_id TEXT NOT NULL REFERENCES accounts(id), request_id TEXT NOT NULL, fingerprint TEXT NOT NULL, body TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY(account_id,request_id));
     `);
     upgradeCloudPhotoBatches(this.db);
+    const homeworkColumns = new Set(this.db.prepare('PRAGMA table_info(homework_pages)').all().map(column => column.name));
+    for (const [name, type] of [['paper_page_number', 'INTEGER'], ['paper_page_count', 'INTEGER'], ['page_role', 'TEXT']]) {
+      if (!homeworkColumns.has(name)) this.db.exec(`ALTER TABLE homework_pages ADD COLUMN ${name} ${type}`);
+    }
     // Null denotes the original whole-page recognition task. Older workers must
     // not consume queued question jobs when rolling back; cancel them first.
     if (

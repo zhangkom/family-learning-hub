@@ -113,6 +113,7 @@ export function mobileScan(record: ScanRecord): MobileScan {
     revision: record.revision || 0,
     status,
     questions,
+    ...(record.sourcePage ? { sourcePage: record.sourcePage } : {}),
     ...(record.sourceKind === 'processed-photo' && record.processing
       ? { sourceKind: record.sourceKind, processing: record.processing }
       : {}),
@@ -352,6 +353,9 @@ export async function reviewMobileScan(
       return {
         ...q,
         ...(before.wrongBook ? { wrongBook: before.wrongBook } : {}),
+        ...(before.focusBook ? { focusBook: before.focusBook } : {}),
+        ...(before.paperMark ? { paperMark: before.paperMark } : {}),
+        ...(before.sourcePage ? { sourcePage: before.sourcePage } : {}),
         ...(tutoring ? { tutoring } : {}),
       };
     });

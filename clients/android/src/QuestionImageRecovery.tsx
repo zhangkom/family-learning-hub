@@ -10,7 +10,7 @@ export function QuestionImageRecovery({ studentId, records, images }: {
   studentId: string; records: Scan[]; images: QuestionImages;
 }) {
   const scans = useMemo(() => [...new Map(records.filter(scan => scan.studentId === studentId &&
-    scan.questions.some(q => q.wrongBook && q.regions.length)).map(scan => [scan.id, scan])).values()], [records, studentId]);
+    scan.questions.some(q => (q.wrongBook || q.focusBook) && q.regions.length)).map(scan => [scan.id, scan])).values()], [records, studentId]);
   const controller = useRef<AbortController | null>(null), live = useRef(true);
   const [progress, setProgress] = useState(initial);
   const [failureCount, setFailureCount] = useState(0);

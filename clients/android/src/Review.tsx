@@ -572,7 +572,7 @@ export function Review({
         >
           {question && <section className="question-actions" aria-label="所选题目与科目">
             <div className="section-line"><strong>已选第 {question.number || questions.indexOf(question) + 1} 题</strong>
-              {question.wrongBook && <span className="saved-tag">已存错题本</span>}</div>
+              {question.wrongBook && <span className="saved-tag">已存错题本</span>}{question.focusBook && <span className="collection-tag is-focus">重点题</span>}</div>
             <label>这道题的科目
               <select value={question.subject || ''} onChange={(e) => chooseSubject((e.target.value || undefined) as Subject | undefined)}>
                 <option value="">请选择科目</option>

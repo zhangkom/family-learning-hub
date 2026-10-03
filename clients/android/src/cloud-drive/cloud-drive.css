@@ -23,3 +23,18 @@
 @media(max-width:400px){.cloud-drive{padding:10px 12px 20px}.cloud-drive h2{font-size:22px}.cloud-select,.cloud-panel{padding:12px}.cloud-child{font-size:12px}.cloud-hero p{font-size:12px}.cloud-grid{gap:8px}}
 
 .cloud-drive{min-height:calc(100dvh - var(--app-safe-top,0px));padding-bottom:calc(24px + var(--app-safe-bottom,0px))}.cloud-name-options button{display:flex;flex-direction:column;align-items:flex-start}.cloud-import-warning{margin:12px 0;padding:12px;border-radius:12px;font-size:13px}.cloud-import-warning button{margin:6px 0 0 8px}.cloud-name-dialog{max-height:calc(90dvh - var(--app-safe-top,0px) - var(--app-safe-bottom,0px))}
+.cloud-archive .cloud-section-heading h3 { overflow-wrap:anywhere; }
+.cloud-breadcrumbs { display:flex; flex-wrap:wrap; align-items:center; gap:4px; margin:4px 0 14px; color:#5a6c81; font-size:13px; }
+.cloud-breadcrumbs button { min-height:44px; padding:6px; border:0; background:transparent; color:#345bc3; }
+.cloud-breadcrumbs button:disabled { opacity:1; color:#5a6c81; }
+.cloud-breadcrumbs span { overflow-wrap:anywhere; }
+.cloud-breadcrumbs svg { flex-shrink:0; }
+.cloud-folder-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:10px; }
+.cloud-folder-grid .cloud-folder { display:flex; align-items:center; text-align:left; gap:12px; padding:16px; background:#f6f8ff; border:1px solid #dbe3f3; border-radius:14px; min-height:87px; }
+.cloud-folder > svg { flex-shrink:0; color:#4970c6; }
+.cloud-folder > span { flex:1; min-width:0; }
+.cloud-folder strong { display:block; font-size:16px; line-height:1.55; white-space:normal; overflow-wrap:anywhere; }
+.cloud-folder small { display:block; font-size:12px; line-height:1.5; color:#65748d; margin-top:3px; }
+.cloud-folder-grid .cloud-folder-pending { background:#fbf8f1; border-color:#eae1cd; }
+.cloud-folder-pending > svg { color:#96764a; }
+.cloud-page-number { display:block; padding:8px 8px 0; font-size:13px; color:#345bc3; }

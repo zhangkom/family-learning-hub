@@ -86,7 +86,7 @@ export function HomeView(props: Props) {
             {nextScan && <button onClick={() => props.onOpenScan(nextScan, nextQuestion?.id)}>继续学习 <ChevronRight size={16} /></button>}
           </section>}
         <nav className="home-resource-links" aria-label="资料管理">
-          <button disabled={busy || !student} onClick={() => { props.onLibraryMode('photos'); navigate('library'); }}><FileImage size={17} /><span>原题照片{records.some(s => !s.questions.length || s.questions.some(q => !q.wrongBook)) ? ' · 待整理' : ''}</span></button>
+          <button disabled={busy || !student} onClick={() => { props.onLibraryMode('photos'); navigate('library'); }}><FileImage size={17} /><span>原题照片{records.some(s => !s.questions.length || s.questions.some(q => !q.wrongBook && !q.focusBook)) ? ' · 待整理' : ''}</span></button>
           {props.onOpenCloud && <button disabled={busy || !!uploading || !student} onClick={props.onOpenCloud}><Cloud size={17} /><span>图片云盘</span></button>}
         </nav>
         {student && <div id="home-pending">          {props.batchUploads}

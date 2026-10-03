@@ -7,6 +7,7 @@ import { driveStore } from './store';
 import { UploadQueue, type QueueSnapshot } from './queue';
 import { type CloudLimits, type CloudPage, type CloudPhoto, type DriveServices, type DriveStore, type PickResult, type PickedOriginal, type NameCheck, type NameChoice, type ResolveName, type ImportProgress } from './types';
 import { NameConflictDialog } from './NameConflictDialog';
+import { CloudPhotoBrowser, PrivatePreview } from './CloudPhotoBrowser';
 import './cloud-drive.css';
 
 export type CloudPhotoDriveProps = {
@@ -38,11 +39,11 @@ function DriveSession({ api, owner, studentId, studentLabel, onClose, onOpenOrig
   const [limits, setLimits] = useState<CloudLimits | null>(null);
   const [error, setError] = useState(''), [notice, setNotice] = useState(''), [picking, setPicking] = useState(false);
   const [importProgress, setImportProgress] = useState<ImportProgress | null>(null), [pendingImportIds, setPendingImportIds] = useState<string[]>([]);
-  const [photos, setPhotos] = useState<CloudPage>({ photos: [] }), [listing, setListing] = useState(false), [listError, setListError] = useState('');
+  const [storage, setStorage] = useState<CloudPage['storage']>(), [refreshKey, setRefreshKey] = useState(0);
   const [viewing, setViewing] = useState<CloudPhoto | null>(null), [downloading, setDownloading] = useState('');
   const [recoveryAction, setRecoveryAction] = useState<{ run: () => Promise<void> } | null>(null);
   const controller = useRef<AbortController | null>(null), queueRef = useRef<UploadQueue | null>(null), input = useRef<HTMLInputElement>(null);
-  const live = useRef(false), listTicket = useRef(0), closeRef = useRef<() => void>(() => {});
+  const live = useRef(false), closeRef = useRef<() => void>(() => {});
   const dialog = useRef<HTMLDialogElement>(null);
   useEffect(() => { const element = dialog.current; if (viewing && element && !element.open) element.showModal(); return () => element?.close(); }, [viewing]);
   const uploadCount = queue.jobs.filter(job => job.status === 'completed').length;
@@ -56,23 +57,14 @@ function DriveSession({ api, owner, studentId, studentLabel, onClose, onOpenOrig
     const ids = await services.pendingImports({ owner, studentId }, signal);
     if (live.current && !signal.aborted) setPendingImportIds(ids);
   }, [services, owner, studentId]);
-  const refresh = useCallback(async (cursor?: string) => {
-    const signal = controller.current?.signal; if (!live.current || !signal || signal.aborted) return;
-    const ticket = ++listTicket.current; setListing(true); setListError('');
-    try {
-      const page = await services.list(studentId, cursor, signal);
-      if (!live.current || signal.aborted || ticket !== listTicket.current) return;
-      setPhotos(previous => ({ ...page, photos: cursor ? [...previous.photos, ...page.photos.filter(photo => !previous.photos.some(old => old.id === photo.id))] : page.photos }));
-    } catch (e) { if (live.current && !signal.aborted && ticket === listTicket.current) setListError(message(e)); }
-    finally { if (live.current && ticket === listTicket.current) setListing(false); }
-  }, [services, studentId]);
+  const refresh = useCallback(() => { if (live.current) setRefreshKey(value => value + 1); }, []);
   useEffect(() => {
     live.current = true; const abort = new AbortController(); controller.current = abort;
     setInitialization('loading'); setInitializationError('');
     const work = new UploadQueue({ owner, studentId }, store, services); queueRef.current = work;
     const unsubscribe = work.subscribe(() => { if (live.current && !abort.signal.aborted) setQueue(work.snapshot()); });
     void Promise.all([work.load(), services.limits(abort.signal), refreshImports()]).then(([, cap]) => {
-      if (live.current && !abort.signal.aborted) { setLimits(cap); setInitialization('ready'); void refresh(); }
+      if (live.current && !abort.signal.aborted) { setLimits(cap); setInitialization('ready'); refresh(); }
     }).catch(e => { if (live.current && !abort.signal.aborted) { setInitializationError(message(e)); setInitialization('failed'); } });
     return () => { live.current = false; abort.abort(); work.dispose(); unsubscribe(); };
   }, [owner, studentId, store, services, refresh, refreshImports, initializationAttempt]);
@@ -133,14 +125,14 @@ function DriveSession({ api, owner, studentId, studentLabel, onClose, onOpenOrig
   async function start(id?: string) {
     if (locked) return; setError(''); setNotice('');
     await queueRef.current?.start(id);
-    if (live.current) await refresh();
+    if (live.current) refresh();
   }
   async function continueInterrupted() {
     if (locked) return;
     const recovered = await select(true);
     if (!recovered || !live.current || controller.current?.signal.aborted) return;
     await queueRef.current?.start();
-    if (live.current) await refresh();
+    if (live.current) refresh();
   }
   async function remove(id: string) {
     try { await queueRef.current?.remove(id); } catch (e) { if (live.current) setError(message(e)); }
@@ -189,40 +181,14 @@ function DriveSession({ api, owner, studentId, studentLabel, onClose, onOpenOrig
         {(waiting > 0 || queue.running) && <div className="cloud-actions"><button type="button" className="cloud-primary" disabled={locked || !waiting || !limits} onClick={() => void start()}>{pendingImports ? '上传已导入照片' : queue.jobs.some(job => job.status === 'failed' || job.status === 'paused') ? '中断续传' : '开始上传'}</button>
           {queue.running && <button type="button" onClick={() => queueRef.current?.stop()}>停止继续上传</button>}</div>}
         {waiting > 0 && <p className="cloud-hint">离开页面会暂停后续上传，可回来继续。</p>}
-        {photos.storage && bytesWaiting > photos.storage.limitBytes - photos.storage.usedBytes && <p className="cloud-error">本批原图大小超过家庭云盘剩余空间，部分图片可能无法上传。</p>}
+        {storage && bytesWaiting > storage.limitBytes - storage.usedBytes && <p className="cloud-error">本批原图大小超过家庭云盘剩余空间，部分图片可能无法上传。</p>}
         <ol className="cloud-queue">{queue.jobs.map(job => <li key={job.id} className={`cloud-job cloud-job-${job.status}`}><div className="cloud-job-text"><strong title={job.name}>{job.name}</strong><span>{sizeLabel(job.size)} · {job.status === 'uploading' ? queue.phase === 'naming' ? '检查图片名称…' : queue.phase === 'reading' ? '读取并校验原图…' : '正在上传原图…' : statusLabel[job.status]}</span>{job.message && <p>{job.message}</p>}</div>
           <div className="cloud-job-actions">{['failed', 'paused'].includes(job.status) && <button type="button" disabled={locked} onClick={() => void start(job.id)} aria-label={`重试 ${job.name}`}>重试</button>}
           <button type="button" disabled={locked} onClick={() => void remove(job.id)} aria-label={`${job.status === 'completed' ? '清理记录' : '移除待上传'} ${job.name}`}>{job.status === 'completed' ? '清理记录' : '移除'}</button></div></li>)}</ol>
         <p className="cloud-hint">移除只清理本机上传记录，不会删除相册原图或云盘图片。</p>
     </section>}
-    <section className="cloud-panel" aria-labelledby="cloud-photos-title"><div className="cloud-section-heading"><h3 id="cloud-photos-title">已存云图</h3><button type="button" disabled={listing || !limits} onClick={() => void refresh()}>刷新</button></div>
-      {photos.storage && <p className="cloud-hint">家庭云盘已用 {sizeLabel(photos.storage.usedBytes)} / {sizeLabel(photos.storage.limitBytes)}</p>}
-      <div className="cloud-grid">{photos.photos.map(photo => <article className="cloud-photo" key={photo.id}>
-        <button type="button" className="cloud-photo-open" onClick={() => setViewing(photo)} aria-label={`预览 ${photo.originalName}`}><PrivatePreview photo={photo} services={services} /><span>{photo.originalName}</span></button>
-        <div className="cloud-photo-meta"><time>{new Date(photo.createdAt).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' })}</time><span>{sizeLabel(photo.size)}</span></div>
-        <button type="button" disabled={!!downloading} onClick={() => void download(photo)}>{downloading === photo.id ? '正在保存…' : '下载原图'}</button>
-      </article>)}</div>
-      {listError && <p role="alert" className="cloud-error">云图读取未完成：{listError}。可点“刷新”重试。</p>}
-      {listing && <output className="cloud-empty">正在读取云图…</output>}{initialization === 'ready' && !listing && !listError && !photos.photos.length && <p className="cloud-empty">还没有云图。上传完成后会出现在这里。</p>}
-      {photos.nextCursor && <button type="button" disabled={listing} onClick={() => void refresh(photos.nextCursor || undefined)}>加载更多</button>}
-    </section>
-    {viewing && <dialog ref={dialog} className="cloud-modal" aria-label="云图预览" onCancel={e => { e.preventDefault(); setViewing(null); }}><div><header><h3>{viewing.originalName}</h3><button type="button" onClick={() => setViewing(null)}>关闭预览</button></header><PrivatePreview photo={viewing} services={services} /><p className="cloud-hint">这里显示预览图，下载会保留原始图片字节。</p><button type="button" disabled={!!downloading} onClick={() => void download(viewing)}>下载原图</button></div></dialog>}
+    {initialization === 'ready' && <CloudPhotoBrowser services={services} studentId={studentId} archiveEnabled={limits?.archiveVersion === 1} refreshKey={refreshKey}
+      onStorage={setStorage} onView={setViewing} onDownload={photo => void download(photo)} downloading={downloading} />}
+    {viewing && <dialog ref={dialog} className="cloud-modal" aria-label="云图预览" onCancel={e => { e.preventDefault(); setViewing(null); }}><div><header><h3>{viewing.originalName}</h3><button type="button" onClick={() => setViewing(null)}>关闭预览</button></header><PrivatePreview photo={viewing} services={services} /><p className="cloud-hint">{viewing.archive && `${viewing.archive.subject} · ${viewing.archive.title} · 第 ${viewing.archive.pageNumber} 页。`}这里显示预览图，下载会保留原始图片字节。</p><button type="button" disabled={!!downloading} onClick={() => void download(viewing)}>下载原图</button></div></dialog>}
   </section>;
-}
-
-function PrivatePreview({ photo, services }: { photo: CloudPhoto; services: DriveServices }) {
-  const [url, setUrl] = useState(''), [failed, setFailed] = useState(false), element = useRef<HTMLSpanElement>(null);
-  useEffect(() => {
-    const abort = new AbortController(); let objectUrl = '', started = false;
-    setUrl(''); setFailed(false);
-    const load = async () => {
-      if (started) return; started = true;
-      try { const file = await services.preview(photo, abort.signal); if (abort.signal.aborted) return; objectUrl = URL.createObjectURL(file); setUrl(objectUrl); }
-      catch { if (!abort.signal.aborted) setFailed(true); }
-    };
-    const observer = new IntersectionObserver(entries => { if (entries.some(entry => entry.isIntersecting)) { observer.disconnect(); void load(); } }, { rootMargin: '100px' });
-    if (element.current) observer.observe(element.current);
-    return () => { abort.abort(); observer.disconnect(); if (objectUrl) URL.revokeObjectURL(objectUrl); };
-  }, [photo, services]);
-  return <span ref={element} className="cloud-thumbnail">{url ? <img src={url} alt={photo.originalName} /> : <span>{failed ? '预览暂不可用' : '图片预览'}</span>}</span>;
 }

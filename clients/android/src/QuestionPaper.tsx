@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { Image as ImageIcon, FileText, ChevronRight } from 'lucide-react';
 import type { Question, Scan } from './types';
+import { sourcePageLabel } from './source-location';
 import { questionPrompt, questionRectangles, questionTextLayout, type QuestionRectangle } from './question-presentation';
 import { type QuestionImage, type QuestionImageState, type QuestionImages } from './question-images';
 import './question-paper.css';
@@ -23,11 +24,16 @@ function PaperText({ text }: { text: string }) {
 
 export function QuestionSource({ scan, question }: { scan: Scan; question: Question }) {
   const parent = scan.questions.find(q => q.id === question.parentQuestionId && q.id !== question.id);
-  return <details className="question-source"><summary>题目来源</summary><dl>
+  const source = question.sourcePage || scan.sourcePage;
+  const location = question.sourcePage?.majorNumber ? `第 ${question.sourcePage.majorNumber} 大题${question.sourcePage.subNumber ? ` · 第 ${question.sourcePage.subNumber} 小题` : ''}` : `${parent ? `第 ${parent.number || '待核对'} 大题 · ` : ''}第 ${question.number || '待核对'} 题`;
+  return <details className="question-source"><summary>{source ? `${source.title} · ${sourcePageLabel(source)} · ${location}` : '题目来源'}</summary><dl>
+    {source && <><dt>所属作业</dt><dd>{source.title}</dd><dt>原卷页码</dt><dd>{sourcePageLabel(source)}{source.paperPageCount ? ` / 共 ${source.paperPageCount} 页` : ''}</dd></>}
     <dt>来源照片</dt><dd>{scan.originalName || '原文件名未记录'}</dd>
-    <dt>原题位置</dt><dd>{parent ? `第 ${parent.number || '待核对'} 大题 · ` : ''}第 {question.number || '待核对'} 题</dd>
+    <dt>原题位置</dt><dd>{location}</dd>
     <dt>科目</dt><dd>{question.subject || '待确认'}</dd>
     <dt>来源说明</dt><dd>{scan.source || '未登记'}</dd>
+    {source?.sourceParts && <><dt>关联原页</dt><dd>{[...new Map(source.sourceParts.map(part => [part.photoId, part])).values()].map(part => <div key={part.photoId}>{part.title || source.title} · {part.pageRole === 'answer-sheet' ? '答题卡 · ' : ''}{part.paperPageNumber ? `第 ${part.paperPageNumber} 页 · ` : ''}{part.originalName || '原文件名未记录'}</div>)}</dd></>}
+    {question.paperMark && <><dt>收录依据</dt><dd>{question.paperMark.evidence.map(item => item.text).join('；') || '纸面标记核对'}<small>按纸面批改标记收录，不作为独立测验成绩。</small></dd></>}
   </dl></details>;
 }
 
@@ -77,13 +83,13 @@ export function QuestionCard({ scan, question, images, onOpen, actions }: {
   const status = question.tutoring?.status;
   const summary = status === 'needs_review' ? question.tutoring?.review?.status === 'confirmed' ? '讲解已核对' : 'AI 分析待核对'
     : status === 'failed' ? '分析未完成 · 可重试' : status === 'stale' ? '题目已修改 · 需重新分析'
-      : status ? '正在分析' : question.wrongBook ? '已收录错题' : question.confirmed ? '题目已校对' : '题目待校对';
+      : status ? '正在分析' : question.wrongBook && question.focusBook ? '已收录错题与重点题' : question.wrongBook ? '已收录错题' : question.focusBook ? '已收录重点题' : question.confirmed ? '题目已校对' : '题目待校对';
   if (state.status === 'ready') size.current = { width: state.image.width, height: state.image.height };
   // Keep offscreen card heights stable without retaining decoded pictures in the DOM.
   const image = (nearby || original) ? state.status === 'ready' ? state.image : undefined
     : size.current ? { ...size.current, url: '' } : undefined;
   return <article ref={ref} className={`question-card wrong-question-card ${original ? 'show-original' : ''}`} aria-label={`第 ${question.number || '—'} 题`}>
-    <header className="question-card-heading"><div><span className="paper-number">{question.number || '—'}.</span><span className="subject-tag">{question.subject || '待选科目'}</span></div>
+    <header className="question-card-heading"><div><span className="paper-number">{question.number || '—'}.</span><span className="subject-tag">{question.subject || '待选科目'}</span>{question.wrongBook && <span className="collection-tag is-wrong">错题</span>}{question.focusBook && <span className="collection-tag is-focus">重点题</span>}</div>
       <button type="button" className="question-original-toggle" aria-pressed={original} onClick={() => setOriginal(value => !value)}>
         {original ? <FileText size={15} /> : <ImageIcon size={15} />}{original ? '整理版' : '原图'}</button></header>
     <QuestionPaper question={question} questions={scan.questions} image={image} original={original} onImageError={() => images.imageFailed(scan.id)} />

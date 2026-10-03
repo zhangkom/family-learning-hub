@@ -1,11 +1,17 @@
 import type { OriginalPhoto } from '../photo-processing';
+import type { SourcePage } from '../types';
 
 export type CloudScope = { owner: string; studentId: string };
 export type CloudPhoto = {
   id: string; batchId: string; clientRequestId: string; studentId: string; originalName: string; mimeType: string;
   size: number; sha256: string; createdAt: string; source?: string;
+  archive?: Omit<SourcePage, 'photoId'>;
 };
-export type CloudLimits = { maxFileBytes: number; mimeTypes: string[]; maxBatch: number; nameConflictVersion?: number };
+export type CloudSubjectFolder = { subject: string; documentCount: number; photoCount: number };
+export type CloudDocumentFolder = { id: string; title: string; subject: string; pageCount: number; revision: number; createdAt: string };
+export type CloudFolders = { subjects?: CloudSubjectFolder[]; documents?: CloudDocumentFolder[]; unclassifiedCount?: number; nextCursor?: string | null };
+export type CloudPhotoFilter = { documentId?: string; unclassified?: boolean };
+export type CloudLimits = { maxFileBytes: number; mimeTypes: string[]; maxBatch: number; nameConflictVersion?: number; archiveVersion?: number };
 export type NameCheck = { name: string; conflicts: number; token: string; suggestedName: string; receipt?: CloudPhoto };
 export type NameChoice = { action: 'replace' } | { action: 'rename'; name: string };
 export type ResolveName = (check: NameCheck, signal: AbortSignal) => Promise<NameChoice>;
@@ -31,7 +37,8 @@ export interface DriveStore {
 export interface DriveServices {
   native: boolean;
   limits(signal?: AbortSignal): Promise<CloudLimits>;
-  list(studentId: string, cursor?: string, signal?: AbortSignal): Promise<CloudPage>;
+  list(studentId: string, cursor?: string, signal?: AbortSignal, filter?: CloudPhotoFilter): Promise<CloudPage>;
+  folders?(studentId: string, subject?: string, cursor?: string, signal?: AbortSignal): Promise<CloudFolders>;
   upload(job: UploadJob, bytes: UploadBytes, signal: AbortSignal): Promise<CloudPhoto>;
   prepare?(job: UploadJob, signal: AbortSignal): Promise<UploadJob>;
   read(job: UploadJob, signal: AbortSignal): Promise<UploadBytes>;

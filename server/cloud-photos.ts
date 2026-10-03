@@ -37,8 +37,18 @@ import {
 } from './cloud-photo-files';
 import { receiveCloudPhoto } from './cloud-photo-multipart';
 import { inspectCloudImage } from './cloud-image';
-import { currentName, checkPhotoName, validateNameChoice, replaceNamedPhotos } from './cloud-photo-names';
+import {
+  currentName,
+  checkPhotoName,
+  validateNameChoice,
+  replaceNamedPhotos,
+} from './cloud-photo-names';
 import { publishDirectorySync } from '../scripts/atomic-directory-publish.mjs';
+import {
+  archivedPhoto,
+  foldersResponse,
+  documentPhotosResponse,
+} from './homework-archive';
 
 function uuid(value: unknown) {
   if (typeof value !== 'string' || !cloudUuid.test(value.toLowerCase()))
@@ -137,7 +147,7 @@ export function ownedCloudPhoto(
   if (!row) throw new HttpError(404, '图片不存在');
   const photo: CloudPhoto = JSON.parse(String(row.body));
   requireStudent(store, account, photo.studentId);
-  return photo;
+  return archivedPhoto(store, account, photo);
 }
 // Keep derivatives small and reconstructible; no thumbnail files enter backups.
 const thumbnails = new Map<string, Buffer>();
@@ -354,11 +364,19 @@ async function uploadPhoto(
   }
 }
 function listPhotos(request: Request, store: FamilyStore, account: string) {
+  if (new URL(request.url).searchParams.has('documentId'))
+    return documentPhotosResponse(request, store, account);
   const params = new URL(request.url).searchParams,
     student = requireStudent(store, account, params.get('studentId'));
   const limit = Number(params.get('limit') ?? 30);
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100)
     throw new HttpError(400, '分页数量须为1至100');
+  const unclassified = params.get('unclassified') === '1';
+  if (params.has('unclassified') && !unclassified)
+    throw new HttpError(400, '未分类筛选无效');
+  const filter = unclassified
+    ? ' AND NOT EXISTS (SELECT 1 FROM homework_pages h WHERE h.photo_id=cloud_photos.id)'
+    : '';
   let after: string[] | undefined;
   if (params.has('cursor')) {
     try {
@@ -369,7 +387,7 @@ function listPhotos(request: Request, store: FamilyStore, account: string) {
       if (
         !Array.isArray(c) ||
         c.length !== 4 ||
-        c[0] !== cloudHash(account) ||
+        c[0] !== cloudHash(account + (unclassified ? ':unclassified' : '')) ||
         c[1] !== student.id ||
         typeof c[2] !== 'string' ||
         !Number.isFinite(Date.parse(c[2])) ||
@@ -385,17 +403,19 @@ function listPhotos(request: Request, store: FamilyStore, account: string) {
   const rows = after
     ? store.db
         .prepare(
-          'SELECT body FROM cloud_photos WHERE account_id=? AND student_id=? AND NOT EXISTS (SELECT 1 FROM cloud_photo_replacements WHERE old_id=cloud_photos.id) AND (created_at<? OR (created_at=? AND id<?)) ORDER BY created_at DESC,id DESC LIMIT ?',
+          `SELECT body FROM cloud_photos WHERE account_id=? AND student_id=? AND NOT EXISTS (SELECT 1 FROM cloud_photo_replacements WHERE old_id=cloud_photos.id) ${filter} AND (created_at<? OR (created_at=? AND id<?)) ORDER BY created_at DESC,id DESC LIMIT ?`,
         )
         .all(account, student.id, after[0], after[0], after[1], limit + 1)
     : store.db
         .prepare(
-          'SELECT body FROM cloud_photos WHERE account_id=? AND student_id=? AND NOT EXISTS (SELECT 1 FROM cloud_photo_replacements WHERE old_id=cloud_photos.id) ORDER BY created_at DESC,id DESC LIMIT ?',
+          `SELECT body FROM cloud_photos WHERE account_id=? AND student_id=? AND NOT EXISTS (SELECT 1 FROM cloud_photo_replacements WHERE old_id=cloud_photos.id) ${filter} ORDER BY created_at DESC,id DESC LIMIT ?`,
         )
         .all(account, student.id, limit + 1);
   const photos = rows
       .slice(0, limit)
-      .map((r) => JSON.parse(String(r.body)) as CloudPhoto),
+      .map((r) =>
+        archivedPhoto(store, account, JSON.parse(String(r.body)) as CloudPhoto),
+      ),
     last = photos.at(-1);
   const page: CloudPhotoPage = {
     photos,
@@ -403,7 +423,7 @@ function listPhotos(request: Request, store: FamilyStore, account: string) {
       rows.length > limit && last
         ? Buffer.from(
             JSON.stringify([
-              cloudHash(account),
+              cloudHash(account + (unclassified ? ':unclassified' : '')),
               student.id,
               last.createdAt,
               last.id,
@@ -423,6 +443,10 @@ export async function cloudPhotoResponse(
   store: FamilyStore,
   account: string,
 ) {
+  if (parts[0] === 'cloud-photo-folders' && parts.length === 1) {
+    if (request.method !== 'GET') throw new HttpError(405, '请求方式不支持');
+    return foldersResponse(request, store, account);
+  }
   if (
     parts[0] === 'cloud-photo-batches' &&
     parts.length === 1 &&
@@ -436,7 +460,8 @@ export async function cloudPhotoResponse(
   if (parts[0] !== 'cloud-photos' || parts.length > 3)
     throw new HttpError(404, '接口不存在');
   if (request.method !== 'GET') throw new HttpError(405, '请求方式不支持');
-  if (parts.length === 2 && parts[1] === 'name') return checkPhotoName(request, store, account);
+  if (parts.length === 2 && parts[1] === 'name')
+    return checkPhotoName(request, store, account);
   const photo = ownedCloudPhoto(store, account, parts[1]);
   if (parts.length === 2) return json({ photo });
   if (!['file', 'thumbnail'].includes(parts[2]))

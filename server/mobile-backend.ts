@@ -167,11 +167,19 @@ async function dispatch(
   user: FamilyUser,
 ) {
   const method = request.method;
-  if (parts[0] === 'learning-sessions') return learningResponse(request, parts, store, user.id);
-  if (parts[0] === 'weakness-reports') return weaknessResponse(request, parts, store, user.id);
-  const present = (record: ScanRecord) => ({ ...mobileScan(record),
-    analysis: analysisProgress(store, user.id, record.id, recognitionEnabled()) });
-  if (['cloud-photos', 'cloud-photo-batches'].includes(parts[0]))
+  if (parts[0] === 'learning-sessions')
+    return learningResponse(request, parts, store, user.id);
+  if (parts[0] === 'weakness-reports')
+    return weaknessResponse(request, parts, store, user.id);
+  const present = (record: ScanRecord) => ({
+    ...mobileScan(record),
+    analysis: analysisProgress(store, user.id, record.id, recognitionEnabled()),
+  });
+  if (
+    ['cloud-photos', 'cloud-photo-batches', 'cloud-photo-folders'].includes(
+      parts[0],
+    )
+  )
     return cloudPhotoResponse(request, parts, store, user.id);
   if (parts.length === 1 && parts[0] === 'wrong-book') {
     if (method !== 'GET') throw new HttpError(405, '请求方式不支持');
@@ -184,8 +192,12 @@ async function dispatch(
     });
   }
   if (parts.length === 1 && parts[0] === 'students') {
-    if (method === 'GET') return json(new URL(request.url).searchParams.get('overview') === '1'
-      ? await studentOverview(store, user.id) : { students: store.students(user.id) });
+    if (method === 'GET')
+      return json(
+        new URL(request.url).searchParams.get('overview') === '1'
+          ? await studentOverview(store, user.id)
+          : { students: store.students(user.id) },
+      );
     if (method !== 'POST') throw new HttpError(405, '请求方式不支持');
     const body = await readJson(request, 8192);
     if (
@@ -230,10 +242,7 @@ async function dispatch(
     }
     if (method !== 'POST') throw new HttpError(405, '请求方式不支持');
     const result = await uploadMobileScan(request, store, user.id);
-    return json(
-      { scan: present(result.record) },
-      result.created ? 201 : 200,
-    );
+    return json({ scan: present(result.record) }, result.created ? 201 : 200);
   }
   const record = await ownedScan(store, user.id, parts[1]);
   if (
@@ -244,8 +253,16 @@ async function dispatch(
     if (method !== 'POST') throw new HttpError(405, '请求方式不支持');
     if (!store.allow(`question-action:${user.id}`, 60, 60000))
       throw new HttpError(429, '操作过于频繁，请稍后再试');
-    const body = await readJson(request, parts[4] === 'analysis-review' ? 65536 : 8192);
-    if (parts[4] === 'analysis-review') return json({ scan: present(await reviewTutoring(store, user.id, record.id, parts[3], body)) });
+    const body = await readJson(
+      request,
+      parts[4] === 'analysis-review' ? 65536 : 8192,
+    );
+    if (parts[4] === 'analysis-review')
+      return json({
+        scan: present(
+          await reviewTutoring(store, user.id, record.id, parts[3], body),
+        ),
+      });
     if (parts[4] === 'wrong-book')
       return json({
         scan: present(

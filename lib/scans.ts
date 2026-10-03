@@ -27,6 +27,7 @@ export type ScanQuestion = Record<keyof typeof scanFields, string> & {
   selected: boolean;
 };
 export type ScanRecord = {
+  sourcePage?: import('./cloud-photos').QuestionSourcePage;
   id: string;
   child?: ChildId;
   studentId?: string;

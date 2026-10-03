@@ -5,6 +5,23 @@ import type { UploadJob } from './types';
 const digest = 'a'.repeat(64), signal = new AbortController().signal;
 const job: UploadJob = { owner: 'synthetic', studentId: 'student-a', id: 'item-id', clientBatchId: 'batch-id', expectedCount: 2, name: '原图?.jpg', mimeType: 'image/jpeg', size: 3, status: 'queued', createdAt: 1, source: { kind: 'web', file: new Blob(['abc'], { type: 'image/jpeg' }) } };
 describe('cloud API is independent of scans/AI', () => {
+  it('binds folder pages to the requested document and preserves the server page order', async () => {
+    const api = new FamilyApi('https://synthetic.invalid', 'test'), request = vi.spyOn(api, 'request');
+    const photos = [2, 3].map(pageNumber => ({ id: `photo-${pageNumber}`, studentId: 'student-a', archive: { documentId: 'homework-a', pageNumber } }));
+    request.mockResolvedValueOnce({ photos, nextCursor: 'next-page' });
+    expect((await createCloudApi(api).list('student-a', 'start-page', signal, { documentId: 'homework-a' })).photos).toEqual(photos);
+    expect(request.mock.calls[0][0]).toContain('documentId=homework-a');
+    expect(request.mock.calls[0][0]).toContain('cursor=start-page');
+    request.mockResolvedValueOnce({ photos });
+    await expect(createCloudApi(api).list('student-a', undefined, signal, { documentId: 'different' })).rejects.toThrow('作业页归属');
+    request.mockResolvedValueOnce({ photos });
+    await expect(createCloudApi(api).list('student-a', undefined, signal, { unclassified: true })).rejects.toThrow('图片分类已变化');
+  });
+  it('rejects a subject folder response that contains another subject', async () => {
+    const api = new FamilyApi('https://synthetic.invalid', 'test');
+    vi.spyOn(api, 'request').mockResolvedValue({ documents: [{ id: 'physics', title: '物理寒假作业3', subject: '物理' }] });
+    await expect(createCloudApi(api).folders('student-a', '生物', undefined, signal)).rejects.toThrow('目录读取不完整');
+  });
   it('gates unavailable servers before any photo upload', async () => {
     const api = new FamilyApi('https://synthetic.invalid', 'test'); const request = vi.spyOn(api, 'request').mockResolvedValue({});
     await expect(createCloudApi(api).upload(job, { file: new Blob(['abc']), sha256: digest }, signal)).rejects.toThrow('尚未开放');

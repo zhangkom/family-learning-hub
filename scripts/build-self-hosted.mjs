@@ -98,5 +98,14 @@ if (result.status === 0) {
       rolldownOptions: { output: { entryFileNames: 'admin-provision.mjs' } },
     },
   });
+  await build({
+    configFile: false,
+    build: {
+      ssr: resolve('server/homework-cli.ts'),
+      outDir: 'dist/standalone/tools',
+      emptyOutDir: false,
+      rolldownOptions: { output: { entryFileNames: 'homework-import.mjs' } },
+    },
+  });
 }
 process.exit(result.status ?? 1);
