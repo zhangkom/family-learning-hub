@@ -11,7 +11,7 @@ import { getFamilyStore, type FamilyStore } from './family-store';
 import { validateFamily } from '../lib/family-state';
 import { mergeFamily } from '../lib/family-state';
 import { scanWrongRecords } from './scan-files';
-import { MIN_PASSWORD_LENGTH, MAX_PASSWORD_LENGTH } from '../lib/account';
+import { MIN_PASSWORD_LENGTH, MIN_ADMIN_PASSWORD_LENGTH, MAX_PASSWORD_LENGTH } from '../lib/account';
 
 const derive = (password: string, salt: string) =>
   new Promise<Buffer>((resolve, reject) => {
@@ -150,13 +150,13 @@ export async function verifyPassword(password: string, encoded: string) {
     hash?.length === 128 && timingSafeEqual(actual, Buffer.from(hash, 'hex'))
   );
 }
-export function passwordField(value: unknown) {
+export function passwordField(value: unknown, minimum = MIN_PASSWORD_LENGTH) {
   if (
     typeof value !== 'string' ||
-    value.length < MIN_PASSWORD_LENGTH ||
+    value.length < minimum ||
     value.length > MAX_PASSWORD_LENGTH
   )
-    throw new HttpError(400, '密码请使用 6 至 128 个字符');
+    throw new HttpError(400, `密码请使用 ${minimum} 至 128 个字符`);
   return value;
 }
 export function issueFamilySession(
@@ -201,7 +201,7 @@ async function credentials(
     throw new HttpError(400, '账号使用 3 至 32 位字母、数字、下划线或短横线');
   if (action !== 'login' && username === 'admin')
     throw new HttpError(400, 'admin为平台管理专用账号');
-  const password = passwordField(body.password);
+  const password = passwordField(body.password, action === 'login' ? 1 : MIN_PASSWORD_LENGTH);
   if (!store.allow(`user:${username}`, 8, 15 * 60000))
     throw new HttpError(429, '该账号尝试次数过多，请 15 分钟后再试');
   return { body, username, password };
@@ -244,7 +244,7 @@ export async function updateAccountCredentials(
   if (!store.allow(`password:${user.id}`, 8, 15 * 60000))
     throw new HttpError(429, '尝试次数过多，请 15 分钟后再试');
   const body = await readJson(request, 8192);
-  const old = passwordField(body.currentPassword);
+  const old = passwordField(body.currentPassword, 1);
   const username =
     action === 'username'
       ? typeof body.username === 'string'
@@ -253,14 +253,14 @@ export async function updateAccountCredentials(
       : user.username;
   if (!/^[a-z0-9_-]{3,32}$/.test(username))
     throw new HttpError(400, '用户名使用 3 至 32 位字母、数字、下划线或短横线');
-  const next = action === 'password' ? passwordField(body.password) : undefined;
   const administrator = !!store.db
     .prepare('SELECT 1 FROM platform_admins WHERE account_id=?')
     .get(user.id);
+  const next = action === 'password'
+    ? passwordField(body.password, administrator ? MIN_ADMIN_PASSWORD_LENGTH : MIN_PASSWORD_LENGTH)
+    : undefined;
   if (action === 'username' && (administrator || username === 'admin'))
     throw new HttpError(400, '平台管理员账号名称不可修改，admin为保留名称');
-  if (administrator && next !== undefined && next.length < 12)
-    throw new HttpError(400, '管理员密码至少需要12个字符');
   const row = store.db
     .prepare('SELECT username,password FROM accounts WHERE id=?')
     .get(user.id);

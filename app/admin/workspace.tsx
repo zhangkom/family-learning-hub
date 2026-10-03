@@ -228,7 +228,7 @@ function Password({
       }}
     >
       <h2>{initial ? '请先设置管理员密码' : '修改管理员密码'}</h2>
-      <p>新密码至少12个字符，修改后重新登录。</p>
+      <p>新密码至少5个字符，修改后重新登录。</p>
       <label>
         当前密码
         <input
@@ -243,7 +243,7 @@ function Password({
         <input
           type="password"
           name="password"
-          minLength={12}
+          minLength={5}
           maxLength={128}
           autoComplete="new-password"
           required
@@ -254,7 +254,7 @@ function Password({
         <input
           type="password"
           name="repeat"
-          minLength={12}
+          minLength={5}
           autoComplete="new-password"
           required
         />

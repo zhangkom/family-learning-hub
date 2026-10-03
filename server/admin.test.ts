@@ -13,6 +13,7 @@ import {
   readBatch,
 } from './admin-service';
 import { handleFamily, hashPassword } from './family-backend';
+import { handleMobile } from './mobile-backend';
 import { saveScan, readStoredScan, writeStoredScan } from './scan-files';
 import { sharp } from './sharp';
 import type { ScanRecord } from '../lib/scans';
@@ -170,7 +171,7 @@ describe('platform administration', () => {
     store.db.prepare('DELETE FROM platform_admins').run();
     expect((await call('accounts')).status).toBe(403);
   });
-  it('requires initial password rotation and rejects short administrator passwords', async () => {
+  it('accepts five-character administrator passwords on web and mobile while keeping ordinary-account limits', async () => {
     store.db.prepare('UPDATE platform_admins SET must_change_password=1').run();
     expect((await call('session')).status).toBe(200);
     expect((await call('accounts')).status).toBe(428);
@@ -178,7 +179,7 @@ describe('platform administration', () => {
       (
         await call('password', {
           currentPassword: 'test-password-1234',
-          password: '123456',
+          password: '1234',
         })
       ).status,
     ).toBe(400);
@@ -186,7 +187,7 @@ describe('platform administration', () => {
       (
         await call('password', {
           currentPassword: 'test-password-1234',
-          password: 'new-strong-password-5678',
+          password: 'abc12',
         })
       ).status,
     ).toBe(200);
@@ -196,6 +197,28 @@ describe('platform administration', () => {
         .prepare('SELECT must_change_password m FROM platform_admins')
         .get()?.m,
     ).toBe(0);
+    const webLogin = await handleFamily(new Request(origin + '/family-learning/api/family/login', {
+      method: 'POST', headers: { Origin: origin, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: 'admin', password: 'abc12' }),
+    }), 'login', store);
+    expect(webLogin.status).toBe(200);
+    const token = webLogin.headers.get('set-cookie')!.match(/family_session=([^;]+)/)![1];
+    expect((await call('overview', undefined, token)).status).toBe(200);
+    const mobileLogin = await handleMobile(new Request(origin + '/family-learning/api/mobile/v1/session/login', {
+      method: 'POST', headers: { Origin: origin, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: 'admin', password: 'abc12' }),
+    }), ['session', 'login'], store);
+    expect(mobileLogin.status).toBe(200);
+    expect((await call('password', {
+      currentPassword: 'test-password-1234', password: 'abc12',
+    }, userToken)).status).toBe(403);
+    const ordinaryChange = await handleFamily(new Request(origin + '/family-learning/api/family/password', {
+      method: 'POST', headers: { Cookie: 'family_session=' + userToken, Origin: origin, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ currentPassword: 'test-password-1234', password: 'abc12' }),
+    }), 'password', store);
+    expect(ordinaryChange.status).toBe(400);
+    const nextChange = await call('password', { currentPassword: 'abc12', password: 'def34' }, token);
+    expect(nextChange.status).toBe(200);
   });
   it('uses explicit safe profile fields and distinguishes users from administrators', async () => {
     const response = await call('overview');

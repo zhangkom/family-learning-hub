@@ -413,7 +413,7 @@ describe('cookie workspace authentication and account contract', () => {
         await call(
           'account/password',
           'POST',
-          { currentPassword: password, password: 'short123' },
+          { currentPassword: password, password: 'abc1' },
           cookie,
         )
       ).status,
@@ -421,7 +421,7 @@ describe('cookie workspace authentication and account contract', () => {
     const changed = await call(
       'account/password',
       'POST',
-      { currentPassword: password, password: 'admin-long-new-password' },
+      { currentPassword: password, password: 'abc12' },
       cookie,
     );
     expect(changed.status).toBe(200);

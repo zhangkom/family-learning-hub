@@ -121,7 +121,7 @@ async function login(request: Request, store: FamilyStore) {
       (typeof body.deviceName !== 'string' || body.deviceName.length > 100))
   )
     throw new HttpError(400, '账号或密码格式不正确');
-  const password = passwordField(body.password);
+  const password = passwordField(body.password, 1);
   if (!store.allow(`user:${username}`, 8, 15 * 60000))
     throw new HttpError(429, '该账号尝试次数过多，请 15 分钟后再试');
   const row = store.db
