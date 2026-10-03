@@ -41,7 +41,7 @@ button {
     box-shadow 0.15s;
 }
 button:hover:not(:disabled) {
-  background: #eef3ff;
+  background-color: #eef3ff;
   box-shadow: 0 2px 9px #1a3e8a0d;
 }
 button:disabled {
