@@ -141,12 +141,15 @@ try {
   await nav('首页').click(); await nav('题目').click(); await libraryTabs().getByRole('button', { name: '错题本', exact: true }).click();
   const filters = page.getByRole('navigation', { name: '按科目筛选错题' });
   assert.deepEqual(await filters.getByRole('button').allTextContents(), ['全部', '数学', '语文', '英语', '地理', '物理', '化学', '生物']);
-  const displayedPrompts = () => page.locator('.wrong-book .paper-prompt').allTextContents();
-  assert.deepEqual(await displayedPrompts(), [...fixtures].reverse().map(f => f.prompt));
-  await filters.getByRole('button', { name: '数学', exact: true }).click(); assert.deepEqual(await displayedPrompts(), [fixtures[1].prompt, fixtures[0].prompt]);
-  await page.getByLabel('错题排序').selectOption('oldest'); assert.deepEqual(await displayedPrompts(), fixtures.slice(0, 2).map(f => f.prompt));
-  await filters.getByRole('button', { name: '全部', exact: true }).click(); assert.deepEqual(await displayedPrompts(), fixtures.map(f => f.prompt));
-  await filters.getByRole('button', { name: '物理', exact: true }).click(); assert.deepEqual(await displayedPrompts(), [fixtures[2].prompt]);
+  // Image-first cards can replace OCR paragraphs while loading. Check stable
+  // source provenance instead of depending on temporary text fallback content.
+  const displayedSources = () => page.locator('.wrong-book .question-source dd:first-of-type').allTextContents();
+  const sourceName = f => f.scan.originalName;
+  assert.deepEqual(await displayedSources(), [...fixtures].reverse().map(sourceName));
+  await filters.getByRole('button', { name: '数学', exact: true }).click(); assert.deepEqual(await displayedSources(), [fixtures[1], fixtures[0]].map(sourceName));
+  await page.getByLabel('错题排序').selectOption('oldest'); assert.deepEqual(await displayedSources(), fixtures.slice(0, 2).map(sourceName));
+  await filters.getByRole('button', { name: '全部', exact: true }).click(); assert.deepEqual(await displayedSources(), fixtures.map(sourceName));
+  await filters.getByRole('button', { name: '物理', exact: true }).click(); assert.deepEqual(await displayedSources(), [fixtures[2]].map(sourceName));
   checks.push('Seven supported subjects plus All retain upload ordering; subject filtering and oldest/newest sorting do not reshuffle unrelated items');
   await openGraph();
   await page.getByText('数学 · 2 道错题', { exact: true }).waitFor();
@@ -175,12 +178,13 @@ try {
   await page.setViewportSize({ width: 390, height: 844 });
   const chosenSource = first.sources.find(source => source.id === first.result.focuses[0].evidence[0].sourceId);
   await evidence.getByRole('button', { name: '回看原题', exact: true }).first().click();
-  assert.equal(await page.getByRole('region', { name: '当前题目原题' }).locator('.paper-prompt').textContent(), chosenSource.prompt);
+  await page.getByRole('region', { name: '当前题目原题' }).getByRole('img', { name: '原题题干与配图', exact: true }).waitFor();
+  assert.equal(await page.getByLabel('完整题干', { exact: true }).inputValue(), chosenSource.prompt);
   await button('返回资料列表').click(); await page.locator('.weakness-summary').waitFor();
   await page.locator('.weakness-evidence > summary').first().click();
   await page.locator('.weakness-evidence-actions').first().getByRole('button', { name: '针对这题练习', exact: true }).click();
   await page.locator('.learning-start').waitFor();
-  assert.equal(await page.locator('.learning-start .paper-prompt').textContent(), chosenSource.prompt);
+  assert.equal(await page.locator('.learning-start .question-source dd:first-of-type').textContent(), fixtures.find(f => f.scan.id === chosenSource.scanId).scan.originalName);
   assert.equal(await button('生成3道变式').isEnabled(), true);
   for (let i = 0; i < 3 && await page.locator('.learning-hub').count(); i++) await button('返回学习列表或首页').click();
   checks.push('Radar label touch and accessible buttons select dimensions; two evidence links open their exact original and the practice entry carries the same question');

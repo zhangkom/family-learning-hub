@@ -51,7 +51,7 @@ try {
     assert.equal(await page.getByLabel('当前学生').locator('option:checked').textContent(), `独立家庭孩子${i + 1}`);
     const studentId = await page.getByLabel('当前学生').inputValue();
     const chooser = page.waitForEvent('filechooser');
-    await page.getByRole('button', { name: /相册选图/ }).click();
+    await page.getByRole('button', { name: '批量错题上传', exact: true }).click();
     await (await chooser).setFiles({ name: `合成账号资料${i}.png`, mimeType: 'image/png',
       buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64') });
     await page.getByRole('button', { name: '完成选择，查看待上传', exact: true }).click();
@@ -84,9 +84,11 @@ try {
       await dialog.getByRole('button', { name: '完成', exact: true }).click();
       const revoked = await fetch(`${config.apiBase}/session`, { headers: { Authorization: `Bearer ${oldToken}` } });
       assert.equal(revoked.status, 401);
-      await page.getByRole('navigation', { name: '主要页面' }).getByRole('button', { name: '题目', exact: true }).click();
+      await page.getByRole('navigation', { name: '主要页面' }).getByRole('button', { name: '首页', exact: true }).click();
       assert.equal(await page.getByLabel('当前学生').inputValue(), studentId);
+      await page.getByRole('navigation', { name: '资料管理' }).getByRole('button', { name: /^原题照片/ }).click();
       await page.getByRole('button', { name: new RegExp(`合成账号资料${i}`) }).waitFor();
+      await page.getByRole('navigation', { name: '主要页面' }).getByRole('button', { name: '首页', exact: true }).click();
       await page.getByRole('navigation', { name: '主要页面' }).getByRole('button', { name: '我的', exact: true }).click();
     }
     await page.getByRole('button', { name: '退出登录', exact: true }).click();

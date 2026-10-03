@@ -41,11 +41,11 @@ const readScan = async id => { const response = await fetch(api + '/scans/' + id
 const output = process.env.FAMILY_ANALYSIS_QA_DIR || 'test-results/analysis-review'; mkdirSync(output, { recursive: true });
 try {
   await page.goto(client); await page.getByLabel('当前学生').selectOption(student.id);
-  await page.getByRole('button', { name: /拍照收题/ }).click(); await button('完成选择，逐张调整').click();
+  await button('录错题').click(); await button('完成选择，逐张调整').click();
   await button('生成预览').click(); await button('确认使用处理图').click();
   const upload = page.waitForResponse(r => r.url() === api + '/scans' && r.request().method() === 'POST');
   await button('上传处理图').click(); const scan = (await (await upload).json()).scan;
-  await page.getByRole('button', { name: new RegExp(scan.originalName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')) }).click();
+  await button('继续学习').click();
   await page.locator('.paper-surface img').waitFor();
   const readsOnOpen = await page.evaluate(() => window.localImageReads);
   await button('框选一道题').click(); await page.locator('.paper-scroll').scrollIntoViewIfNeeded();
@@ -67,13 +67,15 @@ try {
   assert.deepEqual(saved.questions[0].tutoring.result, original); assert.match(saved.questions[0].prompt, /4 s/); assert.equal(analysisCalls, 1);
   assert.equal(await page.evaluate(() => window.localImageReads), readsOnOpen);
   await page.reload(); await page.getByLabel('当前学生').waitFor();
-  await page.getByRole('navigation', { name: '主要页面' }).getByRole('button', { name: /^题目/ }).click();
+  await page.getByRole('navigation', { name: '资料管理' }).getByRole('button', { name: /^原题照片/ }).click();
   await page.getByRole('button', { name: new RegExp(scan.originalName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')) }).click();
   await page.getByText('已保存核对意见', { exact: true }).waitFor(); await page.locator('.paper-surface img').waitFor();
   const readsAfterReopen = await page.evaluate(() => window.localImageReads);
   await button('按校对内容重新分析').click(); await page.locator('.analysis-progress').waitFor();
   await page.getByText('6 m', { exact: true }).waitFor(); await button('核对无误').isDisabled().then(value => assert.equal(value, true));
-  await page.getByText(/模型正在分析/).waitFor();
+  // A fast worker may finish between polling ticks; queued is a valid observed
+  // phase. Do not require the transient processing label to remain on screen.
+  assert.match(await page.locator('.analysis-progress output').textContent(), /已加入队列|模型正在分析|等待.*尝试/);
   await page.screenshot({ path: output + '/analysis-in-progress.png', fullPage: true });
   await page.getByText('8 m', { exact: true }).waitFor(); saved = await readScan(scan.id);
   assert.equal(saved.questions[0].tutoring.review, undefined); assert.equal(saved.analysis, undefined); assert.equal(analysisCalls, 2);

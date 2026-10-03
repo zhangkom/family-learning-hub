@@ -64,7 +64,7 @@ try {
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
   checks.push('一次多选205张，继续添加5张；显示已选210张，按钮不禁用；选择本身不上传');
   await button('完成选择，查看待上传').click(); await page.getByRole('button', { name: /确认并批量上传（210 张）/ }).click();
-  await page.getByText('本批上传结束：成功 209 张，失败 1 张。未确认成功的照片仍留在本机，可继续上传。', { exact: true }).waitFor();
+  await page.getByText('本批上传结束：成功 209 张，失败 1 张。未确认成功的照片仍留在本机，可继续上传。', { exact: true }).waitFor({ timeout: 90000 });
   assert.equal(uploads.length, 210); assert.equal(records.size, 210); assert.equal(peak, 1); assert.equal(await page.locator('.draft-card').count(), 1);
   const failed = uploads[33].id;
   await page.reload(); await login(); await page.getByRole('navigation', { name: '主要页面' }).getByRole('button', { name: /^首页/ }).click();

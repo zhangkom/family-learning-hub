@@ -43,6 +43,7 @@ await page.route('**/*', async (route) => {
   if (path === '/session') return send({ user: { id: 'stable-family', username } });
   if (path === '/students') return send({ students });
   if (path === '/scans') return send({ scans: [], recognition: false });
+  if (path === '/learning-sessions') return send({ sessions: [], more: false, enabled: true });
   if (path.startsWith('/account/')) {
     requests.push(path);
     assert.equal(request.method(), 'POST');

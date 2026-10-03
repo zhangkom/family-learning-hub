@@ -32,6 +32,7 @@ await page.route('**/*', route => {
   assert.equal(request.method(), 'GET');
   const data = url.pathname.endsWith('/session') ? { user: { id: 'A', username: '合成家庭A' } }
     : url.pathname.endsWith('/students') ? { students: [{ id: 'a', name: '合成学生A', createdAt: '2026-10-01T12:00:00Z' }] }
+    : url.pathname.endsWith('/learning-sessions') ? { sessions: [], more: false, enabled: true }
     : { scans: [], recognition: true };
   return route.fulfill({ contentType: 'application/json', body: JSON.stringify(data) });
 });
@@ -41,6 +42,7 @@ try {
   await page.getByRole('heading', { name: '把题目拍清楚' }).waitFor();
   assert.equal(await originalCount(), 1);
   await page.getByRole('button', { name: '取消，保留原片', exact: true }).click();
+  await page.locator('.home-local-tools > summary').click();
   await page.getByRole('alert').filter({ hasText: '相机缓存文件已丢失' }).waitFor();
   await page.getByRole('button', { name: '重试读取', exact: true }).click();
   await page.waitForFunction(() => ![...document.querySelectorAll('button')].find(b => b.textContent === '重试读取')?.disabled);
