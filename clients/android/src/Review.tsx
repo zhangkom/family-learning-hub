@@ -1,7 +1,7 @@
 import type { LearningMode } from '../../../lib/learning-session';
 import { useEffect, useRef, useState } from 'react';
 import { Capacitor } from '@capacitor/core';
-import { App as NativeApp } from '@capacitor/app';
+import { useNativeBack } from './native-back';
 import { ArrowLeft, Check, Plus, Save, RefreshCw, Trash2 } from 'lucide-react';
 import { ApiError, FamilyApi } from './api';
 import { RegionEditor } from './RegionEditor';
@@ -85,11 +85,7 @@ export function Review({
     if (busy || !draftReady) return;
     if (!dirty || window.confirm('还有未保存的校对，确定返回吗？')) onBack();
   };
-  useEffect(() => {
-    if (!Capacitor.isNativePlatform()) return;
-    const listener = NativeApp.addListener('backButton', () => backAction.current());
-    return () => { void listener.then((handle) => handle.remove()); };
-  }, []);
+  useNativeBack(() => backAction.current());
   useEffect(() => {
     let alive = true;
     void reviewDrafts

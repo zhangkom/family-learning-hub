@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Capacitor } from '@capacitor/core';
-import { App as NativeApp } from '@capacitor/app';
+import { useNativeBack } from './native-back';
 import { ArrowLeft, ChevronRight, Lightbulb, RefreshCw } from 'lucide-react';
 import { ApiError, type FamilyApi } from './api';
 import type { Scan } from './types';
@@ -29,7 +28,7 @@ export function LearningHub({ api, owner, studentId, studentName, records, view,
   useEffect(() => { live.current = true; return () => { live.current = false; controller.current?.abort(); }; }, []);
   const back = () => { if (lock.current) { controller.current?.abort(); onClose(); return; } if (sessionId) { setSessionId(''); setSession(null); setRefreshTick(x => x + 1); } else if (selected) setSelected(undefined); else onClose(); };
   const backRef = useRef(back); backRef.current = back;
-  useEffect(() => { if (!Capacitor.isNativePlatform()) return; const handle = NativeApp.addListener('backButton', () => backRef.current()); return () => { void handle.then(h => h.remove()); }; }, []);
+  useNativeBack(() => backRef.current());
   useEffect(() => { setStuck(readLearningDraft(owner, studentId, `${draftScope}:stuck`)); setWork(readLearningDraft(owner, studentId, `${draftScope}:work`)); }, [owner, studentId, draftScope]);
   useEffect(() => {
     const abort = new AbortController();
